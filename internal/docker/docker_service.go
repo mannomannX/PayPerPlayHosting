@@ -54,10 +54,18 @@ func (d *DockerService) CreateContainer(
 ) (string, error) {
 	ctx := context.Background()
 
-	// Create server directory
+	// Create server directory (inside container or on host)
 	serverDir := filepath.Join(d.serversDir, serverID)
 	if err := os.MkdirAll(serverDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create server directory: %w", err)
+	}
+
+	// Determine host path for Docker bind mount
+	// If HostServersBasePath is set, use it (for when API runs in container)
+	// Otherwise use the serverDir directly (for when API runs on host)
+	hostPath := serverDir
+	if d.cfg.HostServersBasePath != "" {
+		hostPath = filepath.Join(d.cfg.HostServersBasePath, serverID)
 	}
 
 	// Determine Docker image (using itzg/minecraft-server)
@@ -117,13 +125,15 @@ func (d *DockerService) CreateContainer(
 				"25575/tcp": []nat.PortBinding{rconPortBinding},
 			},
 			Binds: []string{
-				fmt.Sprintf("%s:/data", serverDir),
+				fmt.Sprintf("%s:/data", hostPath),
 			},
 			RestartPolicy: container.RestartPolicy{
 				Name: "no",
 			},
 			Resources: container.Resources{
-				Memory: int64(ramMB) * 1024 * 1024, // MB to bytes
+				// Add 25% overhead for JVM native memory, threads, GC, etc.
+				// This prevents OOM kills when Java heap is set to ramMB
+				Memory: int64(float64(ramMB)*1.25) * 1024 * 1024, // MB to bytes
 			},
 		},
 		nil,

@@ -27,10 +27,11 @@ type Config struct {
 	JWTSecret string
 
 	// Minecraft
-	ServersBasePath    string
-	DefaultIdleTimeout int
-	MCPortStart        int
-	MCPortEnd          int
+	ServersBasePath     string // Container path for server data
+	HostServersBasePath string // Host path for Docker bind mounts (when API runs in container)
+	DefaultIdleTimeout  int
+	MCPortStart         int
+	MCPortEnd           int
 
 	// Billing rates (EUR/hour)
 	Rate2GB  float64
@@ -55,9 +56,10 @@ func Load() *Config {
 		DatabasePath:       getEnv("DATABASE_PATH", "./payperplay.db"),
 		DatabaseType:       getEnv("DATABASE_TYPE", "sqlite"),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		JWTSecret:          getEnv("JWT_SECRET", "change-me-in-production-please-use-a-random-string"),
-		ServersBasePath:    getEnv("SERVERS_BASE_PATH", "./minecraft/servers"),
-		DefaultIdleTimeout: getEnvInt("DEFAULT_IDLE_TIMEOUT", 300),
+		JWTSecret:           getEnv("JWT_SECRET", "change-me-in-production-please-use-a-random-string"),
+		ServersBasePath:     getEnv("SERVERS_BASE_PATH", "./minecraft/servers"),
+		HostServersBasePath: getEnv("HOST_SERVERS_BASE_PATH", ""), // If empty, use ServersBasePath
+		DefaultIdleTimeout:  getEnvInt("DEFAULT_IDLE_TIMEOUT", 300),
 		MCPortStart:        getEnvInt("MC_PORT_START", 25565),
 		MCPortEnd:          getEnvInt("MC_PORT_END", 25665),
 		Rate2GB:            getEnvFloat("RATE_2GB", 0.10),

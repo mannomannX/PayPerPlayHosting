@@ -53,6 +53,7 @@ services:
 
       # Minecraft
       - SERVERS_BASE_PATH=/app/minecraft/servers
+      - HOST_SERVERS_BASE_PATH=/opt/payperplay/minecraft/servers  # Host path for Docker bind mounts
       - DEFAULT_IDLE_TIMEOUT=300
       - MC_PORT_START=25566  # Start at 25566 (25565 reserved for Velocity proxy)
       - MC_PORT_END=25665

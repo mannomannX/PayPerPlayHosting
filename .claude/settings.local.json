@@ -19,7 +19,12 @@
       "Bash(git remote add:*)",
       "Bash(git branch:*)",
       "Bash(git push:*)",
-      "Bash(docker logs:*)"
+      "Bash(docker logs:*)",
+      "Bash(ssh root@91.98.202.235 \"docker ps | grep mc-\")",
+      "Bash(ssh root@91.98.202.235 \"docker port 4f088d496c4c\")",
+      "Bash(ssh root@91.98.202.235 \"netstat -tulpn | grep 25566\")",
+      "Bash(ssh root@91.98.202.235 \"docker inspect 4f088d496c4c | grep -A 20 PortBindings\")",
+      "Bash(ssh:*)"
     ],
     "deny": [],
     "ask": []
