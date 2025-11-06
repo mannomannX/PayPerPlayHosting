@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -158,6 +160,64 @@ func (d *DockerService) StartContainer(containerID string) error {
 	}
 	log.Printf("Started container %s", containerID[:12])
 	return nil
+}
+
+// WaitForServerReady waits for the Minecraft server to be ready by monitoring logs
+func (d *DockerService) WaitForServerReady(containerID string, timeoutSeconds int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Stream container logs
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+		Timestamps: false,
+	}
+
+	reader, err := d.client.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer reader.Close()
+
+	// Read logs line by line and look for "Done ("
+	buf := make([]byte, 8192)
+	logBuffer := ""
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for server to be ready")
+		default:
+			n, err := reader.Read(buf)
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return fmt.Errorf("error reading logs: %w", err)
+			}
+
+			// Skip Docker log header (first 8 bytes of each frame)
+			// Docker log format: [8 byte header][message]
+			if n > 8 {
+				logBuffer += string(buf[8:n])
+			}
+
+			// Check if server is ready
+			if containsReadyMarker(logBuffer) {
+				log.Printf("Minecraft server %s is ready!", containerID[:12])
+				return nil
+			}
+		}
+	}
+}
+
+// containsReadyMarker checks if the log contains the server ready marker
+func containsReadyMarker(logText string) bool {
+	// Look for the "Done (X.XXXs)!" message that indicates server is ready
+	return strings.Contains(logText, "Done (") && strings.Contains(logText, "s)!")
 }
 
 // StopContainer stops a Docker container gracefully

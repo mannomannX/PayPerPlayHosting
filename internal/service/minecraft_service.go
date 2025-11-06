@@ -210,6 +210,14 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
+	// Wait for Minecraft server to be ready before marking as running
+	// This prevents OOM kills when players try to join during startup
+	log.Printf("Waiting for Minecraft server %s to be ready...", server.ID)
+	if err := s.dockerService.WaitForServerReady(server.ContainerID, 60); err != nil {
+		log.Printf("Warning: Minecraft server %s may not be fully ready: %v", server.ID, err)
+		// Continue anyway - server might still work
+	}
+
 	// Update status
 	now := time.Now()
 	server.Status = models.StatusRunning
