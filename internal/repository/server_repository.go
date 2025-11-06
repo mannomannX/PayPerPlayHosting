@@ -28,7 +28,8 @@ func (r *ServerRepository) FindByID(id string) (*models.MinecraftServer, error) 
 
 func (r *ServerRepository) FindAll() ([]models.MinecraftServer, error) {
 	var servers []models.MinecraftServer
-	err := r.db.Find(&servers).Error
+	// Use Unscoped() to include soft-deleted servers (for cleanup)
+	err := r.db.Unscoped().Find(&servers).Error
 	return servers, err
 }
 
@@ -40,7 +41,8 @@ func (r *ServerRepository) FindByOwner(ownerID string) ([]models.MinecraftServer
 
 func (r *ServerRepository) FindByPort(port int) (*models.MinecraftServer, error) {
 	var server models.MinecraftServer
-	err := r.db.Where("port = ?", port).First(&server).Error
+	// Use Unscoped() to check for soft-deleted servers blocking ports
+	err := r.db.Unscoped().Where("port = ?", port).First(&server).Error
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +60,8 @@ func (r *ServerRepository) Delete(id string) error {
 
 func (r *ServerRepository) GetUsedPorts() ([]int, error) {
 	var ports []int
-	err := r.db.Model(&models.MinecraftServer{}).
+	// Use Unscoped() to include ports from soft-deleted servers (they still block the port)
+	err := r.db.Unscoped().Model(&models.MinecraftServer{}).
 		Where("port IS NOT NULL").
 		Pluck("port", &ports).Error
 	return ports, err
