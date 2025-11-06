@@ -29,7 +29,8 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
-      - "25565-25665:25565-25665"  # Minecraft server port range
+      # NOTE: Minecraft server ports are managed dynamically by individual server containers
+      # The API container does NOT need to bind these ports
     volumes:
       - ./data:/app/data                      # Config & logs
       - ./minecraft/servers:/app/minecraft/servers  # Minecraft servers data
