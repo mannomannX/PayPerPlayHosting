@@ -24,13 +24,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s' -o payperplay ./cmd/ap
 # Runtime stage
 FROM alpine:latest
 
-# Install runtime dependencies
+# Install runtime dependencies (including su-exec for permission handling)
 RUN apk add --no-cache \
     ca-certificates \
     docker-cli \
     wget \
     curl \
-    tzdata
+    tzdata \
+    su-exec
 
 # Create app user
 RUN addgroup -g 1000 appuser && \
@@ -44,12 +45,15 @@ COPY --from=builder /build/payperplay .
 # Copy web templates
 COPY --from=builder /build/web ./web
 
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Create necessary directories
 RUN mkdir -p /app/data /app/minecraft/servers /app/backups && \
     chown -R appuser:appuser /app
 
-# Switch to non-root user
-USER appuser
+# Note: We start as root so entrypoint can fix permissions, then switch to appuser
 
 # Expose ports
 EXPOSE 8000
@@ -59,5 +63,6 @@ EXPOSE 25565-25665
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD wget --quiet --tries=1 --spider http://localhost:8000/health || exit 1
 
-# Run the application
+# Use entrypoint script to set permissions before running app
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["./payperplay"]
