@@ -50,6 +50,7 @@ func SetupRouter(
 	dbProvider := repository.GetDBProvider()
 	healthHandler := NewHealthHandler(dbProvider)
 	router.GET("/health", healthHandler.HealthCheck)
+	router.HEAD("/health", healthHandler.HealthCheck)  // Docker healthcheck uses HEAD
 	router.GET("/ready", healthHandler.ReadinessCheck)
 	router.GET("/live", healthHandler.LivenessCheck)
 	router.GET("/metrics", healthHandler.MetricsCheck)
