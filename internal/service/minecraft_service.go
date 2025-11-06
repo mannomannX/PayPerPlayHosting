@@ -251,8 +251,11 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 
 // DeleteServer deletes a server and its container
 func (s *MinecraftService) DeleteServer(serverID string) error {
+	log.Printf("Starting deletion of server %s", serverID)
+
 	server, err := s.repo.FindByID(serverID)
 	if err != nil {
+		log.Printf("ERROR: server %s not found: %v", serverID, err)
 		return fmt.Errorf("server not found: %w", err)
 	}
 
@@ -267,6 +270,7 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 
 	// Stop if running
 	if server.Status == models.StatusRunning {
+		log.Printf("Stopping running server %s before deletion", serverID)
 		if err := s.StopServer(serverID, "deleted"); err != nil {
 			log.Printf("Warning: failed to stop server before deletion: %v", err)
 		}
@@ -274,17 +278,28 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 
 	// Remove container
 	if server.ContainerID != "" {
+		log.Printf("Removing container %s", server.ContainerID)
 		if err := s.dockerService.RemoveContainer(server.ContainerID, true); err != nil {
 			log.Printf("Warning: failed to remove container: %v", err)
+		} else {
+			log.Printf("Container %s removed successfully", server.ContainerID)
 		}
 	}
 
+	// Delete usage logs first (in case CASCADE is not set up yet)
+	log.Printf("Deleting usage logs for server %s", serverID)
+	if err := s.repo.DeleteServerUsageLogs(serverID); err != nil {
+		log.Printf("Warning: failed to delete usage logs: %v", err)
+	}
+
 	// Delete from database
+	log.Printf("Deleting server %s from database", serverID)
 	if err := s.repo.Delete(serverID); err != nil {
+		log.Printf("ERROR: failed to delete server from database: %v", err)
 		return fmt.Errorf("failed to delete server: %w", err)
 	}
 
-	log.Printf("Deleted server %s", serverID)
+	log.Printf("Successfully deleted server %s", serverID)
 	return nil
 }
 

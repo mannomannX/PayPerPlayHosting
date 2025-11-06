@@ -81,3 +81,7 @@ func (r *ServerRepository) GetServerUsageLogs(serverID string) ([]models.UsageLo
 		Find(&logs).Error
 	return logs, err
 }
+
+func (r *ServerRepository) DeleteServerUsageLogs(serverID string) error {
+	return r.db.Where("server_id = ?", serverID).Delete(&models.UsageLog{}).Error
+}

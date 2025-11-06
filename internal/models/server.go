@@ -62,7 +62,7 @@ type MinecraftServer struct {
 	VelocityServerName  string `gorm:"size:128"`
 
 	// Relations
-	UsageLogs []UsageLog `gorm:"foreignKey:ServerID"`
+	UsageLogs []UsageLog `gorm:"foreignKey:ServerID;constraint:OnDelete:CASCADE"`
 }
 
 // UsageLog tracks server usage for billing
