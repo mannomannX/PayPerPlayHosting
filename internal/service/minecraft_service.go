@@ -340,17 +340,28 @@ func (s *MinecraftService) CleanOrphanedServers() (int, error) {
 
 	count := 0
 	for _, server := range servers {
-		// Check if container exists and its status
-		if server.ContainerID != "" {
+		shouldDelete := false
+		reason := ""
+
+		// Case 1: Server has no container ID at all (ghost server)
+		if server.ContainerID == "" {
+			shouldDelete = true
+			reason = "no container ID"
+		} else {
+			// Case 2: Server has container ID but container doesn't exist
 			status, err := s.dockerService.GetContainerStatus(server.ContainerID)
 			if err != nil || status == "" {
-				// Container doesn't exist anymore - clean up
-				log.Printf("Cleaning orphaned server %s (container %s not found)", server.ID, server.ContainerID)
-				if err := s.DeleteServer(server.ID); err != nil {
-					log.Printf("Warning: failed to delete orphaned server %s: %v", server.ID, err)
-				} else {
-					count++
-				}
+				shouldDelete = true
+				reason = fmt.Sprintf("container %s not found", server.ContainerID[:12])
+			}
+		}
+
+		if shouldDelete {
+			log.Printf("Cleaning orphaned server %s (%s)", server.ID, reason)
+			if err := s.DeleteServer(server.ID); err != nil {
+				log.Printf("Warning: failed to delete orphaned server %s: %v", server.ID, err)
+			} else {
+				count++
 			}
 		}
 	}
