@@ -16,6 +16,7 @@ func SetupRouter(
 	velocityHandler *VelocityHandler,
 	wsHandler *WebSocketHandler,
 	fileManagerHandler *FileManagerHandler,
+	consoleHandler *ConsoleHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -116,6 +117,10 @@ func SetupRouter(
 			servers.GET("/:id/files/read", fileManagerHandler.ReadFile)
 			servers.POST("/:id/files/write", fileManagerHandler.WriteFile)
 			servers.GET("/:id/files/list", fileManagerHandler.ListFiles)
+
+			// Console Access (WebSocket for real-time logs and command execution)
+			servers.GET("/:id/console/stream", consoleHandler.HandleConsoleWebSocket)
+			servers.GET("/:id/console/logs", consoleHandler.GetConsoleLogs)
 		}
 
 		// Admin endpoints

@@ -99,11 +99,8 @@ func (d *DockerService) CreateContainer(
 		"RCON_PORT=25575",
 	}
 
-	// Port bindings for both game and RCON
-	rconPortBinding := nat.PortBinding{
-		HostIP:   "127.0.0.1", // RCON only on localhost for security
-		HostPort: "25575",
-	}
+	// Note: RCON port is NOT mapped to host for security
+	// Commands are executed via docker exec instead
 
 	// Create container
 	resp, err := d.client.ContainerCreate(
@@ -124,7 +121,7 @@ func (d *DockerService) CreateContainer(
 		&container.HostConfig{
 			PortBindings: nat.PortMap{
 				"25565/tcp": []nat.PortBinding{portBinding},
-				"25575/tcp": []nat.PortBinding{rconPortBinding},
+				// RCON port (25575) is NOT mapped - we use docker exec for commands
 			},
 			Binds: []string{
 				fmt.Sprintf("%s:/data", hostPath),
@@ -265,6 +262,108 @@ func (d *DockerService) RemoveContainerByName(containerName string) error {
 
 	log.Printf("Removed existing container: %s", containerName)
 	return nil
+}
+
+// StreamContainerLogs streams container logs to a channel
+// Returns a channel that receives log lines and a cancel function
+func (d *DockerService) StreamContainerLogs(containerID string) (<-chan string, context.CancelFunc, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+		Tail:       "100", // Show last 100 lines initially
+		Timestamps: false,
+	}
+
+	reader, err := d.client.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to get container logs: %w", err)
+	}
+
+	logChan := make(chan string, 100)
+
+	// Start goroutine to read logs and send to channel
+	go func() {
+		defer close(logChan)
+		defer reader.Close()
+
+		buf := make([]byte, 8192)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				n, err := reader.Read(buf)
+				if err != nil {
+					if err != io.EOF {
+						log.Printf("Error reading container logs: %v", err)
+					}
+					return
+				}
+
+				if n > 0 {
+					// Skip Docker log header (first 8 bytes)
+					// Docker multiplexes stdout/stderr with 8-byte headers
+					logLine := string(buf[8:n])
+
+					// Split by newlines and send each line
+					lines := strings.Split(strings.TrimSpace(logLine), "\n")
+					for _, line := range lines {
+						if line != "" {
+							select {
+							case logChan <- line:
+							case <-ctx.Done():
+								return
+							}
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	return logChan, cancel, nil
+}
+
+// ExecuteCommand executes a Minecraft command in a container
+func (d *DockerService) ExecuteCommand(containerID, command string) (string, error) {
+	ctx := context.Background()
+
+	// Create exec instance with RCON command
+	rconCommand := []string{"rcon-cli", command}
+	execConfig := container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          rconCommand,
+	}
+
+	resp, err := d.client.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	// Start exec and capture output
+	attachResp, err := d.client.ContainerExecAttach(ctx, resp.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer attachResp.Close()
+
+	// Read output
+	output, err := io.ReadAll(attachResp.Reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to read exec output: %w", err)
+	}
+
+	// Skip Docker stream header (8 bytes)
+	if len(output) > 8 {
+		output = output[8:]
+	}
+
+	return strings.TrimSpace(string(output)), nil
 }
 
 // GetContainerStatus gets the status of a container

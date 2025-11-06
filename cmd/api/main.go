@@ -127,8 +127,12 @@ func main() {
 	wsHandler := api.NewWebSocketHandler(wsHub)
 	fileManagerHandler := api.NewFileManagerHandler(fileManagerService)
 
+	// Console service for real-time logs and command execution
+	consoleService := service.NewConsoleService(serverRepo, dockerService)
+	consoleHandler := api.NewConsoleHandler(consoleService)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, cfg)
 
 	// Graceful shutdown
 	go func() {
