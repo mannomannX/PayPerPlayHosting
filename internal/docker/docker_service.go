@@ -175,6 +175,28 @@ func (d *DockerService) RemoveContainer(containerID string, force bool) error {
 	return nil
 }
 
+// RemoveContainerByName removes a Docker container by name
+func (d *DockerService) RemoveContainerByName(containerName string) error {
+	ctx := context.Background()
+
+	// Try to remove the container (force=true to handle any state)
+	err := d.client.ContainerRemove(ctx, containerName, container.RemoveOptions{
+		Force: true,
+	})
+
+	if err != nil {
+		// Check if error is "not found" - that's okay
+		if client.IsErrNotFound(err) {
+			log.Printf("Container %s does not exist (already removed)", containerName)
+			return nil
+		}
+		return fmt.Errorf("failed to remove container by name: %w", err)
+	}
+
+	log.Printf("Removed existing container: %s", containerName)
+	return nil
+}
+
 // GetContainerStatus gets the status of a container
 func (d *DockerService) GetContainerStatus(containerID string) (string, error) {
 	ctx := context.Background()

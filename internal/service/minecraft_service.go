@@ -121,8 +121,17 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return fmt.Errorf("server already running")
 	}
 
-	// Create container if it doesn't exist
-	if server.ContainerID == "" {
+	// CRITICAL: Remove any existing container with the same name before creating a new one
+	// This prevents "port already allocated" errors from zombie containers
+	containerName := fmt.Sprintf("mc-%s", server.ID)
+	log.Printf("Checking for existing container %s before start", containerName)
+	if err := s.dockerService.RemoveContainerByName(containerName); err != nil {
+		log.Printf("Warning: failed to remove old container %s: %v", containerName, err)
+	}
+
+	// Create container if it doesn't exist (or we just removed the old one)
+	if server.ContainerID == "" || server.ContainerID != "" {
+		// Always create a fresh container to avoid state issues
 		containerID, err := s.dockerService.CreateContainer(
 			server.ID,
 			string(server.ServerType),
