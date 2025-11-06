@@ -282,6 +282,12 @@
                                 class="px-4 py-2 border-b-2 transition">
                             Logs
                         </button>
+                        <button @click="detailsModal.tab = 'console'; connectConsole()"
+                                :class="detailsModal.tab === 'console' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition"
+                                x-show="detailsModal.server?.Status === 'running'">
+                            Console
+                        </button>
                     </div>
 
                     <!-- Tab Content -->
@@ -393,6 +399,52 @@
                             <pre class="bg-gray-900 p-4 rounded text-xs overflow-auto max-h-96 text-green-400 font-mono"
                                  x-text="detailsModal.logs"></pre>
                         </div>
+
+                        <!-- Console Tab -->
+                        <div x-show="detailsModal.tab === 'console'" class="space-y-3">
+                            <!-- Console output -->
+                            <div class="bg-gray-900 rounded p-4 h-96 overflow-y-auto font-mono text-xs"
+                                 x-ref="consoleOutput">
+                                <template x-for="(line, idx) in detailsModal.consoleLogs" :key="idx">
+                                    <div :class="{
+                                        'text-green-400': line.type === 'log',
+                                        'text-blue-400': line.type === 'command',
+                                        'text-yellow-400': line.type === 'response',
+                                        'text-red-400': line.type === 'error'
+                                    }">
+                                        <span x-show="line.type === 'command'">&gt; </span>
+                                        <span x-text="line.content"></span>
+                                    </div>
+                                </template>
+                                <div x-show="detailsModal.consoleLogs.length === 0" class="text-gray-500">
+                                    Connecting to console...
+                                </div>
+                            </div>
+
+                            <!-- Command input -->
+                            <div class="flex gap-2">
+                                <input type="text"
+                                       x-model="consoleCommand"
+                                       @keydown.enter="sendCommand()"
+                                       @keydown.up="navigateHistory(-1)"
+                                       @keydown.down="navigateHistory(1)"
+                                       placeholder="Type command (e.g., 'list', 'say Hello')"
+                                       class="flex-1 px-4 py-2 bg-gray-700 rounded border border-gray-600 font-mono text-sm"
+                                       :disabled="!detailsModal.consoleConnected">
+                                <button @click="sendCommand()"
+                                        :disabled="!detailsModal.consoleConnected || !consoleCommand.trim()"
+                                        class="bg-green-500 hover:bg-green-600 disabled:bg-gray-600 text-white px-6 py-2 rounded transition">
+                                    Send
+                                </button>
+                            </div>
+
+                            <!-- Connection status -->
+                            <div class="text-xs text-gray-400 flex items-center gap-2">
+                                <div :class="detailsModal.consoleConnected ? 'bg-green-500' : 'bg-red-500'"
+                                     class="w-2 h-2 rounded-full"></div>
+                                <span x-text="detailsModal.consoleConnected ? 'Connected' : 'Disconnected'"></span>
+                            </div>
+                        </div>
                     </div>
 
                     <button @click="closeDetails()"
@@ -434,10 +486,16 @@
                     usageLogs: [],
                     backups: [],
                     plugins: [],
-                    logs: ''
+                    logs: '',
+                    consoleLogs: [],
+                    consoleConnected: false,
+                    consoleWs: null
                 },
                 pluginSearch: '',
                 availablePlugins: [],
+                consoleCommand: '',
+                commandHistory: [],
+                historyIndex: -1,
 
                 async init() {
                     // Check for stored token
@@ -709,6 +767,8 @@
                 },
 
                 closeDetails() {
+                    // Disconnect console WebSocket if connected
+                    this.disconnectConsole();
                     this.detailsModal.show = false;
                     this.availablePlugins = [];
                 },
@@ -807,6 +867,134 @@
                         }
                     } catch (error) {
                         alert('Failed to remove plugin: ' + error.message);
+                    }
+                },
+
+                // Console WebSocket methods
+                connectConsole() {
+                    if (this.detailsModal.consoleWs) {
+                        return; // Already connected
+                    }
+
+                    const serverId = this.detailsModal.server?.ID;
+                    if (!serverId) return;
+
+                    // Clear previous logs
+                    this.detailsModal.consoleLogs = [];
+
+                    // Build WebSocket URL
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/api/servers/${serverId}/console/stream`;
+
+                    console.log('Connecting to console:', wsUrl);
+
+                    const ws = new WebSocket(wsUrl);
+                    this.detailsModal.consoleWs = ws;
+
+                    ws.onopen = () => {
+                        console.log('Console WebSocket connected');
+                        this.detailsModal.consoleConnected = true;
+                    };
+
+                    ws.onmessage = (event) => {
+                        try {
+                            const message = JSON.parse(event.data);
+                            this.detailsModal.consoleLogs.push({
+                                type: message.type,
+                                content: message.content
+                            });
+
+                            // Auto-scroll to bottom
+                            this.$nextTick(() => {
+                                const output = this.$refs.consoleOutput;
+                                if (output) {
+                                    output.scrollTop = output.scrollHeight;
+                                }
+                            });
+                        } catch (error) {
+                            console.error('Failed to parse console message:', error);
+                        }
+                    };
+
+                    ws.onerror = (error) => {
+                        console.error('Console WebSocket error:', error);
+                        this.detailsModal.consoleLogs.push({
+                            type: 'error',
+                            content: 'WebSocket connection error'
+                        });
+                    };
+
+                    ws.onclose = () => {
+                        console.log('Console WebSocket disconnected');
+                        this.detailsModal.consoleConnected = false;
+                        this.detailsModal.consoleWs = null;
+                    };
+                },
+
+                disconnectConsole() {
+                    if (this.detailsModal.consoleWs) {
+                        this.detailsModal.consoleWs.close();
+                        this.detailsModal.consoleWs = null;
+                        this.detailsModal.consoleConnected = false;
+                    }
+                },
+
+                sendCommand() {
+                    const command = this.consoleCommand.trim();
+                    if (!command || !this.detailsModal.consoleWs) return;
+
+                    // Add to history
+                    this.commandHistory.push(command);
+                    this.historyIndex = -1;
+
+                    // Display command in console
+                    this.detailsModal.consoleLogs.push({
+                        type: 'command',
+                        content: command
+                    });
+
+                    // Send via WebSocket
+                    this.detailsModal.consoleWs.send(JSON.stringify({
+                        type: 'command',
+                        content: command
+                    }));
+
+                    // Clear input
+                    this.consoleCommand = '';
+
+                    // Auto-scroll
+                    this.$nextTick(() => {
+                        const output = this.$refs.consoleOutput;
+                        if (output) {
+                            output.scrollTop = output.scrollHeight;
+                        }
+                    });
+                },
+
+                navigateHistory(direction) {
+                    if (this.commandHistory.length === 0) return;
+
+                    if (direction === -1) {
+                        // Arrow up - go to previous command
+                        if (this.historyIndex === -1) {
+                            this.historyIndex = this.commandHistory.length - 1;
+                        } else if (this.historyIndex > 0) {
+                            this.historyIndex--;
+                        }
+                    } else if (direction === 1) {
+                        // Arrow down - go to next command
+                        if (this.historyIndex !== -1) {
+                            this.historyIndex++;
+                            if (this.historyIndex >= this.commandHistory.length) {
+                                this.historyIndex = -1;
+                                this.consoleCommand = '';
+                                return;
+                            }
+                        }
+                    }
+
+                    if (this.historyIndex !== -1) {
+                        this.consoleCommand = this.commandHistory[this.historyIndex];
                     }
                 },
 
