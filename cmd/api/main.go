@@ -51,6 +51,7 @@ func main() {
 	db := repository.GetDB()
 	serverRepo := repository.NewServerRepository(db)
 	userRepo := repository.NewUserRepository(db)
+	configChangeRepo := repository.NewConfigChangeRepository(db)
 
 	// Initialize services
 	authService := service.NewAuthService(userRepo, cfg)
@@ -122,7 +123,7 @@ func main() {
 	consoleHandler := api.NewConsoleHandler(consoleService)
 
 	// Configuration service for server configuration changes
-	configService := service.NewConfigService(serverRepo, dockerService, backupService)
+	configService := service.NewConfigService(serverRepo, configChangeRepo, dockerService, backupService)
 	configHandler := api.NewConfigHandler(configService, mcService)
 
 	// Setup router

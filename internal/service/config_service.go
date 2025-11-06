@@ -13,21 +13,24 @@ import (
 
 // ConfigService handles server configuration changes with audit trail
 type ConfigService struct {
-	serverRepo    *repository.ServerRepository
-	dockerService *docker.DockerService
-	backupService *BackupService
+	serverRepo       *repository.ServerRepository
+	configChangeRepo *repository.ConfigChangeRepository
+	dockerService    *docker.DockerService
+	backupService    *BackupService
 }
 
 // NewConfigService creates a new configuration service
 func NewConfigService(
 	serverRepo *repository.ServerRepository,
+	configChangeRepo *repository.ConfigChangeRepository,
 	dockerService *docker.DockerService,
 	backupService *BackupService,
 ) *ConfigService {
 	return &ConfigService{
-		serverRepo:    serverRepo,
-		dockerService: dockerService,
-		backupService: backupService,
+		serverRepo:       serverRepo,
+		configChangeRepo: configChangeRepo,
+		dockerService:    dockerService,
+		backupService:    backupService,
 	}
 }
 
@@ -93,6 +96,11 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 
 	change.RequiresRestart = requiresRestart
 
+	// Save initial change record
+	if err := s.configChangeRepo.Create(change); err != nil {
+		return nil, fmt.Errorf("failed to create config change record: %w", err)
+	}
+
 	// 4. Create backup before making changes (if server is running)
 	if server.Status == models.StatusRunning && requiresRestart {
 		logger.Info("Creating backup before config change", map[string]interface{}{
@@ -121,6 +129,9 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 		completedAt := time.Now()
 		change.CompletedAt = &completedAt
 
+		// Update in database
+		s.configChangeRepo.Update(change)
+
 		logger.Error("Config change failed", err, map[string]interface{}{
 			"server_id": req.ServerID,
 			"change_id": change.ID,
@@ -133,6 +144,13 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 	change.Status = models.ConfigChangeStatusCompleted
 	completedAt := time.Now()
 	change.CompletedAt = &completedAt
+
+	// Update in database
+	if err := s.configChangeRepo.Update(change); err != nil {
+		logger.Error("Failed to update config change record", err, map[string]interface{}{
+			"change_id": change.ID,
+		})
+	}
 
 	logger.Info("Config change completed successfully", map[string]interface{}{
 		"server_id":        req.ServerID,
@@ -255,7 +273,5 @@ func (s *ConfigService) isValidRAM(ramMb int) bool {
 
 // GetConfigHistory returns the configuration change history for a server
 func (s *ConfigService) GetConfigHistory(serverID string) ([]models.ConfigChange, error) {
-	// Note: This would need a proper repository method
-	// For now, returning empty slice
-	return []models.ConfigChange{}, nil
+	return s.configChangeRepo.FindByServerID(serverID)
 }
