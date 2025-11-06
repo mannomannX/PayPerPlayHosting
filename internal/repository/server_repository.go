@@ -52,7 +52,8 @@ func (r *ServerRepository) Update(server *models.MinecraftServer) error {
 }
 
 func (r *ServerRepository) Delete(id string) error {
-	return r.db.Where("id = ?", id).Delete(&models.MinecraftServer{}).Error
+	// Use Unscoped() to perform a hard delete (not soft delete)
+	return r.db.Unscoped().Where("id = ?", id).Delete(&models.MinecraftServer{}).Error
 }
 
 func (r *ServerRepository) GetUsedPorts() ([]int, error) {
@@ -92,5 +93,6 @@ func (r *ServerRepository) GetServerUsageLogs(serverID string) ([]models.UsageLo
 }
 
 func (r *ServerRepository) DeleteServerUsageLogs(serverID string) error {
-	return r.db.Where("server_id = ?", serverID).Delete(&models.UsageLog{}).Error
+	// Use Unscoped() to perform a hard delete (not soft delete)
+	return r.db.Unscoped().Where("server_id = ?", serverID).Delete(&models.UsageLog{}).Error
 }
