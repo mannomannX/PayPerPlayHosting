@@ -57,18 +57,8 @@ func main() {
 	mcService := service.NewMinecraftService(serverRepo, dockerService, cfg)
 	monitoringService := service.NewMonitoringService(mcService, serverRepo, cfg)
 
-	// Automatically clean orphaned servers on startup
-	logger.Info("Running automatic orphaned server cleanup...", nil)
-	cleanedCount, err := mcService.CleanOrphanedServers()
-	if err != nil {
-		logger.Warn("Failed to clean orphaned servers on startup", map[string]interface{}{
-			"error": err.Error(),
-		})
-	} else {
-		logger.Info("Orphaned server cleanup completed", map[string]interface{}{
-			"cleaned_count": cleanedCount,
-		})
-	}
+	// Note: Orphaned server cleanup is NOT run on startup to avoid race conditions
+	// during container restarts. The monitoring service handles cleanup periodically.
 
 	// Link auth service to middleware
 	middleware.SetAuthService(authService)
