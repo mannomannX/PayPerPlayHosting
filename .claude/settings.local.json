@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go mod tidy:*)",
+      "Bash(cat:*)",
+      "Bash(go version:*)",
+      "Bash(go build:*)",
+      "Bash(go get:*)",
+      "Bash(dir:*)",
+      "Bash(powershell -Command \"Get-Item payperplay.exe | Select-Object Name, Length, LastWriteTime\")",
+      "Bash(go vet:*)",
+      "Bash(go mod verify:*)",
+      "Bash(timeout:*)",
+      "Bash(nul)",
+      "Bash(.payperplay.exe)",
+      "Bash(./payperplay.exe)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

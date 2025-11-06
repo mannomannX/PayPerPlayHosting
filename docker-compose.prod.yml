@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # PayPerPlay Backend API
+  payperplay:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: payperplay-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+      - "25565-25665:25565-25665"  # Minecraft server port range
+    volumes:
+      - ./data:/app/data                      # Database & config
+      - ./minecraft/servers:/app/minecraft/servers  # Minecraft servers data
+      - ./backups:/app/backups                # Server backups
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for managing containers
+    environment:
+      # Application
+      - APP_NAME=PayPerPlay
+      - DEBUG=false
+      - PORT=8000
+      - LOG_LEVEL=INFO
+      - LOG_JSON=true
+
+      # Database
+      - DATABASE_TYPE=sqlite
+      - DATABASE_PATH=/app/data/payperplay.db
+
+      # Authentication (CHANGE IN PRODUCTION!)
+      - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-me-in-production}
+
+      # Minecraft
+      - SERVERS_BASE_PATH=/app/minecraft/servers
+      - DEFAULT_IDLE_TIMEOUT=300
+      - MC_PORT_START=25565
+      - MC_PORT_END=25665
+
+      # Billing rates (EUR/hour)
+      - RATE_2GB=0.10
+      - RATE_4GB=0.20
+      - RATE_8GB=0.40
+      - RATE_16GB=0.80
+    networks:
+      - payperplay-network
+    depends_on:
+      - velocity
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Velocity Proxy (for auto-wakeup)
+  velocity:
+    image: itzg/velocity:latest
+    container_name: payperplay-velocity
+    restart: unless-stopped
+    ports:
+      - "25577:25577"  # Velocity proxy port
+    volumes:
+      - ./velocity:/server
+      - ./velocity-plugin/target:/plugins  # Velocity plugin
+    environment:
+      - EULA=TRUE
+      - TYPE=VELOCITY
+      - MEMORY=1G
+    networks:
+      - payperplay-network
+    healthcheck:
+      test: ["CMD-SHELL", "mc-monitor status --host localhost --port 25577 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Nginx Reverse Proxy (optional for HTTPS)
+  nginx:
+    image: nginx:alpine
+    container_name: payperplay-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - payperplay-network
+    depends_on:
+      - payperplay
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  payperplay-network:
+    driver: bridge
+
+volumes:
+  minecraft-data:
+  backup-data:

@@ -1,0 +1,11 @@
+{
+  "id": "payperplay-velocity",
+  "name": "PayPerPlay Velocity Plugin",
+  "version": "1.0.0",
+  "description": "Auto-wakeup plugin for PayPerPlay Minecraft hosting",
+  "url": "https://github.com/payperplay/hosting",
+  "authors": [
+    "PayPerPlay Team"
+  ],
+  "main": "com.payperplay.velocity.PayPerPlayPlugin"
+}

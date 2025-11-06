@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }}</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div x-data="app()" x-init="init()" class="min-h-screen">
+        <!-- Login/Register Screen -->
+        <div x-show="!isAuthenticated" class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-gray-800 rounded-lg p-8 max-w-md w-full">
+                <h1 class="text-4xl font-bold text-green-400 mb-2 text-center">PayPerPlay</h1>
+                <p class="text-gray-400 text-center mb-8">Minecraft Hosting - Pay only when you play ⚡</p>
+
+                <!-- Tabs -->
+                <div class="flex gap-2 mb-6 border-b border-gray-700">
+                    <button @click="authTab = 'login'"
+                            :class="authTab === 'login' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                            class="px-4 py-2 border-b-2 transition font-semibold">
+                        Login
+                    </button>
+                    <button @click="authTab = 'register'"
+                            :class="authTab === 'register' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                            class="px-4 py-2 border-b-2 transition font-semibold">
+                        Register
+                    </button>
+                </div>
+
+                <!-- Login Form -->
+                <form x-show="authTab === 'login'" @submit.prevent="login" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Email</label>
+                        <input type="email" x-model="loginForm.email" required
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Password</label>
+                        <input type="password" x-model="loginForm.password" required
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                    </div>
+                    <button type="submit"
+                            class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded transition">
+                        Login
+                    </button>
+                </form>
+
+                <!-- Register Form -->
+                <form x-show="authTab === 'register'" @submit.prevent="register" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Username</label>
+                        <input type="text" x-model="registerForm.username" required minlength="3"
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Email</label>
+                        <input type="email" x-model="registerForm.email" required
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Password (min. 8 characters)</label>
+                        <input type="password" x-model="registerForm.password" required minlength="8"
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                    </div>
+                    <button type="submit"
+                            class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded transition">
+                        Create Account
+                    </button>
+                </form>
+
+                <!-- Error Message -->
+                <div x-show="authError" class="mt-4 p-3 bg-red-500 bg-opacity-20 border border-red-500 rounded text-sm"
+                     x-text="authError"></div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div x-show="isAuthenticated" class="container mx-auto px-4 py-8">
+            <!-- Header -->
+            <header class="mb-8 flex justify-between items-start">
+                <div>
+                    <h1 class="text-4xl font-bold text-green-400 flex items-center gap-2">
+                        <span>PayPerPlay</span>
+                        <span class="text-sm text-gray-400 font-normal">v2.0</span>
+                    </h1>
+                    <p class="text-gray-400">Minecraft Hosting - Pay only when you play ⚡</p>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Auto-Shutdown • Real-time Monitoring • Backups • Plugins
+                    </p>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm text-gray-400">
+                        <span x-text="user?.username || user?.email"></span>
+                    </div>
+                    <div class="text-2xl font-bold text-green-400">
+                        €<span x-text="user?.balance?.toFixed(2) || '0.00'"></span>
+                    </div>
+                    <button @click="logout"
+                            class="mt-2 text-sm text-red-400 hover:text-red-300 transition">
+                        Logout
+                    </button>
+                </div>
+            </header>
+
+            <!-- Create Server Form -->
+            <div class="bg-gray-800 rounded-lg p-6 mb-8">
+                <h2 class="text-2xl font-bold mb-4">Create New Server</h2>
+                <form @submit.prevent="createServer" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Server Name</label>
+                        <input type="text" x-model="newServer.name" required
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Server Type</label>
+                            <select x-model="newServer.server_type" required
+                                    class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                                <option value="paper">Paper (Recommended - Plugins)</option>
+                                <option value="spigot">Spigot (Plugins)</option>
+                                <option value="forge">Forge (Mods)</option>
+                                <option value="fabric">Fabric (Mods, Performance)</option>
+                                <option value="vanilla">Vanilla (Pure MC)</option>
+                                <option value="purpur">Purpur (Experimental)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Minecraft Version</label>
+                            <input type="text" x-model="newServer.minecraft_version" placeholder="1.20.4" required
+                                   class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">RAM</label>
+                        <select x-model.number="newServer.ram_mb" required
+                                class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
+                            <option value="2048">2 GB - €0.10/hour (1-5 players)</option>
+                            <option value="4096">4 GB - €0.20/hour (6-15 players)</option>
+                            <option value="8192">8 GB - €0.40/hour (16-30 players)</option>
+                            <option value="16384">16 GB - €0.80/hour (31+ players)</option>
+                        </select>
+                    </div>
+
+                    <button type="submit"
+                            class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded transition">
+                        Create Server
+                    </button>
+                </form>
+            </div>
+
+            <!-- Servers List -->
+            <div class="bg-gray-800 rounded-lg p-6">
+                <h2 class="text-2xl font-bold mb-4">Your Servers</h2>
+
+                <div x-show="loading" class="text-center py-8">
+                    <p class="text-gray-400">Loading servers...</p>
+                </div>
+
+                <div x-show="!loading && servers.length === 0" class="text-center py-8">
+                    <p class="text-gray-400">No servers yet. Create one above!</p>
+                </div>
+
+                <div x-show="!loading && servers.length > 0" class="space-y-4">
+                    <template x-for="server in servers" :key="server.ID">
+                        <div class="bg-gray-700 rounded-lg p-5">
+                            <!-- Server Header -->
+                            <div class="flex items-start justify-between mb-3">
+                                <div class="flex-1">
+                                    <h3 class="text-xl font-bold flex items-center gap-2">
+                                        <span x-text="server.Name"></span>
+                                        <span :class="{
+                                            'bg-green-500': server.Status === 'running',
+                                            'bg-gray-500': server.Status === 'stopped',
+                                            'bg-yellow-500': server.Status === 'starting' || server.Status === 'stopping',
+                                            'bg-red-500': server.Status === 'error'
+                                        }" class="px-3 py-1 rounded-full text-xs font-semibold uppercase">
+                                            <span x-text="server.Status"></span>
+                                        </span>
+                                    </h3>
+                                    <div class="text-sm text-gray-300 mt-1 flex flex-wrap gap-x-3 gap-y-1">
+                                        <span class="flex items-center gap-1">
+                                            <span class="text-green-400">●</span>
+                                            <span x-text="server.ServerType"></span>
+                                        </span>
+                                        <span>MC <span x-text="server.MinecraftVersion"></span></span>
+                                        <span><span x-text="(server.RAMMb / 1024).toFixed(0)"></span> GB RAM</span>
+                                        <span>Port: <span x-text="server.Port"></span></span>
+                                    </div>
+
+                                    <!-- Real-time Status (if running) -->
+                                    <div x-show="server.Status === 'running' && serverStatuses[server.ID]"
+                                         class="mt-2 text-xs text-gray-400 flex gap-4">
+                                        <span class="flex items-center gap-1">
+                                            <span class="text-blue-400">👥</span>
+                                            <span x-text="serverStatuses[server.ID]?.player_count || 0"></span> players
+                                        </span>
+                                        <span x-show="serverStatuses[server.ID]?.idle_seconds > 0">
+                                            Idle: <span x-text="formatSeconds(serverStatuses[server.ID]?.idle_seconds)"></span>
+                                            / <span x-text="formatSeconds(serverStatuses[server.ID]?.timeout_seconds)"></span>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-2 flex-wrap">
+                                    <button @click="startServer(server.ID)"
+                                            x-show="server.Status === 'stopped'"
+                                            class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded transition text-sm">
+                                        Start
+                                    </button>
+                                    <button @click="stopServer(server.ID)"
+                                            x-show="server.Status === 'running'"
+                                            class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded transition text-sm">
+                                        Stop
+                                    </button>
+                                    <button @click="viewDetails(server)"
+                                            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded transition text-sm">
+                                        Details
+                                    </button>
+                                    <button @click="deleteServer(server.ID)"
+                                            class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded transition text-sm">
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Server Details Modal -->
+            <div x-show="detailsModal.show"
+                 class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+                 x-cloak>
+                <div class="bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                    <h3 class="text-2xl font-bold mb-4" x-text="detailsModal.server?.Name"></h3>
+
+                    <!-- Tabs -->
+                    <div class="flex gap-2 mb-4 border-b border-gray-700">
+                        <button @click="detailsModal.tab = 'usage'"
+                                :class="detailsModal.tab === 'usage' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Usage
+                        </button>
+                        <button @click="detailsModal.tab = 'backups'"
+                                :class="detailsModal.tab === 'backups' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Backups
+                        </button>
+                        <button @click="detailsModal.tab = 'plugins'"
+                                :class="detailsModal.tab === 'plugins' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition"
+                                x-show="['paper', 'spigot', 'purpur'].includes(detailsModal.server?.ServerType)">
+                            Plugins
+                        </button>
+                        <button @click="detailsModal.tab = 'logs'"
+                                :class="detailsModal.tab === 'logs' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Logs
+                        </button>
+                    </div>
+
+                    <!-- Tab Content -->
+                    <div class="min-h-[400px]">
+                        <!-- Usage Tab -->
+                        <div x-show="detailsModal.tab === 'usage'" class="space-y-2">
+                            <template x-for="log in detailsModal.usageLogs" :key="log.ID">
+                                <div class="bg-gray-700 p-3 rounded">
+                                    <div class="flex justify-between">
+                                        <span x-text="new Date(log.StartedAt).toLocaleString()"></span>
+                                        <span x-text="'€' + (log.CostEUR || 0).toFixed(4)" class="font-bold text-green-400"></span>
+                                    </div>
+                                    <div class="text-sm text-gray-400 mt-1">
+                                        <span x-show="log.DurationSeconds">
+                                            Duration: <span x-text="formatDuration(log.DurationSeconds)"></span>
+                                        </span>
+                                        <span x-show="log.PlayerCountPeak > 0" class="ml-3">
+                                            Peak: <span x-text="log.PlayerCountPeak"></span> players
+                                        </span>
+                                        <span x-show="log.ShutdownReason" class="ml-3">
+                                            Reason: <span x-text="log.ShutdownReason"></span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="detailsModal.usageLogs.length === 0" class="text-center py-8 text-gray-400">
+                                No usage logs yet
+                            </div>
+                        </div>
+
+                        <!-- Backups Tab -->
+                        <div x-show="detailsModal.tab === 'backups'" class="space-y-3">
+                            <button @click="createBackup(detailsModal.server?.ID)"
+                                    class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded transition">
+                                Create Backup Now
+                            </button>
+                            <template x-for="backup in detailsModal.backups" :key="backup.filename">
+                                <div class="bg-gray-700 p-3 rounded flex justify-between items-center">
+                                    <div>
+                                        <div x-text="backup.filename"></div>
+                                        <div class="text-xs text-gray-400">
+                                            <span x-text="(backup.size_bytes / 1024 / 1024).toFixed(2) + ' MB'"></span> •
+                                            <span x-text="new Date(backup.created_at).toLocaleString()"></span>
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button @click="restoreBackup(detailsModal.server?.ID, backup.path)"
+                                                class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm">
+                                            Restore
+                                        </button>
+                                        <button @click="deleteBackup(detailsModal.server?.ID, backup.filename)"
+                                                class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="detailsModal.backups.length === 0" class="text-center py-8 text-gray-400">
+                                No backups yet. Create one above!
+                            </div>
+                        </div>
+
+                        <!-- Plugins Tab -->
+                        <div x-show="detailsModal.tab === 'plugins'" class="space-y-3">
+                            <div class="flex gap-2">
+                                <input type="text" x-model="pluginSearch" placeholder="Search plugins..."
+                                       class="flex-1 px-4 py-2 bg-gray-700 rounded border border-gray-600">
+                                <button @click="searchPlugins()"
+                                        class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                                    Search
+                                </button>
+                            </div>
+
+                            <div x-show="availablePlugins.length > 0" class="space-y-2">
+                                <h4 class="font-bold">Available Plugins</h4>
+                                <template x-for="plugin in availablePlugins" :key="plugin.name">
+                                    <div class="bg-gray-700 p-3 rounded flex justify-between items-center">
+                                        <div>
+                                            <div class="font-semibold" x-text="plugin.name"></div>
+                                            <div class="text-xs text-gray-400" x-text="plugin.description"></div>
+                                        </div>
+                                        <button @click="installPlugin(detailsModal.server?.ID, plugin)"
+                                                class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm">
+                                            Install
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <div class="border-t border-gray-600 pt-3">
+                                <h4 class="font-bold mb-2">Installed Plugins</h4>
+                                <template x-for="plugin in detailsModal.plugins" :key="plugin.filename">
+                                    <div class="bg-gray-700 p-2 rounded flex justify-between items-center">
+                                        <span x-text="plugin.filename"></span>
+                                        <button @click="removePlugin(detailsModal.server?.ID, plugin.filename)"
+                                                class="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs">
+                                            Remove
+                                        </button>
+                                    </div>
+                                </template>
+                                <div x-show="detailsModal.plugins.length === 0" class="text-center py-4 text-gray-400 text-sm">
+                                    No plugins installed
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Logs Tab -->
+                        <div x-show="detailsModal.tab === 'logs'">
+                            <pre class="bg-gray-900 p-4 rounded text-xs overflow-auto max-h-96 text-green-400 font-mono"
+                                 x-text="detailsModal.logs"></pre>
+                        </div>
+                    </div>
+
+                    <button @click="closeDetails()"
+                            class="mt-4 w-full bg-gray-600 hover:bg-gray-500 text-white py-2 rounded">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                // Auth state
+                isAuthenticated: false,
+                authTab: 'login',
+                authError: '',
+                loginForm: { email: '', password: '' },
+                registerForm: { username: '', email: '', password: '' },
+                user: null,
+                token: null,
+
+                // Server state
+                servers: [],
+                serverStatuses: {},
+                loading: true,
+                newServer: {
+                    name: '',
+                    server_type: 'paper',
+                    minecraft_version: '1.20.4',
+                    ram_mb: 2048
+                },
+                detailsModal: {
+                    show: false,
+                    server: null,
+                    tab: 'usage',
+                    usageLogs: [],
+                    backups: [],
+                    plugins: [],
+                    logs: ''
+                },
+                pluginSearch: '',
+                availablePlugins: [],
+
+                async init() {
+                    // Check for stored token
+                    this.token = localStorage.getItem('token');
+                    if (this.token) {
+                        await this.loadProfile();
+                    }
+                },
+
+                // Auth methods
+                async login() {
+                    this.authError = '';
+                    try {
+                        const response = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.loginForm)
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.token = data.token;
+                            localStorage.setItem('token', this.token);
+                            await this.loadProfile();
+                            this.loginForm = { email: '', password: '' };
+                        } else {
+                            const error = await response.json();
+                            this.authError = error.error || 'Login failed';
+                        }
+                    } catch (error) {
+                        this.authError = 'Login failed: ' + error.message;
+                    }
+                },
+
+                async register() {
+                    this.authError = '';
+                    try {
+                        const response = await fetch('/api/auth/register', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.registerForm)
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.token = data.token;
+                            localStorage.setItem('token', this.token);
+                            await this.loadProfile();
+                            this.registerForm = { username: '', email: '', password: '' };
+                        } else {
+                            const error = await response.json();
+                            this.authError = error.error || 'Registration failed';
+                        }
+                    } catch (error) {
+                        this.authError = 'Registration failed: ' + error.message;
+                    }
+                },
+
+                async loadProfile() {
+                    try {
+                        const response = await fetch('/api/auth/profile', {
+                            headers: { 'Authorization': `Bearer ${this.token}` }
+                        });
+
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.user = data.user;
+                            this.isAuthenticated = true;
+                            await this.loadServers();
+
+                            // Auto-refresh
+                            setInterval(() => {
+                                this.loadServers();
+                                this.loadServerStatuses();
+                            }, 5000);
+                        } else {
+                            // Token invalid
+                            this.logout();
+                        }
+                    } catch (error) {
+                        console.error('Failed to load profile:', error);
+                        this.logout();
+                    }
+                },
+
+                logout() {
+                    this.token = null;
+                    this.user = null;
+                    this.isAuthenticated = false;
+                    this.servers = [];
+                    localStorage.removeItem('token');
+                },
+
+                // API helper
+                async apiCall(url, options = {}) {
+                    const headers = {
+                        'Authorization': `Bearer ${this.token}`,
+                        ...options.headers
+                    };
+
+                    const response = await fetch(url, { ...options, headers });
+
+                    if (response.status === 401) {
+                        this.logout();
+                        throw new Error('Session expired. Please login again.');
+                    }
+
+                    return response;
+                },
+
+                // Server methods
+                async loadServers() {
+                    if (!this.isAuthenticated) return;
+
+                    try {
+                        const response = await this.apiCall('/api/servers');
+                        if (response.ok) {
+                            this.servers = await response.json();
+                        }
+                        this.loading = false;
+                    } catch (error) {
+                        console.error('Failed to load servers:', error);
+                        this.loading = false;
+                    }
+                },
+
+                async loadServerStatuses() {
+                    if (this.servers.length === 0) return;
+
+                    for (const server of this.servers) {
+                        if (server.Status === 'running') {
+                            try {
+                                const response = await this.apiCall(`/api/servers/${server.ID}/status`);
+                                if (response.ok) {
+                                    const status = await response.json();
+                                    this.serverStatuses[server.ID] = status;
+                                }
+                            } catch (error) {
+                                console.error(`Failed to load status for ${server.ID}:`, error);
+                            }
+                        }
+                    }
+                },
+
+                async createServer() {
+                    try {
+                        const response = await this.apiCall('/api/servers', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.newServer)
+                        });
+
+                        if (response.ok) {
+                            alert('Server created successfully!');
+                            this.newServer.name = '';
+                            await this.loadServers();
+                            await this.loadProfile(); // Refresh balance
+                        } else {
+                            const error = await response.json();
+                            alert('Error: ' + error.error);
+                        }
+                    } catch (error) {
+                        alert('Failed to create server: ' + error.message);
+                    }
+                },
+
+                async startServer(id) {
+                    try {
+                        const response = await this.apiCall(`/api/servers/${id}/start`, { method: 'POST' });
+                        if (response.ok) {
+                            await this.loadServers();
+                        }
+                    } catch (error) {
+                        alert('Failed to start server: ' + error.message);
+                    }
+                },
+
+                async stopServer(id) {
+                    try {
+                        const response = await this.apiCall(`/api/servers/${id}/stop`, { method: 'POST' });
+                        if (response.ok) {
+                            await this.loadServers();
+                        }
+                    } catch (error) {
+                        alert('Failed to stop server: ' + error.message);
+                    }
+                },
+
+                async deleteServer(id) {
+                    if (!confirm('Are you sure you want to delete this server?')) return;
+
+                    try {
+                        const response = await this.apiCall(`/api/servers/${id}`, { method: 'DELETE' });
+                        if (response.ok) {
+                            await this.loadServers();
+                        }
+                    } catch (error) {
+                        alert('Failed to delete server: ' + error.message);
+                    }
+                },
+
+                async viewDetails(server) {
+                    this.detailsModal.server = server;
+                    this.detailsModal.show = true;
+                    this.detailsModal.tab = 'usage';
+
+                    // Load usage logs
+                    try {
+                        const response = await this.apiCall(`/api/servers/${server.ID}/usage`);
+                        if (response.ok) {
+                            this.detailsModal.usageLogs = await response.json();
+                        }
+                    } catch (error) {
+                        console.error('Failed to load usage:', error);
+                    }
+
+                    // Load backups
+                    try {
+                        const response = await this.apiCall(`/api/servers/${server.ID}/backups`);
+                        if (response.ok) {
+                            this.detailsModal.backups = await response.json();
+                        }
+                    } catch (error) {
+                        console.error('Failed to load backups:', error);
+                    }
+
+                    // Load plugins (if applicable)
+                    if (['paper', 'spigot', 'purpur'].includes(server.ServerType)) {
+                        try {
+                            const response = await this.apiCall(`/api/servers/${server.ID}/plugins`);
+                            if (response.ok) {
+                                this.detailsModal.plugins = await response.json();
+                            }
+                        } catch (error) {
+                            console.error('Failed to load plugins:', error);
+                        }
+                    }
+
+                    // Load logs
+                    try {
+                        const response = await this.apiCall(`/api/servers/${server.ID}/logs?tail=100`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.detailsModal.logs = data.logs || 'No logs available';
+                        }
+                    } catch (error) {
+                        this.detailsModal.logs = 'Failed to load logs';
+                    }
+                },
+
+                closeDetails() {
+                    this.detailsModal.show = false;
+                    this.availablePlugins = [];
+                },
+
+                async createBackup(serverId) {
+                    try {
+                        const response = await this.apiCall(`/api/servers/${serverId}/backups`, { method: 'POST' });
+                        if (response.ok) {
+                            alert('Backup created successfully!');
+                            const backupsResponse = await this.apiCall(`/api/servers/${serverId}/backups`);
+                            if (backupsResponse.ok) {
+                                this.detailsModal.backups = await backupsResponse.json();
+                            }
+                        }
+                    } catch (error) {
+                        alert('Failed to create backup: ' + error.message);
+                    }
+                },
+
+                async restoreBackup(serverId, backupPath) {
+                    if (!confirm('Restore from this backup? Current data will be replaced!')) return;
+
+                    try {
+                        const response = await this.apiCall(`/api/servers/${serverId}/backups/restore`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ backup_path: backupPath })
+                        });
+                        if (response.ok) {
+                            alert('Backup restored successfully!');
+                        }
+                    } catch (error) {
+                        alert('Failed to restore backup: ' + error.message);
+                    }
+                },
+
+                async deleteBackup(serverId, filename) {
+                    if (!confirm('Delete this backup?')) return;
+
+                    try {
+                        const response = await this.apiCall(`/api/servers/${serverId}/backups/${filename}`, { method: 'DELETE' });
+                        if (response.ok) {
+                            const backupsResponse = await this.apiCall(`/api/servers/${serverId}/backups`);
+                            if (backupsResponse.ok) {
+                                this.detailsModal.backups = await backupsResponse.json();
+                            }
+                        }
+                    } catch (error) {
+                        alert('Failed to delete backup: ' + error.message);
+                    }
+                },
+
+                async searchPlugins() {
+                    try {
+                        const response = await this.apiCall(`/api/plugins/search?q=${encodeURIComponent(this.pluginSearch)}`);
+                        if (response.ok) {
+                            this.availablePlugins = await response.json();
+                        }
+                    } catch (error) {
+                        alert('Failed to search plugins: ' + error.message);
+                    }
+                },
+
+                async installPlugin(serverId, plugin) {
+                    try {
+                        const response = await this.apiCall(`/api/servers/${serverId}/plugins`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                plugin_url: plugin.download_url,
+                                filename: `${plugin.name}.jar`
+                            })
+                        });
+                        if (response.ok) {
+                            alert(`${plugin.name} installed successfully!`);
+                            const pluginsResponse = await this.apiCall(`/api/servers/${serverId}/plugins`);
+                            if (pluginsResponse.ok) {
+                                this.detailsModal.plugins = await pluginsResponse.json();
+                            }
+                        }
+                    } catch (error) {
+                        alert('Failed to install plugin: ' + error.message);
+                    }
+                },
+
+                async removePlugin(serverId, filename) {
+                    if (!confirm(`Remove ${filename}?`)) return;
+
+                    try {
+                        const response = await this.apiCall(`/api/servers/${serverId}/plugins/${filename}`, { method: 'DELETE' });
+                        if (response.ok) {
+                            const pluginsResponse = await this.apiCall(`/api/servers/${serverId}/plugins`);
+                            if (pluginsResponse.ok) {
+                                this.detailsModal.plugins = await pluginsResponse.json();
+                            }
+                        }
+                    } catch (error) {
+                        alert('Failed to remove plugin: ' + error.message);
+                    }
+                },
+
+                formatDuration(seconds) {
+                    const hours = Math.floor(seconds / 3600);
+                    const minutes = Math.floor((seconds % 3600) / 60);
+                    return `${hours}h ${minutes}m`;
+                },
+
+                formatSeconds(seconds) {
+                    const mins = Math.floor(seconds / 60);
+                    const secs = seconds % 60;
+                    return `${mins}m ${secs}s`;
+                }
+            }
+        }
+    </script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</body>
+</html>
