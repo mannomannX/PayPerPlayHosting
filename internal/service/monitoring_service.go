@@ -14,9 +14,10 @@ import (
 
 // MonitoringService monitors running servers and handles auto-shutdown
 type MonitoringService struct {
-	mcService *MinecraftService
-	repo      *repository.ServerRepository
-	cfg       *config.Config
+	mcService      *MinecraftService
+	repo           *repository.ServerRepository
+	cfg            *config.Config
+	recoveryService *RecoveryService
 
 	// Track idle timers per server
 	idleTimers map[string]*IdleTimer
@@ -70,6 +71,12 @@ func (m *MonitoringService) Stop() {
 	m.cancel()
 }
 
+// SetRecoveryService sets the recovery service for crash handling
+func (m *MonitoringService) SetRecoveryService(recoveryService *RecoveryService) {
+	m.recoveryService = recoveryService
+	log.Println("Recovery service linked to monitoring")
+}
+
 // monitorLoop runs the main monitoring loop
 func (m *MonitoringService) monitorLoop() {
 	ticker := time.NewTicker(60 * time.Second) // Check every 60 seconds
@@ -81,6 +88,13 @@ func (m *MonitoringService) monitorLoop() {
 			return
 		case <-ticker.C:
 			m.checkAllServers()
+
+			// Also check for crashed servers if recovery service is available
+			if m.recoveryService != nil {
+				if err := m.recoveryService.CheckAndRecoverCrashedServers(); err != nil {
+					log.Printf("Error checking for crashed servers: %v", err)
+				}
+			}
 		}
 	}
 }

@@ -58,6 +58,12 @@ func main() {
 	mcService := service.NewMinecraftService(serverRepo, dockerService, cfg)
 	monitoringService := service.NewMonitoringService(mcService, serverRepo, cfg)
 
+	// Initialize Recovery Service for automatic crash handling
+	recoveryService := service.NewRecoveryService(serverRepo, dockerService, cfg)
+	recoveryService.Start()
+	defer recoveryService.Stop()
+	logger.Info("Recovery service started", nil)
+
 	// Note: Orphaned server cleanup is NOT run on startup to avoid race conditions
 	// during container restarts. The monitoring service handles cleanup periodically.
 
@@ -77,6 +83,10 @@ func main() {
 
 	// Link WebSocket Hub to services for real-time updates
 	mcService.SetWebSocketHub(wsHub)
+	recoveryService.SetWebSocketHub(wsHub)
+
+	// Link Recovery Service to Monitoring Service for crash detection
+	monitoringService.SetRecoveryService(recoveryService)
 
 	// Initialize Velocity service
 	velocityService, err := velocity.NewVelocityService(
