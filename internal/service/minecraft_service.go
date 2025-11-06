@@ -93,8 +93,56 @@ func (s *MinecraftService) CreateServer(
 		MaxPlayers:           20,
 	}
 
-	if err := s.repo.Create(server); err != nil {
-		return nil, fmt.Errorf("failed to create server record: %w", err)
+	// Try to create server record
+	err = s.repo.Create(server)
+	if err != nil {
+		// Check if it's a port conflict (duplicate key constraint)
+		if strings.Contains(err.Error(), "duplicate key") && strings.Contains(err.Error(), "port") {
+			log.Printf("Port conflict detected for port %d, attempting automatic cleanup...", port)
+
+			// Find the server blocking this port
+			blockingServer, findErr := s.repo.FindByPort(port)
+			if findErr == nil && blockingServer != nil {
+				log.Printf("Found blocking server: %s (ContainerID: %s)", blockingServer.ID, blockingServer.ContainerID)
+
+				// Check if it's a ghost server (no container) or has missing container
+				shouldDelete := false
+				if blockingServer.ContainerID == "" {
+					log.Printf("Blocking server %s is a ghost server (no container ID)", blockingServer.ID)
+					shouldDelete = true
+				} else {
+					// Check if container actually exists
+					_, statusErr := s.dockerService.GetContainerStatus(blockingServer.ContainerID)
+					if statusErr != nil {
+						log.Printf("Blocking server %s has missing container", blockingServer.ID)
+						shouldDelete = true
+					}
+				}
+
+				if shouldDelete {
+					log.Printf("Auto-deleting orphaned server %s to free port %d", blockingServer.ID, port)
+					if delErr := s.DeleteServer(blockingServer.ID); delErr != nil {
+						log.Printf("Failed to auto-delete blocking server: %v", delErr)
+					} else {
+						log.Printf("Successfully removed blocking server, retrying creation...")
+						// Retry creation once
+						if retryErr := s.repo.Create(server); retryErr != nil {
+							return nil, fmt.Errorf("failed to create server after cleanup: %w", retryErr)
+						}
+						// Success after cleanup!
+						log.Printf("Server created successfully after automatic cleanup")
+						err = nil // Clear the error
+					}
+				} else {
+					log.Printf("Blocking server %s has a valid container, cannot auto-delete", blockingServer.ID)
+				}
+			}
+		}
+
+		// If we still have an error, return it
+		if err != nil {
+			return nil, fmt.Errorf("failed to create server record: %w", err)
+		}
 	}
 
 	// Register with Velocity if available

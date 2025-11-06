@@ -38,6 +38,15 @@ func (r *ServerRepository) FindByOwner(ownerID string) ([]models.MinecraftServer
 	return servers, err
 }
 
+func (r *ServerRepository) FindByPort(port int) (*models.MinecraftServer, error) {
+	var server models.MinecraftServer
+	err := r.db.Where("port = ?", port).First(&server).Error
+	if err != nil {
+		return nil, err
+	}
+	return &server, nil
+}
+
 func (r *ServerRepository) Update(server *models.MinecraftServer) error {
 	return r.db.Save(server).Error
 }
