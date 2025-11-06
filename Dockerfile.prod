@@ -1,6 +1,10 @@
 # Build stage
 FROM golang:1.23-alpine AS builder
 
+# Set Go toolchain to auto (allows using newer Go version if needed)
+ENV GOTOOLCHAIN=auto
+ENV GOPROXY=https://proxy.golang.org,direct
+
 # Install build dependencies
 RUN apk add --no-cache git gcc musl-dev
 
