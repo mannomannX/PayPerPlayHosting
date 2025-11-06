@@ -3,7 +3,7 @@ FROM golang:1.23-alpine AS builder
 
 # Set Go toolchain to auto (allows using newer Go version if needed)
 ENV GOTOOLCHAIN=auto
-ENV GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=direct
 
 # Install build dependencies (git only, no CGO needed for PostgreSQL!)
 RUN apk add --no-cache git
