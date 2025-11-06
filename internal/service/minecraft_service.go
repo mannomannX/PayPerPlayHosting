@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -363,18 +364,65 @@ func (s *MinecraftService) GetServerUsage(serverID string) ([]models.UsageLog, e
 	return s.repo.GetServerUsageLogs(serverID)
 }
 
-// GetServerLogs retrieves Docker logs for a server
+// GetServerLogs retrieves Docker logs for a server with application events
 func (s *MinecraftService) GetServerLogs(serverID string, tail int) (string, error) {
 	server, err := s.repo.FindByID(serverID)
 	if err != nil {
 		return "", err
 	}
 
-	if server.ContainerID == "" {
-		return "", fmt.Errorf("no container for this server")
+	// Build header with server info and recent events
+	var logOutput strings.Builder
+	logOutput.WriteString("=== PayPerPlay Server Logs ===\n")
+	logOutput.WriteString(fmt.Sprintf("Server: %s (ID: %s)\n", server.Name, server.ID))
+	logOutput.WriteString(fmt.Sprintf("Status: %s\n", server.Status))
+	logOutput.WriteString(fmt.Sprintf("Type: %s %s | RAM: %d MB | Port: %d\n",
+		server.ServerType, server.MinecraftVersion, server.RAMMb, server.Port))
+
+	// Show last start/stop times
+	if server.LastStartedAt != nil {
+		logOutput.WriteString(fmt.Sprintf("Last Started: %s\n", server.LastStartedAt.Format("2006-01-02 15:04:05")))
+	}
+	if server.LastStoppedAt != nil {
+		logOutput.WriteString(fmt.Sprintf("Last Stopped: %s\n", server.LastStoppedAt.Format("2006-01-02 15:04:05")))
 	}
 
-	return s.dockerService.GetContainerLogs(server.ContainerID, fmt.Sprintf("%d", tail))
+	// Show recent usage logs (last 3 sessions)
+	usageLogs, err := s.repo.GetServerUsageLogs(serverID)
+	if err == nil && len(usageLogs) > 0 {
+		logOutput.WriteString("\n=== Recent Sessions ===\n")
+		count := 0
+		for _, log := range usageLogs {
+			if count >= 3 {
+				break
+			}
+			duration := "running"
+			if log.StoppedAt != nil {
+				duration = fmt.Sprintf("%d seconds", log.DurationSeconds)
+			}
+			logOutput.WriteString(fmt.Sprintf("- Started: %s | Duration: %s | Reason: %s | Cost: €%.4f\n",
+				log.StartedAt.Format("2006-01-02 15:04:05"), duration, log.ShutdownReason, log.CostEUR))
+			count++
+		}
+	}
+
+	logOutput.WriteString("\n=== Container Logs ===\n")
+
+	// Get container logs if available
+	if server.ContainerID == "" {
+		logOutput.WriteString("No container created yet. Container will be created on first start.\n")
+		return logOutput.String(), nil
+	}
+
+	containerLogs, err := s.dockerService.GetContainerLogs(server.ContainerID, fmt.Sprintf("%d", tail))
+	if err != nil {
+		logOutput.WriteString(fmt.Sprintf("Error fetching container logs: %v\n", err))
+		logOutput.WriteString("Container might have been removed. Try starting the server to create a new container.\n")
+		return logOutput.String(), nil
+	}
+
+	logOutput.WriteString(containerLogs)
+	return logOutput.String(), nil
 }
 
 // calculateCost calculates the cost based on RAM and duration
