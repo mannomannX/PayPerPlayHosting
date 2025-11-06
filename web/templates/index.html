@@ -288,6 +288,11 @@
                                 x-show="detailsModal.server?.Status === 'running'">
                             Console
                         </button>
+                        <button @click="detailsModal.tab = 'config'"
+                                :class="detailsModal.tab === 'config' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Configuration
+                        </button>
                     </div>
 
                     <!-- Tab Content -->
@@ -445,6 +450,90 @@
                                 <span x-text="detailsModal.consoleConnected ? 'Connected' : 'Disconnected'"></span>
                             </div>
                         </div>
+
+                        <!-- Configuration Tab -->
+                        <div x-show="detailsModal.tab === 'config'" class="space-y-4">
+                            <div class="bg-gray-700 p-4 rounded">
+                                <h3 class="text-lg font-semibold mb-4">Server Configuration</h3>
+
+                                <!-- RAM Configuration -->
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium mb-2">RAM Allocation</label>
+                                    <select x-model="configForm.ram_mb"
+                                            class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <option value="2048">2 GB</option>
+                                        <option value="4096">4 GB</option>
+                                        <option value="8192">8 GB</option>
+                                        <option value="16384">16 GB</option>
+                                    </select>
+                                    <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.RAMMb / 1024"></span> GB</p>
+                                </div>
+
+                                <!-- Minecraft Version -->
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium mb-2">Minecraft Version</label>
+                                    <input type="text"
+                                           x-model="configForm.minecraft_version"
+                                           placeholder="e.g., 1.21.1"
+                                           class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                    <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.MinecraftVersion"></span></p>
+                                </div>
+
+                                <!-- Max Players -->
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium mb-2">Max Players</label>
+                                    <input type="number"
+                                           x-model="configForm.max_players"
+                                           min="1"
+                                           max="100"
+                                           class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                    <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.MaxPlayers"></span></p>
+                                </div>
+
+                                <!-- Apply Button -->
+                                <button @click="applyConfigChanges()"
+                                        :disabled="configApplying"
+                                        class="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-600 text-white py-2 rounded transition">
+                                    <span x-show="!configApplying">Apply Configuration</span>
+                                    <span x-show="configApplying">Applying...</span>
+                                </button>
+
+                                <!-- Warning -->
+                                <p class="text-xs text-yellow-400 mt-2">
+                                    ⚠️ Some changes may require server restart
+                                </p>
+                            </div>
+
+                            <!-- Configuration History -->
+                            <div class="bg-gray-700 p-4 rounded">
+                                <h3 class="text-lg font-semibold mb-3">Change History</h3>
+                                <div class="space-y-2 max-h-64 overflow-y-auto">
+                                    <template x-for="change in configHistory" :key="change.ID">
+                                        <div class="bg-gray-800 p-3 rounded text-sm">
+                                            <div class="flex justify-between items-start">
+                                                <span class="font-medium" x-text="change.ChangeType"></span>
+                                                <span :class="{
+                                                    'text-green-400': change.Status === 'completed',
+                                                    'text-yellow-400': change.Status === 'pending' || change.Status === 'applying',
+                                                    'text-red-400': change.Status === 'failed'
+                                                }" x-text="change.Status"></span>
+                                            </div>
+                                            <div class="text-xs text-gray-400 mt-1">
+                                                <span x-text="change.OldValue"></span>
+                                                →
+                                                <span x-text="change.NewValue"></span>
+                                            </div>
+                                            <div class="text-xs text-gray-500 mt-1" x-show="change.AppliedAt">
+                                                <span x-text="new Date(change.AppliedAt).toLocaleString()"></span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <div x-show="configHistory.length === 0" class="text-center py-4 text-gray-400">
+                                        No configuration changes yet
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <button @click="closeDetails()"
@@ -496,6 +585,13 @@
                 consoleCommand: '',
                 commandHistory: [],
                 historyIndex: -1,
+                configForm: {
+                    ram_mb: 2048,
+                    minecraft_version: '',
+                    max_players: 20
+                },
+                configApplying: false,
+                configHistory: [],
 
                 async init() {
                     // Check for stored token
@@ -722,6 +818,11 @@
                     this.detailsModal.show = true;
                     this.detailsModal.tab = 'usage';
 
+                    // Initialize config form with current values
+                    this.configForm.ram_mb = server.RAMMb;
+                    this.configForm.minecraft_version = server.MinecraftVersion;
+                    this.configForm.max_players = server.MaxPlayers;
+
                     // Load usage logs
                     try {
                         const response = await this.apiCall(`/api/servers/${server.ID}/usage`);
@@ -763,6 +864,18 @@
                         }
                     } catch (error) {
                         this.detailsModal.logs = 'Failed to load logs';
+                    }
+
+                    // Load configuration history
+                    try {
+                        const response = await this.apiCall(`/api/servers/${server.ID}/config/history`);
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.configHistory = data.history || [];
+                        }
+                    } catch (error) {
+                        console.error('Failed to load config history:', error);
+                        this.configHistory = [];
                     }
                 },
 
@@ -995,6 +1108,85 @@
 
                     if (this.historyIndex !== -1) {
                         this.consoleCommand = this.commandHistory[this.historyIndex];
+                    }
+                },
+
+                async applyConfigChanges() {
+                    if (this.configApplying) return;
+
+                    const server = this.detailsModal.server;
+                    if (!server) return;
+
+                    // Build changes object (only include changed values)
+                    const changes = {};
+
+                    if (this.configForm.ram_mb !== server.RAMMb) {
+                        changes.ram_mb = parseInt(this.configForm.ram_mb);
+                    }
+
+                    if (this.configForm.minecraft_version !== server.MinecraftVersion) {
+                        changes.minecraft_version = this.configForm.minecraft_version;
+                    }
+
+                    if (this.configForm.max_players !== server.MaxPlayers) {
+                        changes.max_players = parseInt(this.configForm.max_players);
+                    }
+
+                    // Check if there are any changes
+                    if (Object.keys(changes).length === 0) {
+                        alert('No changes detected');
+                        return;
+                    }
+
+                    // Confirm changes
+                    const changesList = Object.entries(changes)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join('\n');
+
+                    if (!confirm(`Apply the following configuration changes?\n\n${changesList}\n\nNote: Some changes may restart the server.`)) {
+                        return;
+                    }
+
+                    this.configApplying = true;
+
+                    try {
+                        const response = await this.apiCall(`/api/servers/${server.ID}/config`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ changes })
+                        });
+
+                        if (response.ok) {
+                            const result = await response.json();
+                            alert(`Configuration changes applied successfully!\n\nChange ID: ${result.change_id}\nStatus: ${result.status}\nRestart required: ${result.requires_restart ? 'Yes' : 'No'}`);
+
+                            // Reload server data
+                            await this.loadServers();
+
+                            // Reload config history
+                            const historyResponse = await this.apiCall(`/api/servers/${server.ID}/config/history`);
+                            if (historyResponse.ok) {
+                                const data = await historyResponse.json();
+                                this.configHistory = data.history || [];
+                            }
+
+                            // Update the current server reference
+                            const updatedServer = this.servers.find(s => s.ID === server.ID);
+                            if (updatedServer) {
+                                this.detailsModal.server = updatedServer;
+                                this.configForm.ram_mb = updatedServer.RAMMb;
+                                this.configForm.minecraft_version = updatedServer.MinecraftVersion;
+                                this.configForm.max_players = updatedServer.MaxPlayers;
+                            }
+                        } else {
+                            const error = await response.json();
+                            alert(`Failed to apply configuration changes:\n${error.details || error.error}`);
+                        }
+                    } catch (error) {
+                        console.error('Failed to apply config changes:', error);
+                        alert('Failed to apply configuration changes: ' + error.message);
+                    } finally {
+                        this.configApplying = false;
                     }
                 },
 
