@@ -19,7 +19,8 @@ func (r *ServerRepository) Create(server *models.MinecraftServer) error {
 
 func (r *ServerRepository) FindByID(id string) (*models.MinecraftServer, error) {
 	var server models.MinecraftServer
-	err := r.db.Where("id = ?", id).First(&server).Error
+	// Use Unscoped() to find soft-deleted servers (needed for cleanup)
+	err := r.db.Unscoped().Where("id = ?", id).First(&server).Error
 	if err != nil {
 		return nil, err
 	}
