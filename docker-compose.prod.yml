@@ -66,8 +66,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      velocity:
-        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
       interval: 30s
