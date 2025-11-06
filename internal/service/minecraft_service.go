@@ -325,6 +325,39 @@ func (s *MinecraftService) ListServers(ownerID string) ([]models.MinecraftServer
 	return s.repo.FindByOwner(ownerID)
 }
 
+// ListAllServers lists ALL servers (admin function)
+func (s *MinecraftService) ListAllServers() ([]models.MinecraftServer, error) {
+	return s.repo.FindAll()
+}
+
+// CleanOrphanedServers removes servers with missing or stopped containers (admin function)
+func (s *MinecraftService) CleanOrphanedServers() (int, error) {
+	servers, err := s.repo.FindAll()
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, server := range servers {
+		// Check if container exists and its status
+		if server.ContainerID != "" {
+			status, err := s.dockerService.GetContainerStatus(server.ContainerID)
+			if err != nil || status == "" {
+				// Container doesn't exist anymore - clean up
+				log.Printf("Cleaning orphaned server %s (container %s not found)", server.ID, server.ContainerID)
+				if err := s.DeleteServer(server.ID); err != nil {
+					log.Printf("Warning: failed to delete orphaned server %s: %v", server.ID, err)
+				} else {
+					count++
+				}
+			}
+		}
+	}
+
+	log.Printf("Cleaned %d orphaned servers", count)
+	return count, nil
+}
+
 // GetServerUsage retrieves usage logs for a server
 func (s *MinecraftService) GetServerUsage(serverID string) ([]models.UsageLog, error) {
 	return s.repo.GetServerUsageLogs(serverID)

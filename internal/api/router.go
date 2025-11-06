@@ -118,6 +118,13 @@ func SetupRouter(
 			servers.GET("/:id/files/list", fileManagerHandler.ListFiles)
 		}
 
+		// Admin endpoints
+		admin := api.Group("/admin")
+		{
+			admin.GET("/servers", handler.ListAllServers)             // List ALL servers
+			admin.POST("/cleanup", handler.CleanOrphanedServers)      // Clean orphaned servers
+		}
+
 		// Global monitoring
 		api.GET("/monitoring/status", monitoringHandler.GetAllStatuses)
 

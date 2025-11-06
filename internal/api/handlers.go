@@ -183,6 +183,31 @@ func (h *Handler) GetServerLogs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
+// ListAllServers handles GET /api/admin/servers (shows ALL servers, not filtered by owner)
+func (h *Handler) ListAllServers(c *gin.Context) {
+	servers, err := h.mcService.ListAllServers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, servers)
+}
+
+// CleanOrphanedServers handles POST /api/admin/cleanup
+func (h *Handler) CleanOrphanedServers(c *gin.Context) {
+	count, err := h.mcService.CleanOrphanedServers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "cleaned orphaned servers",
+		"count":   count,
+	})
+}
+
 // HealthCheck handles GET /health
 func (h *Handler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

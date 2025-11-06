@@ -101,8 +101,27 @@
                             class="mt-2 text-sm text-red-400 hover:text-red-300 transition">
                         Logout
                     </button>
+                    <button @click="adminMode = !adminMode; loadServers()"
+                            :class="adminMode ? 'bg-red-600' : 'bg-gray-700'"
+                            class="mt-2 px-3 py-1 text-xs rounded hover:opacity-80 transition block">
+                        <span x-text="adminMode ? '⚠️ Admin ON' : '🔧 Admin OFF'"></span>
+                    </button>
                 </div>
             </header>
+
+            <!-- Admin Tools (only shown when admin mode is on) -->
+            <div x-show="adminMode" class="bg-red-900/20 border border-red-500/30 rounded-lg p-4 mb-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-bold text-red-400">⚠️ Admin Mode Active</h3>
+                        <p class="text-sm text-gray-400">Showing ALL servers from ALL users</p>
+                    </div>
+                    <button @click="cleanOrphanedServers()"
+                            class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded transition">
+                        🧹 Clean Orphaned Servers
+                    </button>
+                </div>
+            </div>
 
             <!-- Create Server Form -->
             <div class="bg-gray-800 rounded-lg p-6 mb-8">
@@ -190,6 +209,7 @@
                                         <span>MC <span x-text="server.MinecraftVersion"></span></span>
                                         <span><span x-text="(server.RAMMb / 1024).toFixed(0)"></span> GB RAM</span>
                                         <span>Port: <span x-text="server.Port"></span></span>
+                                        <span x-show="adminMode" class="text-yellow-400">Owner: <span x-text="server.OwnerID"></span></span>
                                     </div>
 
                                     <!-- Real-time Status (if running) -->
@@ -400,6 +420,7 @@
                 servers: [],
                 serverStatuses: {},
                 loading: true,
+                adminMode: false,  // Admin toggle for debugging
                 newServer: {
                     name: '',
                     server_type: 'paper',
@@ -532,7 +553,9 @@
                     if (!this.isAuthenticated) return;
 
                     try {
-                        const response = await this.apiCall('/api/servers');
+                        // Use admin endpoint if admin mode is enabled
+                        const endpoint = this.adminMode ? '/api/admin/servers' : '/api/servers';
+                        const response = await this.apiCall(endpoint);
                         if (response.ok) {
                             this.servers = await response.json();
                         }
@@ -540,6 +563,24 @@
                     } catch (error) {
                         console.error('Failed to load servers:', error);
                         this.loading = false;
+                    }
+                },
+
+                async cleanOrphanedServers() {
+                    if (!confirm('Clean all orphaned servers? This will delete servers with missing containers.')) return;
+
+                    try {
+                        const response = await this.apiCall('/api/admin/cleanup', { method: 'POST' });
+                        if (response.ok) {
+                            const result = await response.json();
+                            alert(result.message + ' (count: ' + result.count + ')');
+                            await this.loadServers();
+                        } else {
+                            const error = await response.json();
+                            alert('Error: ' + error.error);
+                        }
+                    } catch (error) {
+                        alert('Failed to clean servers: ' + error.message);
                     }
                 },
 
