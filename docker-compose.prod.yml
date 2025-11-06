@@ -73,29 +73,6 @@ services:
       retries: 3
       start_period: 40s
 
-  # Velocity Proxy (for auto-wakeup)
-  velocity:
-    image: itzg/velocity:latest
-    container_name: payperplay-velocity
-    restart: unless-stopped
-    ports:
-      - "25577:25577"  # Velocity proxy port
-    volumes:
-      - ./velocity:/server
-      - ./velocity-plugin/target:/plugins  # Velocity plugin
-    environment:
-      - EULA=TRUE
-      - TYPE=VELOCITY
-      - MEMORY=1G
-    networks:
-      - payperplay-network
-    healthcheck:
-      test: ["CMD-SHELL", "mc-monitor status --host localhost --port 25577 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
   # Nginx Reverse Proxy (optional for HTTPS)
   nginx:
     image: nginx:alpine
