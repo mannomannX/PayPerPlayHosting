@@ -18,7 +18,8 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o payperplay ./cmd/api
+# Use specific build tags for SQLite on Alpine (musl libc)
+RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags '-extldflags "-static"' -tags 'sqlite_omit_load_extension' -o payperplay ./cmd/api
 
 # Runtime stage
 FROM alpine:latest
