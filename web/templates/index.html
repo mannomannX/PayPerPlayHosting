@@ -882,9 +882,9 @@
                     // Clear previous logs
                     this.detailsModal.consoleLogs = [];
 
-                    // Build WebSocket URL
+                    // Build WebSocket URL with token parameter
                     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}/api/servers/${serverId}/console/stream`;
+                    const wsUrl = `${protocol}//${window.location.host}/api/servers/${serverId}/console/stream?token=${this.token}`;
 
                     console.log('Connecting to console:', wsUrl);
 

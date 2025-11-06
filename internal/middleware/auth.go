@@ -23,29 +23,34 @@ func SetAuthService(svc AuthServiceInterface) {
 // AuthMiddleware validates JWT authentication tokens
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get token from Authorization header
+		var token string
+
+		// Try to get token from Authorization header first
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Missing authorization header",
-				"code":  "UNAUTHORIZED",
-			})
-			c.Abort()
-			return
+		if authHeader != "" {
+			// Extract token (format: "Bearer <token>")
+			parts := strings.Split(authHeader, " ")
+			if len(parts) != 2 || parts[0] != "Bearer" {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "Invalid authorization format. Use: Bearer <token>",
+					"code":  "INVALID_AUTH_FORMAT",
+				})
+				c.Abort()
+				return
+			}
+			token = parts[1]
+		} else {
+			// Fallback to query parameter (for WebSocket connections)
+			token = c.Query("token")
+			if token == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "Missing authorization header or token parameter",
+					"code":  "UNAUTHORIZED",
+				})
+				c.Abort()
+				return
+			}
 		}
-
-		// Extract token (format: "Bearer <token>")
-		parts := strings.Split(authHeader, " ")
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Invalid authorization format. Use: Bearer <token>",
-				"code":  "INVALID_AUTH_FORMAT",
-			})
-			c.Abort()
-			return
-		}
-
-		token := parts[1]
 
 		// Validate JWT token
 		if authService == nil {
