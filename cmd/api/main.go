@@ -121,8 +121,12 @@ func main() {
 	consoleService := service.NewConsoleService(serverRepo, dockerService)
 	consoleHandler := api.NewConsoleHandler(consoleService)
 
+	// Configuration service for server configuration changes
+	configService := service.NewConfigService(serverRepo, dockerService, backupService)
+	configHandler := api.NewConfigHandler(configService, mcService)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

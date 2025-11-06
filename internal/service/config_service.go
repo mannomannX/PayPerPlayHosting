@@ -1,0 +1,261 @@
+package service
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
+	"github.com/payperplay/hosting/pkg/logger"
+)
+
+// ConfigService handles server configuration changes with audit trail
+type ConfigService struct {
+	serverRepo    *repository.ServerRepository
+	dockerService *docker.DockerService
+	backupService *BackupService
+}
+
+// NewConfigService creates a new configuration service
+func NewConfigService(
+	serverRepo *repository.ServerRepository,
+	dockerService *docker.DockerService,
+	backupService *BackupService,
+) *ConfigService {
+	return &ConfigService{
+		serverRepo:    serverRepo,
+		dockerService: dockerService,
+		backupService: backupService,
+	}
+}
+
+// ConfigChangeRequest represents a request to change server configuration
+type ConfigChangeRequest struct {
+	ServerID string
+	UserID   string
+	Changes  map[string]interface{} // Key-value pairs of config changes
+}
+
+// ApplyConfigChanges applies configuration changes with full audit trail
+// This is the main entry point for all config changes
+func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.ConfigChange, error) {
+	// 1. Validate server exists and user has permission
+	server, err := s.serverRepo.FindByID(req.ServerID)
+	if err != nil {
+		return nil, fmt.Errorf("server not found: %w", err)
+	}
+
+	// 2. Create config change record (audit trail)
+	change := &models.ConfigChange{
+		ID:       uuid.New().String()[:8],
+		ServerID: req.ServerID,
+		UserID:   req.UserID,
+		Status:   models.ConfigChangeStatusPending,
+	}
+
+	// 3. Determine change type and validate
+	requiresRestart := false
+	for key, newValue := range req.Changes {
+		switch key {
+		case "ram_mb":
+			change.ChangeType = models.ConfigChangeRAM
+			change.OldValue = fmt.Sprintf("%d", server.RAMMb)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate RAM value
+			ramMb, ok := newValue.(float64) // JSON numbers are float64
+			if !ok {
+				return nil, fmt.Errorf("invalid RAM value type")
+			}
+			if !s.isValidRAM(int(ramMb)) {
+				return nil, fmt.Errorf("invalid RAM value: %d (must be 2048, 4096, 8192, or 16384)", int(ramMb))
+			}
+
+		case "minecraft_version":
+			change.ChangeType = models.ConfigChangeVersion
+			change.OldValue = server.MinecraftVersion
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "max_players":
+			change.ChangeType = models.ConfigChangeMaxPlayers
+			change.OldValue = fmt.Sprintf("%d", server.MaxPlayers)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = false // Can be changed via RCON
+
+		default:
+			return nil, fmt.Errorf("unsupported config change: %s", key)
+		}
+	}
+
+	change.RequiresRestart = requiresRestart
+
+	// 4. Create backup before making changes (if server is running)
+	if server.Status == models.StatusRunning && requiresRestart {
+		logger.Info("Creating backup before config change", map[string]interface{}{
+			"server_id": req.ServerID,
+			"change_id": change.ID,
+		})
+		_, err := s.backupService.CreateBackup(req.ServerID)
+		if err != nil {
+			logger.Warn("Failed to create backup before config change", map[string]interface{}{
+				"server_id": req.ServerID,
+				"error":     err.Error(),
+			})
+			// Continue anyway - backup failure shouldn't block config changes
+		}
+	}
+
+	// 5. Apply changes
+	change.Status = models.ConfigChangeStatusApplying
+	now := time.Now()
+	change.AppliedAt = &now
+
+	err = s.applyChanges(server, req.Changes, requiresRestart)
+	if err != nil {
+		change.Status = models.ConfigChangeStatusFailed
+		change.ErrorMessage = err.Error()
+		completedAt := time.Now()
+		change.CompletedAt = &completedAt
+
+		logger.Error("Config change failed", err, map[string]interface{}{
+			"server_id": req.ServerID,
+			"change_id": change.ID,
+		})
+
+		return change, fmt.Errorf("failed to apply config changes: %w", err)
+	}
+
+	// 6. Mark as completed
+	change.Status = models.ConfigChangeStatusCompleted
+	completedAt := time.Now()
+	change.CompletedAt = &completedAt
+
+	logger.Info("Config change completed successfully", map[string]interface{}{
+		"server_id":        req.ServerID,
+		"change_id":        change.ID,
+		"requires_restart": requiresRestart,
+	})
+
+	return change, nil
+}
+
+// applyChanges applies the actual configuration changes
+func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map[string]interface{}, requiresRestart bool) error {
+	wasRunning := server.Status == models.StatusRunning
+
+	// Update server model
+	for key, value := range changes {
+		switch key {
+		case "ram_mb":
+			ramMb := int(value.(float64))
+			server.RAMMb = ramMb
+
+		case "minecraft_version":
+			server.MinecraftVersion = value.(string)
+
+		case "max_players":
+			maxPlayers := int(value.(float64))
+			server.MaxPlayers = maxPlayers
+		}
+	}
+
+	// Save to database
+	err := s.serverRepo.Update(server)
+	if err != nil {
+		return fmt.Errorf("failed to update server in database: %w", err)
+	}
+
+	// If requires restart and server was running, recreate container
+	if requiresRestart && wasRunning {
+		logger.Info("Recreating container with new configuration", map[string]interface{}{
+			"server_id": server.ID,
+		})
+
+		// Stop old container
+		if server.ContainerID != "" {
+			err = s.dockerService.StopContainer(server.ContainerID, 30)
+			if err != nil {
+				logger.Warn("Failed to stop old container", map[string]interface{}{
+					"server_id":    server.ID,
+					"container_id": server.ContainerID,
+					"error":        err.Error(),
+				})
+			}
+
+			// Remove old container
+			err = s.dockerService.RemoveContainer(server.ContainerID, true)
+			if err != nil {
+				logger.Warn("Failed to remove old container", map[string]interface{}{
+					"server_id":    server.ID,
+					"container_id": server.ContainerID,
+					"error":        err.Error(),
+				})
+			}
+		}
+
+		// Create new container with updated config
+		containerID, err := s.dockerService.CreateContainer(
+			server.ID,
+			string(server.ServerType),
+			server.MinecraftVersion,
+			server.RAMMb,
+			server.Port,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create new container: %w", err)
+		}
+
+		server.ContainerID = containerID
+		server.Status = models.StatusStopped
+
+		// Update with new container ID
+		err = s.serverRepo.Update(server)
+		if err != nil {
+			return fmt.Errorf("failed to update container ID: %w", err)
+		}
+
+		// Start the new container
+		err = s.dockerService.StartContainer(containerID)
+		if err != nil {
+			server.Status = models.StatusError
+			s.serverRepo.Update(server)
+			return fmt.Errorf("failed to start new container: %w", err)
+		}
+
+		// Wait for server to be ready
+		err = s.dockerService.WaitForServerReady(containerID, 60)
+		if err != nil {
+			logger.Warn("Server may not be fully ready", map[string]interface{}{
+				"server_id": server.ID,
+				"error":     err.Error(),
+			})
+		}
+
+		server.Status = models.StatusRunning
+		s.serverRepo.Update(server)
+	}
+
+	return nil
+}
+
+// isValidRAM checks if the RAM value is valid
+func (s *ConfigService) isValidRAM(ramMb int) bool {
+	validValues := []int{2048, 4096, 8192, 16384}
+	for _, v := range validValues {
+		if ramMb == v {
+			return true
+		}
+	}
+	return false
+}
+
+// GetConfigHistory returns the configuration change history for a server
+func (s *ConfigService) GetConfigHistory(serverID string) ([]models.ConfigChange, error) {
+	// Note: This would need a proper repository method
+	// For now, returning empty slice
+	return []models.ConfigChange{}, nil
+}

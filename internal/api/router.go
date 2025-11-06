@@ -17,6 +17,7 @@ func SetupRouter(
 	wsHandler *WebSocketHandler,
 	fileManagerHandler *FileManagerHandler,
 	consoleHandler *ConsoleHandler,
+	configHandler *ConfigHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -121,6 +122,10 @@ func SetupRouter(
 			// Console Access (WebSocket for real-time logs and command execution)
 			servers.GET("/:id/console/stream", consoleHandler.HandleConsoleWebSocket)
 			servers.GET("/:id/console/logs", consoleHandler.GetConsoleLogs)
+
+			// Configuration Management
+			servers.POST("/:id/config", configHandler.ApplyConfigChanges)
+			servers.GET("/:id/config/history", configHandler.GetConfigHistory)
 		}
 
 		// Admin endpoints
