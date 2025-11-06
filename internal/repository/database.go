@@ -7,7 +7,6 @@ import (
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/pkg/config"
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -45,13 +44,7 @@ func InitDB(cfg *config.Config) error {
 		log.Println("PostgreSQL connection established")
 
 	default:
-		// SQLite provider (default)
-		log.Printf("Using SQLite database: %s", cfg.DatabasePath)
-		DB, err = gorm.Open(sqlite.Open(cfg.DatabasePath), gormConfig)
-		if err != nil {
-			return err
-		}
-		dbProvider = &SQLiteProvider{db: DB}
+		return fmt.Errorf("unsupported database type: %s (only 'postgres' is supported)", cfg.DatabaseType)
 	}
 
 	// Auto-migrate models

@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: payperplay-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=payperplay
+      - POSTGRES_USER=payperplay
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-payperplay_secure_password_change_me}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - payperplay-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payperplay"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # PayPerPlay Backend API
   payperplay:
     build:
@@ -12,7 +31,7 @@ services:
       - "8000:8000"
       - "25565-25665:25565-25665"  # Minecraft server port range
     volumes:
-      - ./data:/app/data                      # Database & config
+      - ./data:/app/data                      # Config & logs
       - ./minecraft/servers:/app/minecraft/servers  # Minecraft servers data
       - ./backups:/app/backups                # Server backups
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for managing containers
@@ -24,9 +43,9 @@ services:
       - LOG_LEVEL=INFO
       - LOG_JSON=true
 
-      # Database
-      - DATABASE_TYPE=sqlite
-      - DATABASE_PATH=/app/data/payperplay.db
+      # Database (PostgreSQL)
+      - DATABASE_TYPE=postgres
+      - DATABASE_URL=postgres://payperplay:${DB_PASSWORD:-payperplay_secure_password_change_me}@postgres:5432/payperplay?sslmode=disable
 
       # Authentication (CHANGE IN PRODUCTION!)
       - JWT_SECRET=${JWT_SECRET:-your-super-secret-jwt-key-change-me-in-production}
@@ -45,7 +64,10 @@ services:
     networks:
       - payperplay-network
     depends_on:
-      - velocity
+      postgres:
+        condition: service_healthy
+      velocity:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/health"]
       interval: 30s
@@ -102,5 +124,6 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   minecraft-data:
   backup-data:

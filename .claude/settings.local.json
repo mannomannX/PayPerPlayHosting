@@ -14,7 +14,11 @@
       "Bash(nul)",
       "Bash(.payperplay.exe)",
       "Bash(./payperplay.exe)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote add:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

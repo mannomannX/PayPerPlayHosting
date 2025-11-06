@@ -5,8 +5,8 @@ FROM golang:1.23-alpine AS builder
 ENV GOTOOLCHAIN=auto
 ENV GOPROXY=https://proxy.golang.org,direct
 
-# Install build dependencies
-RUN apk add --no-cache git gcc musl-dev
+# Install build dependencies (git only, no CGO needed for PostgreSQL!)
+RUN apk add --no-cache git
 
 WORKDIR /build
 
@@ -17,9 +17,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-# Use specific build tags for SQLite on Alpine (musl libc)
-RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags '-extldflags "-static"' -tags 'sqlite_omit_load_extension' -o payperplay ./cmd/api
+# Build the application (CGO disabled for pure Go build with PostgreSQL)
+RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags '-w -s' -o payperplay ./cmd/api
 
 # Runtime stage
 FROM alpine:latest

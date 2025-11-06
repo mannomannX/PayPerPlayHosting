@@ -117,6 +117,11 @@ if [ ! -f ".env" ]; then
         sed -i "s/change-me-in-production-please-use-a-random-string/$JWT_SECRET/g" .env
         print_success "Generated random JWT secret"
 
+        # Generate random database password
+        DB_PASSWORD=$(openssl rand -base64 24 | tr -d "=+/" | cut -c1-24)
+        sed -i "s/payperplay_secure_password/$DB_PASSWORD/g" .env
+        print_success "Generated random database password"
+
         # Set production settings
         sed -i 's/DEBUG=true/DEBUG=false/g' .env
         sed -i 's/LOG_JSON=false/LOG_JSON=true/g' .env
