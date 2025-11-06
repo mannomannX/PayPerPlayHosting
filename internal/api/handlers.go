@@ -116,6 +116,7 @@ func (h *Handler) StartServer(c *gin.Context) {
 
 	err := h.mcService.StartServer(serverID)
 	if err != nil {
+		log.Printf("ERROR starting server %s: %v", serverID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
