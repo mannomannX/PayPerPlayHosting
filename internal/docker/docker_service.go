@@ -78,6 +78,8 @@ func (d *DockerService) CreateContainer(
 	// Phase 2 Parameters - Network & Performance
 	maxTickTime int,
 	networkCompressionThreshold int,
+	// Phase 4 Parameters - Server Description
+	motd string,
 ) (string, error) {
 	ctx := context.Background()
 
@@ -150,6 +152,9 @@ func (d *DockerService) CreateContainer(
 		// === Phase 2 - Network & Performance Settings ===
 		fmt.Sprintf("MAX_TICK_TIME=%d", maxTickTime),
 		fmt.Sprintf("NETWORK_COMPRESSION_THRESHOLD=%d", networkCompressionThreshold),
+
+		// === Phase 4 - Server Description ===
+		fmt.Sprintf("MOTD=%s", motd),
 	}
 
 	// Add SEED only if provided (empty = random)
