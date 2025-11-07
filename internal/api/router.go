@@ -145,6 +145,9 @@ func SetupRouter(
 			// MOTD (Message of the Day)
 			servers.GET("/:id/motd", motdHandler.GetMOTD)
 			servers.PUT("/:id/motd", motdHandler.UpdateMOTD)
+
+			// Server Icon (publicly accessible for display)
+			servers.GET("/:id/icon", fileHandler.GetServerIcon)
 		}
 
 		// Admin endpoints

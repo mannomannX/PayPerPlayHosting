@@ -206,18 +206,25 @@
                         <div class="bg-gray-700 rounded-lg p-5">
                             <!-- Server Header -->
                             <div class="flex items-start justify-between mb-3">
-                                <div class="flex-1">
-                                    <h3 class="text-xl font-bold flex items-center gap-2">
-                                        <span x-text="server.Name"></span>
-                                        <span :class="{
-                                            'bg-green-500': server.Status === 'running',
-                                            'bg-gray-500': server.Status === 'stopped',
-                                            'bg-yellow-500': server.Status === 'starting' || server.Status === 'stopping',
-                                            'bg-red-500': server.Status === 'error'
-                                        }" class="px-3 py-1 rounded-full text-xs font-semibold uppercase">
-                                            <span x-text="server.Status"></span>
-                                        </span>
-                                    </h3>
+                                <div class="flex gap-3 flex-1">
+                                    <!-- Server Icon -->
+                                    <img :src="`/api/servers/${server.ID}/icon`"
+                                         :alt="`${server.Name} icon`"
+                                         @error="$el.style.display='none'"
+                                         class="w-16 h-16 rounded object-cover flex-shrink-0 border-2 border-gray-600">
+
+                                    <div class="flex-1">
+                                        <h3 class="text-xl font-bold flex items-center gap-2">
+                                            <span x-text="server.Name"></span>
+                                            <span :class="{
+                                                'bg-green-500': server.Status === 'running',
+                                                'bg-gray-500': server.Status === 'stopped',
+                                                'bg-yellow-500': server.Status === 'starting' || server.Status === 'stopping',
+                                                'bg-red-500': server.Status === 'error'
+                                            }" class="px-3 py-1 rounded-full text-xs font-semibold uppercase">
+                                                <span x-text="server.Status"></span>
+                                            </span>
+                                        </h3>
                                     <div class="text-sm text-gray-300 mt-1 flex flex-wrap gap-x-3 gap-y-1">
                                         <span class="flex items-center gap-1">
                                             <span class="text-green-400">●</span>
@@ -240,6 +247,7 @@
                                             Idle: <span x-text="formatSeconds(serverStatuses[server.ID]?.idle_seconds)"></span>
                                             / <span x-text="formatSeconds(serverStatuses[server.ID]?.timeout_seconds)"></span>
                                         </span>
+                                    </div>
                                     </div>
                                 </div>
 
@@ -320,6 +328,11 @@
                                 :class="detailsModal.tab === 'files' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Files
+                        </button>
+                        <button @click="detailsModal.tab = 'appearance'"
+                                :class="detailsModal.tab === 'appearance' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Appearance
                         </button>
                     </div>
 
@@ -922,6 +935,67 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Appearance Tab -->
+                        <div x-show="detailsModal.tab === 'appearance'" class="space-y-6">
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <h4 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                    <span>💬</span>
+                                    <span>Server Description (MOTD)</span>
+                                </h4>
+                                <p class="text-sm text-gray-300 mb-3">
+                                    The Message of the Day (MOTD) appears in the Minecraft server list.
+                                    You can use Minecraft color codes (e.g., §a for green, §c for red).
+                                </p>
+                                <input type="text"
+                                       :value="detailsModal.server?.MOTD || 'A Minecraft Server'"
+                                       @change="updateMOTD(detailsModal.server?.ID, $event.target.value)"
+                                       placeholder="Enter server description"
+                                       class="w-full px-4 py-2 bg-gray-600 text-white rounded focus:outline-none focus:ring-2 focus:ring-green-400"
+                                       maxlength="512">
+                                <div class="text-xs text-gray-400 mt-2">
+                                    Max 512 characters. Changes apply after server restart.
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <h4 class="text-lg font-bold mb-4 flex items-center gap-2">
+                                    <span>🖼️</span>
+                                    <span>Server Icon</span>
+                                </h4>
+                                <p class="text-sm text-gray-300 mb-3">
+                                    Upload a custom icon for your server (64x64 PNG recommended).
+                                    This icon appears in the Minecraft server list.
+                                </p>
+
+                                <!-- Current Icon Preview -->
+                                <div class="mb-4">
+                                    <div class="text-sm font-semibold mb-2">Current Icon:</div>
+                                    <img :src="`/api/servers/${detailsModal.server?.ID}/icon?t=${Date.now()}`"
+                                         :alt="`${detailsModal.server?.Name} icon`"
+                                         @error="$el.src='/static/default-server-icon.png'"
+                                         class="w-32 h-32 rounded border-2 border-gray-600 object-cover">
+                                </div>
+
+                                <!-- Upload New Icon -->
+                                <div class="space-y-2">
+                                    <label class="block text-sm font-semibold">Upload New Icon (PNG, max 2MB):</label>
+                                    <input type="file"
+                                           accept="image/png"
+                                           @change="uploadServerIcon(detailsModal.server?.ID, $event)"
+                                           class="block w-full text-sm text-gray-400
+                                                  file:mr-4 file:py-2 file:px-4
+                                                  file:rounded file:border-0
+                                                  file:text-sm file:font-semibold
+                                                  file:bg-green-500 file:text-white
+                                                  hover:file:bg-green-600
+                                                  cursor-pointer">
+                                    <div class="text-xs text-gray-400">
+                                        Recommended: 64x64 pixels PNG image. Changes apply immediately.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <button @click="closeDetails()"
@@ -1324,6 +1398,80 @@
                         }
                     } catch (error) {
                         alert('Failed to delete server: ' + error.message);
+                    }
+                },
+
+                async updateMOTD(serverId, newMOTD) {
+                    if (!serverId || !newMOTD) return;
+
+                    try {
+                        const response = await this.apiCall(`/api/servers/${serverId}/motd`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ motd: newMOTD })
+                        });
+
+                        if (response.ok) {
+                            alert('MOTD updated successfully! Restart the server for changes to take effect.');
+                            // Update local server object
+                            if (this.detailsModal.server && this.detailsModal.server.ID === serverId) {
+                                this.detailsModal.server.MOTD = newMOTD;
+                            }
+                            await this.loadServers();
+                        } else {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Failed to update MOTD');
+                        }
+                    } catch (error) {
+                        alert('Failed to update MOTD: ' + error.message);
+                    }
+                },
+
+                async uploadServerIcon(serverId, event) {
+                    const file = event.target.files[0];
+                    if (!file || !serverId) return;
+
+                    // Validate file
+                    if (!file.type.startsWith('image/png')) {
+                        alert('Please upload a PNG image');
+                        event.target.value = '';
+                        return;
+                    }
+
+                    if (file.size > 2 * 1024 * 1024) {
+                        alert('File too large. Maximum size is 2MB');
+                        event.target.value = '';
+                        return;
+                    }
+
+                    try {
+                        // Upload icon via file upload API
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('type', 'server_icon');
+                        formData.append('auto_activate', 'true');
+
+                        const response = await this.apiCall(`/api/servers/${serverId}/uploads`, {
+                            method: 'POST',
+                            body: formData
+                        }, 30000);
+
+                        if (response.ok) {
+                            alert('Server icon uploaded successfully! The icon will be visible immediately.');
+                            // Reload icon by adding timestamp
+                            const iconImg = document.querySelector(`img[src*="/api/servers/${serverId}/icon"]`);
+                            if (iconImg) {
+                                iconImg.src = `/api/servers/${serverId}/icon?t=${Date.now()}`;
+                            }
+                            await this.loadServers();
+                        } else {
+                            const error = await response.json();
+                            throw new Error(error.error || 'Failed to upload icon');
+                        }
+                    } catch (error) {
+                        alert('Failed to upload icon: ' + error.message);
+                    } finally {
+                        event.target.value = '';
                     }
                 },
 

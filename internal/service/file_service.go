@@ -345,3 +345,22 @@ func ParseFileType(typeStr string) (models.FileType, error) {
 		return "", fmt.Errorf("invalid file type: %s", typeStr)
 	}
 }
+
+// GetServerIconPath returns the path to the server's icon file
+func (s *FileService) GetServerIconPath(serverID string) (string, error) {
+	// Verify server exists
+	_, err := s.serverRepo.FindByID(serverID)
+	if err != nil {
+		return "", fmt.Errorf("server not found: %w", err)
+	}
+
+	// Path to server-icon.png in server root
+	iconPath := filepath.Join(s.baseDir, serverID, "server-icon.png")
+
+	// Check if icon exists
+	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("server icon not found")
+	}
+
+	return iconPath, nil
+}

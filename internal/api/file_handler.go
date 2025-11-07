@@ -261,3 +261,22 @@ func (h *FileHandler) DeleteFile(c *gin.Context) {
 		"message": "File deleted",
 	})
 }
+
+// GetServerIcon serves the server icon image
+// GET /api/servers/{id}/icon
+func (h *FileHandler) GetServerIcon(c *gin.Context) {
+	serverID := c.Param("id")
+
+	// Get the server icon path
+	iconPath, err := h.fileService.GetServerIconPath(serverID)
+	if err != nil {
+		// Return 404 if icon doesn't exist
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Server icon not found",
+		})
+		return
+	}
+
+	// Serve the icon file
+	c.File(iconPath)
+}
