@@ -15,12 +15,35 @@ const (
 	ConfigChangeServerType       ConfigChangeType = "server_type"
 	ConfigChangeServerProperties ConfigChangeType = "server_properties"
 	ConfigChangeMaxPlayers       ConfigChangeType = "max_players"
+
 	// Phase 1 Gameplay Settings
 	ConfigChangeGamemode          ConfigChangeType = "gamemode"
 	ConfigChangeDifficulty        ConfigChangeType = "difficulty"
 	ConfigChangePVP               ConfigChangeType = "pvp"
 	ConfigChangeCommandBlock      ConfigChangeType = "enable_command_block"
 	ConfigChangeLevelSeed         ConfigChangeType = "level_seed"
+
+	// Phase 2 Performance Settings
+	ConfigChangeViewDistance       ConfigChangeType = "view_distance"
+	ConfigChangeSimulationDistance ConfigChangeType = "simulation_distance"
+
+	// Phase 2 World Generation Settings
+	ConfigChangeAllowNether        ConfigChangeType = "allow_nether"
+	ConfigChangeAllowEnd           ConfigChangeType = "allow_end"
+	ConfigChangeGenerateStructures ConfigChangeType = "generate_structures"
+	ConfigChangeWorldType          ConfigChangeType = "world_type"
+	ConfigChangeBonusChest         ConfigChangeType = "bonus_chest"
+	ConfigChangeMaxWorldSize       ConfigChangeType = "max_world_size"
+
+	// Phase 2 Spawn Settings
+	ConfigChangeSpawnProtection ConfigChangeType = "spawn_protection"
+	ConfigChangeSpawnAnimals    ConfigChangeType = "spawn_animals"
+	ConfigChangeSpawnMonsters   ConfigChangeType = "spawn_monsters"
+	ConfigChangeSpawnNPCs       ConfigChangeType = "spawn_npcs"
+
+	// Phase 2 Network & Performance Settings
+	ConfigChangeMaxTickTime                 ConfigChangeType = "max_tick_time"
+	ConfigChangeNetworkCompressionThreshold ConfigChangeType = "network_compression_threshold"
 )
 
 // ConfigChangeStatus represents the status of a configuration change

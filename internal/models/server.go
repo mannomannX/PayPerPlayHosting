@@ -52,6 +52,28 @@ type MinecraftServer struct {
 	EnableCommandBlock bool   `gorm:"default:false"`          // Enable command blocks
 	LevelSeed          string `gorm:"size:256;default:''"`    // World seed (empty = random)
 
+	// Performance Settings (Phase 2)
+	ViewDistance       int `gorm:"default:10"`        // Render distance in chunks (2-32)
+	SimulationDistance int `gorm:"default:10"`        // Simulation distance in chunks (3-32, 1.18+ only)
+
+	// World Generation Settings (Phase 2)
+	AllowNether        bool   `gorm:"default:true"`     // Enable Nether dimension
+	AllowEnd           bool   `gorm:"default:true"`     // Enable End dimension
+	GenerateStructures bool   `gorm:"default:true"`     // Generate villages, temples, etc.
+	WorldType          string `gorm:"default:default"`  // default, flat, largeBiomes, amplified, buffet, single_biome_surface
+	BonusChest         bool   `gorm:"default:false"`    // Spawn with bonus chest
+	MaxWorldSize       int    `gorm:"default:29999984"` // World border size in blocks
+
+	// Spawn Settings (Phase 2)
+	SpawnProtection int  `gorm:"default:16"`   // Spawn protection radius
+	SpawnAnimals    bool `gorm:"default:true"` // Enable animal spawning
+	SpawnMonsters   bool `gorm:"default:true"` // Enable monster spawning
+	SpawnNPCs       bool `gorm:"default:true"` // Enable villager spawning
+
+	// Network & Performance Settings (Phase 2)
+	MaxTickTime                 int `gorm:"default:60000"` // Watchdog timeout in milliseconds
+	NetworkCompressionThreshold int `gorm:"default:256"`   // Network compression threshold in bytes
+
 	// Container Info
 	Status      ServerStatus `gorm:"default:stopped"`
 	ContainerID string       `gorm:"size:128"`

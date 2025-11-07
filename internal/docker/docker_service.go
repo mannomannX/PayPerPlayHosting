@@ -53,12 +53,31 @@ func (d *DockerService) CreateContainer(
 	minecraftVersion string,
 	ramMB int,
 	port int,
+	// Phase 1 Parameters
 	maxPlayers int,
 	gamemode string,
 	difficulty string,
 	pvp bool,
 	enableCommandBlock bool,
 	levelSeed string,
+	// Phase 2 Parameters - Performance
+	viewDistance int,
+	simulationDistance int,
+	// Phase 2 Parameters - World Generation
+	allowNether bool,
+	allowEnd bool,
+	generateStructures bool,
+	worldType string,
+	bonusChest bool,
+	maxWorldSize int,
+	// Phase 2 Parameters - Spawn Settings
+	spawnProtection int,
+	spawnAnimals bool,
+	spawnMonsters bool,
+	spawnNPCs bool,
+	// Phase 2 Parameters - Network & Performance
+	maxTickTime int,
+	networkCompressionThreshold int,
 ) (string, error) {
 	ctx := context.Background()
 
@@ -104,17 +123,42 @@ func (d *DockerService) CreateContainer(
 		"ENABLE_RCON=true",
 		"RCON_PASSWORD=minecraft",
 		"RCON_PORT=25575",
-		// Gameplay Settings (Phase 1)
+
+		// === Phase 1 - Gameplay Settings ===
 		fmt.Sprintf("MODE=%s", gamemode),
 		fmt.Sprintf("DIFFICULTY=%s", difficulty),
 		fmt.Sprintf("PVP=%t", pvp),
 		fmt.Sprintf("ENABLE_COMMAND_BLOCK=%t", enableCommandBlock),
+
+		// === Phase 2 - Performance Settings ===
+		fmt.Sprintf("VIEW_DISTANCE=%d", viewDistance),
+		fmt.Sprintf("SIMULATION_DISTANCE=%d", simulationDistance),
+
+		// === Phase 2 - World Generation Settings ===
+		fmt.Sprintf("ALLOW_NETHER=%t", allowNether),
+		fmt.Sprintf("GENERATE_STRUCTURES=%t", generateStructures),
+		fmt.Sprintf("LEVEL_TYPE=%s", worldType),
+		fmt.Sprintf("ENABLE_BONUS_CHEST=%t", bonusChest),
+		fmt.Sprintf("MAX_WORLD_SIZE=%d", maxWorldSize),
+
+		// === Phase 2 - Spawn Settings ===
+		fmt.Sprintf("SPAWN_PROTECTION=%d", spawnProtection),
+		fmt.Sprintf("SPAWN_ANIMALS=%t", spawnAnimals),
+		fmt.Sprintf("SPAWN_MONSTERS=%t", spawnMonsters),
+		fmt.Sprintf("SPAWN_NPCS=%t", spawnNPCs),
+
+		// === Phase 2 - Network & Performance Settings ===
+		fmt.Sprintf("MAX_TICK_TIME=%d", maxTickTime),
+		fmt.Sprintf("NETWORK_COMPRESSION_THRESHOLD=%d", networkCompressionThreshold),
 	}
 
 	// Add SEED only if provided (empty = random)
 	if levelSeed != "" {
 		env = append(env, fmt.Sprintf("SEED=%s", levelSeed))
 	}
+
+	// Note: Allow End is set via server.properties, not ENV
+	// We'll need to handle this after container creation
 
 	// Note: RCON port is NOT mapped to host for security
 	// Commands are executed via docker exec instead
