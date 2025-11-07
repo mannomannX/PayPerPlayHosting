@@ -334,6 +334,11 @@
                                 class="px-4 py-2 border-b-2 transition">
                             Appearance
                         </button>
+                        <button @click="detailsModal.tab = 'players'"
+                                :class="detailsModal.tab === 'players' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Players
+                        </button>
                     </div>
 
                     <!-- Tab Content -->
@@ -1015,6 +1020,244 @@
                                                   cursor-pointer">
                                     <div class="text-xs text-gray-400">
                                         Recommended: 64x64 pixels PNG image. Changes apply immediately.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Players Tab -->
+                        <div x-show="detailsModal.tab === 'players'" class="space-y-4"
+                             x-data="{
+                                 activePlayerList: 'whitelist',
+                                 whitelist: [],
+                                 ops: [],
+                                 bannedPlayers: [],
+                                 newPlayerName: '',
+                                 loading: false,
+                                 async loadPlayerList(listType) {
+                                     this.loading = true;
+                                     try {
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/players/${listType}`, {
+                                             headers: { 'Authorization': `Bearer ${token}` }
+                                         });
+                                         if (response.ok) {
+                                             const data = await response.json();
+                                             this[listType] = data.players || [];
+                                         }
+                                     } catch (err) {
+                                         console.error('Failed to load player list:', err);
+                                     } finally {
+                                         this.loading = false;
+                                     }
+                                 },
+                                 async addPlayer(listType) {
+                                     if (!this.newPlayerName.trim()) return;
+
+                                     try {
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/players/${listType}/add`, {
+                                             method: 'POST',
+                                             headers: {
+                                                 'Authorization': `Bearer ${token}`,
+                                                 'Content-Type': 'application/json'
+                                             },
+                                             body: JSON.stringify({ username: this.newPlayerName.trim() })
+                                         });
+
+                                         if (response.ok) {
+                                             this.newPlayerName = '';
+                                             await this.loadPlayerList(listType);
+                                         } else {
+                                             const error = await response.json();
+                                             alert('Failed to add player: ' + error.error);
+                                         }
+                                     } catch (err) {
+                                         alert('Failed to add player: ' + err.message);
+                                     }
+                                 },
+                                 async removePlayer(listType, username) {
+                                     if (!confirm(`Remove ${username} from ${listType}?`)) return;
+
+                                     try {
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/players/${listType}/${username}`, {
+                                             method: 'DELETE',
+                                             headers: { 'Authorization': `Bearer ${token}` }
+                                         });
+
+                                         if (response.ok) {
+                                             await this.loadPlayerList(listType);
+                                         } else {
+                                             const error = await response.json();
+                                             alert('Failed to remove player: ' + error.error);
+                                         }
+                                     } catch (err) {
+                                         alert('Failed to remove player: ' + err.message);
+                                     }
+                                 }
+                             }"
+                             x-init="$watch('detailsModal.server', () => { if (detailsModal.server) { loadPlayerList('whitelist'); loadPlayerList('ops'); loadPlayerList('banned-players'); } })">
+
+                            <!-- Player List Type Tabs -->
+                            <div class="flex gap-2 border-b border-gray-700">
+                                <button @click="activePlayerList = 'whitelist'; loadPlayerList('whitelist')"
+                                        :class="activePlayerList === 'whitelist' ? 'border-blue-400 text-blue-400' : 'border-transparent'"
+                                        class="px-4 py-2 border-b-2 transition">
+                                    ✅ Whitelist
+                                </button>
+                                <button @click="activePlayerList = 'ops'; loadPlayerList('ops')"
+                                        :class="activePlayerList === 'ops' ? 'border-purple-400 text-purple-400' : 'border-transparent'"
+                                        class="px-4 py-2 border-b-2 transition">
+                                    👑 Operators
+                                </button>
+                                <button @click="activePlayerList = 'banned-players'; loadPlayerList('banned-players')"
+                                        :class="activePlayerList === 'banned-players' ? 'border-red-400 text-red-400' : 'border-transparent'"
+                                        class="px-4 py-2 border-b-2 transition">
+                                    🚫 Banned
+                                </button>
+                            </div>
+
+                            <!-- Whitelist Section -->
+                            <div x-show="activePlayerList === 'whitelist'" class="space-y-4">
+                                <div class="bg-gray-700 p-4 rounded-lg">
+                                    <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
+                                        <span>✅</span>
+                                        <span>Whitelist Management</span>
+                                    </h4>
+                                    <p class="text-sm text-gray-300 mb-4">
+                                        Only whitelisted players can join the server. This is useful for private servers.
+                                    </p>
+
+                                    <!-- Add Player Form -->
+                                    <div class="flex gap-2 mb-4">
+                                        <input type="text"
+                                               x-model="newPlayerName"
+                                               @keyup.enter="addPlayer('whitelist')"
+                                               placeholder="Enter player username"
+                                               class="flex-1 px-4 py-2 bg-gray-600 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-400">
+                                        <button @click="addPlayer('whitelist')"
+                                                :disabled="!newPlayerName.trim()"
+                                                class="px-6 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white rounded font-semibold transition-colors">
+                                            Add
+                                        </button>
+                                    </div>
+
+                                    <!-- Player List -->
+                                    <div class="space-y-2">
+                                        <div class="text-sm font-semibold text-gray-400 mb-2">
+                                            Whitelisted Players (<span x-text="whitelist.length"></span>):
+                                        </div>
+                                        <template x-for="player in whitelist" :key="player">
+                                            <div class="flex items-center justify-between bg-gray-600 p-3 rounded">
+                                                <span x-text="player" class="font-medium"></span>
+                                                <button @click="removePlayer('whitelist', player)"
+                                                        class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors">
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </template>
+                                        <div x-show="whitelist.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                            No whitelisted players yet
+                                        </div>
+                                        <div x-show="loading" class="text-center py-8 text-gray-400">
+                                            Loading...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Operators Section -->
+                            <div x-show="activePlayerList === 'ops'" class="space-y-4">
+                                <div class="bg-gray-700 p-4 rounded-lg">
+                                    <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
+                                        <span>👑</span>
+                                        <span>Operator Management</span>
+                                    </h4>
+                                    <p class="text-sm text-gray-300 mb-4">
+                                        Operators have administrator privileges on the server and can execute commands.
+                                    </p>
+
+                                    <!-- Add Player Form -->
+                                    <div class="flex gap-2 mb-4">
+                                        <input type="text"
+                                               x-model="newPlayerName"
+                                               @keyup.enter="addPlayer('ops')"
+                                               placeholder="Enter player username"
+                                               class="flex-1 px-4 py-2 bg-gray-600 text-white rounded focus:outline-none focus:ring-2 focus:ring-purple-400">
+                                        <button @click="addPlayer('ops')"
+                                                :disabled="!newPlayerName.trim()"
+                                                class="px-6 py-2 bg-purple-500 hover:bg-purple-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white rounded font-semibold transition-colors">
+                                            Add
+                                        </button>
+                                    </div>
+
+                                    <!-- Player List -->
+                                    <div class="space-y-2">
+                                        <div class="text-sm font-semibold text-gray-400 mb-2">
+                                            Operators (<span x-text="ops.length"></span>):
+                                        </div>
+                                        <template x-for="player in ops" :key="player">
+                                            <div class="flex items-center justify-between bg-gray-600 p-3 rounded">
+                                                <span x-text="player" class="font-medium"></span>
+                                                <button @click="removePlayer('ops', player)"
+                                                        class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors">
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </template>
+                                        <div x-show="ops.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                            No operators yet
+                                        </div>
+                                        <div x-show="loading" class="text-center py-8 text-gray-400">
+                                            Loading...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Banned Players Section -->
+                            <div x-show="activePlayerList === 'banned-players'" class="space-y-4">
+                                <div class="bg-gray-700 p-4 rounded-lg">
+                                    <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
+                                        <span>🚫</span>
+                                        <span>Banned Players</span>
+                                    </h4>
+                                    <p class="text-sm text-gray-300 mb-4">
+                                        Banned players cannot join the server, even if whitelisted.
+                                    </p>
+
+                                    <!-- Add Player Form -->
+                                    <div class="flex gap-2 mb-4">
+                                        <input type="text"
+                                               x-model="newPlayerName"
+                                               @keyup.enter="addPlayer('banned-players')"
+                                               placeholder="Enter player username"
+                                               class="flex-1 px-4 py-2 bg-gray-600 text-white rounded focus:outline-none focus:ring-2 focus:ring-red-400">
+                                        <button @click="addPlayer('banned-players')"
+                                                :disabled="!newPlayerName.trim()"
+                                                class="px-6 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white rounded font-semibold transition-colors">
+                                            Ban
+                                        </button>
+                                    </div>
+
+                                    <!-- Player List -->
+                                    <div class="space-y-2">
+                                        <div class="text-sm font-semibold text-gray-400 mb-2">
+                                            Banned Players (<span x-text="bannedPlayers.length"></span>):
+                                        </div>
+                                        <template x-for="player in bannedPlayers" :key="player">
+                                            <div class="flex items-center justify-between bg-gray-600 p-3 rounded">
+                                                <span x-text="player" class="font-medium"></span>
+                                                <button @click="removePlayer('banned-players', player)"
+                                                        class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors">
+                                                    Unban
+                                                </button>
+                                            </div>
+                                        </template>
+                                        <div x-show="bannedPlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                            No banned players
+                                        </div>
+                                        <div x-show="loading" class="text-center py-8 text-gray-400">
+                                            Loading...
+                                        </div>
                                     </div>
                                 </div>
                             </div>
