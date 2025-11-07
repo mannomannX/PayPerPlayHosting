@@ -237,7 +237,7 @@ func (s *RecoveryService) fixPaperConfig(serverDir string) error {
 	originalContent := string(content)
 	fixedContent := originalContent
 
-	// Fix max-leash-distance
+	// Fix max-leash-distance (expects float)
 	if strings.Contains(fixedContent, "max-leash-distance: default") {
 		logger.Info("Fixing max-leash-distance", map[string]interface{}{
 			"file": configFile,
@@ -245,19 +245,34 @@ func (s *RecoveryService) fixPaperConfig(serverDir string) error {
 		fixedContent = strings.ReplaceAll(fixedContent, "max-leash-distance: default", "max-leash-distance: 10.0")
 	}
 
-	// Fix other "default" values in numeric fields
-	lines := strings.Split(fixedContent, "\n")
-	for i, line := range lines {
-		// Match lines ending with ": default"
-		if strings.HasSuffix(strings.TrimSpace(line), ": default") {
-			logger.Info("Fixing numeric field with 'default'", map[string]interface{}{
-				"line": line,
-				"file": configFile,
+	// Fix auto-save-interval (expects integer or "default")
+	// Default is 6000 ticks (5 minutes at 20 ticks/second)
+	if strings.Contains(fixedContent, "auto-save-interval: 10.0") {
+		logger.Info("Fixing auto-save-interval (invalid float)", map[string]interface{}{
+			"file": configFile,
+		})
+		fixedContent = strings.ReplaceAll(fixedContent, "auto-save-interval: 10.0", "auto-save-interval: default")
+	}
+
+	// Fix other invalid float values that should be "default"
+	// These fields expect either integer or "default", not floats
+	integerFields := map[string]string{
+		"delay-chunk-unloads-by: 10.0":           "delay-chunk-unloads-by: default",
+		"entity-per-chunk-save-limit: 10.0":      "entity-per-chunk-save-limit: default",
+		"fixed-chunk-inhabited-time: 10.0":       "fixed-chunk-inhabited-time: default",
+		"max-auto-save-chunks-per-tick: 10.0":    "max-auto-save-chunks-per-tick: default",
+		"prevent-moving-into-unloaded-chunks: 10.0": "prevent-moving-into-unloaded-chunks: default",
+	}
+
+	for invalidValue, correctValue := range integerFields {
+		if strings.Contains(fixedContent, invalidValue) {
+			logger.Info("Fixing integer field with invalid float", map[string]interface{}{
+				"field": invalidValue,
+				"file":  configFile,
 			})
-			lines[i] = strings.Replace(line, ": default", ": 10.0", 1)
+			fixedContent = strings.ReplaceAll(fixedContent, invalidValue, correctValue)
 		}
 	}
-	fixedContent = strings.Join(lines, "\n")
 
 	// Only write if changes were made
 	if fixedContent != originalContent {
