@@ -562,6 +562,8 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 			// Phase 2 Parameters - Network & Performance
 			server.MaxTickTime,
 			server.NetworkCompressionThreshold,
+			// Phase 4 Parameters - Server Description
+			server.MOTD,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create new container: %w", err)

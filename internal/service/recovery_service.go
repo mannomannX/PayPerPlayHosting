@@ -435,6 +435,8 @@ func (s *RecoveryService) restartContainer(server *models.MinecraftServer) bool 
 		// Phase 2 Parameters - Network & Performance
 		server.MaxTickTime,
 		server.NetworkCompressionThreshold,
+		// Phase 4 Parameters - Server Description
+		server.MOTD,
 	)
 	if err != nil {
 		logger.Error("Failed to create container during recovery", err, map[string]interface{}{
