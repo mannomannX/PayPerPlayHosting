@@ -493,6 +493,19 @@
                                     <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.MinecraftVersion"></span></p>
                                 </div>
 
+                                <!-- Server Type -->
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium mb-2">Server Type</label>
+                                    <select x-model="configForm.server_type"
+                                            class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <option value="paper">Paper (Recommended)</option>
+                                        <option value="spigot">Spigot</option>
+                                        <option value="bukkit">Bukkit</option>
+                                    </select>
+                                    <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.ServerType"></span></p>
+                                    <p class="text-xs text-yellow-400 mt-1">⚠️ Paper/Spigot/Bukkit configs are preserved but may be inactive</p>
+                                </div>
+
                                 <!-- Max Players -->
                                 <div class="mb-4">
                                     <label class="block text-sm font-medium mb-2">Max Players</label>
@@ -925,6 +938,7 @@
                     // Initialize config form with current values
                     this.configForm.ram_mb = server.RAMMb;
                     this.configForm.minecraft_version = server.MinecraftVersion;
+                    this.configForm.server_type = server.ServerType;
                     this.configForm.max_players = server.MaxPlayers;
 
                     // Load usage logs
@@ -1232,6 +1246,10 @@
                         changes.minecraft_version = this.configForm.minecraft_version;
                     }
 
+                    if (this.configForm.server_type !== server.ServerType) {
+                        changes.server_type = this.configForm.server_type;
+                    }
+
                     if (this.configForm.max_players !== server.MaxPlayers) {
                         changes.max_players = parseInt(this.configForm.max_players);
                     }
@@ -1261,6 +1279,26 @@
                             if (!confirm(`Version Upgrade: ${oldVersion} → ${newVersion}\n\nThis should work, but always make sure you have backups!\n\nContinue?`)) {
                                 return;
                             }
+                        }
+                    }
+
+                    // Special warning for server type changes
+                    if (changes.server_type) {
+                        const oldType = server.ServerType;
+                        const newType = changes.server_type;
+
+                        let warningMessage = `Server Type Change: ${oldType} → ${newType}\n\n`;
+
+                        if (oldType === 'paper' && (newType === 'spigot' || newType === 'bukkit')) {
+                            warningMessage += `⚠️ Paper-specific configs will be preserved but become inactive.\n\nPaper features like:\n- Paper-specific config files\n- Paper performance optimizations\n- Paper-only plugins\n\nWill no longer work until you switch back to Paper.\n\nWorld data remains safe and compatible.\n\nContinue?`;
+                        } else if ((oldType === 'spigot' || oldType === 'bukkit') && newType === 'paper') {
+                            warningMessage += `✅ Switching to Paper!\n\nBenefits:\n- Better performance\n- More configuration options\n- Paper-specific features enabled\n\nYour world and plugins should work fine.\n\nContinue?`;
+                        } else {
+                            warningMessage += `Your world and most plugins should remain compatible.\n\nContinue?`;
+                        }
+
+                        if (!confirm(warningMessage)) {
+                            return;
                         }
                     }
 
@@ -1303,6 +1341,7 @@
                                 this.detailsModal.server = updatedServer;
                                 this.configForm.ram_mb = updatedServer.RAMMb;
                                 this.configForm.minecraft_version = updatedServer.MinecraftVersion;
+                                this.configForm.server_type = updatedServer.ServerType;
                                 this.configForm.max_players = updatedServer.MaxPlayers;
                             }
                         } else {

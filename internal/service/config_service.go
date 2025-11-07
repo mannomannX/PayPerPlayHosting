@@ -89,6 +89,23 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 			change.NewValue = fmt.Sprintf("%v", newValue)
 			requiresRestart = false // Can be changed via RCON
 
+		case "server_type":
+			change.ChangeType = models.ConfigChangeServerType
+			change.OldValue = string(server.ServerType)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate server type
+			newType := fmt.Sprintf("%v", newValue)
+			if !s.isValidServerType(newType) {
+				return nil, fmt.Errorf("invalid server type: %s (must be paper, spigot, or bukkit)", newType)
+			}
+
+			// Warn about incompatible changes
+			if !s.isCompatibleServerType(string(server.ServerType), newType) {
+				return nil, fmt.Errorf("server type change from %s to %s is not supported (only paper/spigot/bukkit are compatible)", server.ServerType, newType)
+			}
+
 		default:
 			return nil, fmt.Errorf("unsupported config change: %s", key)
 		}
@@ -178,6 +195,9 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 		case "max_players":
 			maxPlayers := int(value.(float64))
 			server.MaxPlayers = maxPlayers
+
+		case "server_type":
+			server.ServerType = models.ServerType(value.(string))
 		}
 	}
 
@@ -269,6 +289,30 @@ func (s *ConfigService) isValidRAM(ramMb int) bool {
 		}
 	}
 	return false
+}
+
+// isValidServerType checks if the server type is valid and supported
+func (s *ConfigService) isValidServerType(serverType string) bool {
+	validTypes := []string{"paper", "spigot", "bukkit"}
+	for _, v := range validTypes {
+		if serverType == v {
+			return true
+		}
+	}
+	return false
+}
+
+// isCompatibleServerType checks if the server type change is compatible
+func (s *ConfigService) isCompatibleServerType(oldType, newType string) bool {
+	// Paper, Spigot, and Bukkit are compatible with each other
+	compatibleGroup := map[string]bool{
+		"paper":  true,
+		"spigot": true,
+		"bukkit": true,
+	}
+
+	// Both types must be in the compatible group
+	return compatibleGroup[oldType] && compatibleGroup[newType]
 }
 
 // GetConfigHistory returns the configuration change history for a server
