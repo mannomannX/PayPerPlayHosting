@@ -120,6 +120,9 @@ var (
 	// API rate limiter: 60 requests per minute
 	APIRateLimiter = NewRateLimiter(1*time.Second, 60)
 
-	// Expensive operations: 10 requests per minute
+	// File upload operations: 20 requests per minute (icons, resource packs, etc.)
+	FileUploadRateLimiter = NewRateLimiter(3*time.Second, 20)
+
+	// Expensive operations: 10 requests per minute (backups, restores, etc.)
 	ExpensiveRateLimiter = NewRateLimiter(6*time.Second, 10)
 )

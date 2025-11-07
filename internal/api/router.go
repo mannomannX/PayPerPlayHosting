@@ -124,7 +124,7 @@ func SetupRouter(
 
 			// Uploaded Files (resource packs, data packs, icons, world gen)
 			uploads := servers.Group("/:id/uploads")
-			uploads.Use(middleware.RateLimitMiddleware(middleware.ExpensiveRateLimiter))
+			uploads.Use(middleware.RateLimitMiddleware(middleware.FileUploadRateLimiter))
 			{
 				uploads.POST("", fileHandler.UploadFile)
 				uploads.GET("", fileHandler.ListFiles)
