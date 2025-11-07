@@ -237,7 +237,7 @@ func (s *RecoveryService) fixPaperConfig(serverDir string) error {
 	originalContent := string(content)
 	fixedContent := originalContent
 
-	// Fix max-leash-distance (expects float)
+	// Step 1: Fix max-leash-distance (ONLY field that expects float)
 	if strings.Contains(fixedContent, "max-leash-distance: default") {
 		logger.Info("Fixing max-leash-distance", map[string]interface{}{
 			"file": configFile,
@@ -245,32 +245,32 @@ func (s *RecoveryService) fixPaperConfig(serverDir string) error {
 		fixedContent = strings.ReplaceAll(fixedContent, "max-leash-distance: default", "max-leash-distance: 10.0")
 	}
 
-	// Fix auto-save-interval (expects integer or "default")
-	// Default is 6000 ticks (5 minutes at 20 ticks/second)
-	if strings.Contains(fixedContent, "auto-save-interval: 10.0") {
-		logger.Info("Fixing auto-save-interval (invalid float)", map[string]interface{}{
-			"file": configFile,
-		})
-		fixedContent = strings.ReplaceAll(fixedContent, "auto-save-interval: 10.0", "auto-save-interval: default")
+	// Step 2: Fix ALL other fields that were incorrectly set to 10.0
+	// Paper expects these to be integers, booleans, or "default" - NOT floats
+	// This fixes the bug where our old script replaced ALL "default" with "10.0"
+	invalidFloats := []string{
+		"auto-save-interval: 10.0",
+		"delay-chunk-unloads-by: 10.0",
+		"entity-per-chunk-save-limit: 10.0",
+		"fixed-chunk-inhabited-time: 10.0",
+		"max-auto-save-chunks-per-tick: 10.0",
+		"prevent-moving-into-unloaded-chunks: 10.0",
+		"non-player-arrow-despawn-rate: 10.0",
+		"creative-arrow-despawn-rate: 10.0",
+		// Boolean fields that got corrupted
+		"loot-tables: 10.0",
+		"villager-trade: 10.0",
 	}
 
-	// Fix other invalid float values that should be "default"
-	// These fields expect either integer or "default", not floats
-	integerFields := map[string]string{
-		"delay-chunk-unloads-by: 10.0":           "delay-chunk-unloads-by: default",
-		"entity-per-chunk-save-limit: 10.0":      "entity-per-chunk-save-limit: default",
-		"fixed-chunk-inhabited-time: 10.0":       "fixed-chunk-inhabited-time: default",
-		"max-auto-save-chunks-per-tick: 10.0":    "max-auto-save-chunks-per-tick: default",
-		"prevent-moving-into-unloaded-chunks: 10.0": "prevent-moving-into-unloaded-chunks: default",
-	}
-
-	for invalidValue, correctValue := range integerFields {
-		if strings.Contains(fixedContent, invalidValue) {
-			logger.Info("Fixing integer field with invalid float", map[string]interface{}{
-				"field": invalidValue,
+	for _, invalidField := range invalidFloats {
+		if strings.Contains(fixedContent, invalidField) {
+			correctField := strings.Replace(invalidField, ": 10.0", ": default", 1)
+			logger.Info("Fixing field with invalid 10.0 value", map[string]interface{}{
+				"field": invalidField,
+				"fixed": correctField,
 				"file":  configFile,
 			})
-			fixedContent = strings.ReplaceAll(fixedContent, invalidValue, correctValue)
+			fixedContent = strings.ReplaceAll(fixedContent, invalidField, correctField)
 		}
 	}
 
