@@ -1282,17 +1282,23 @@
                     if (!confirm('Restart the server? This will stop and start the server.')) return;
 
                     try {
-                        // First stop the server
-                        const stopResponse = await this.apiCall(`/api/servers/${id}/stop`, { method: 'POST' }, 60000);
-                        if (!stopResponse.ok) {
-                            const error = await stopResponse.json();
-                            throw new Error(error.error || 'Failed to stop server');
+                        // Find the server to check its status
+                        const server = this.servers.find(s => s.ID === id);
+
+                        // If server is running, stop it first
+                        if (server && server.Status === 'running') {
+                            const stopResponse = await this.apiCall(`/api/servers/${id}/stop`, { method: 'POST' }, 60000);
+                            if (!stopResponse.ok) {
+                                const error = await stopResponse.json();
+                                throw new Error(error.error || 'Failed to stop server');
+                            }
+                            // Wait a moment for clean shutdown
+                            await new Promise(resolve => setTimeout(resolve, 2000));
                         }
+                        // For servers in "error" state, skip stop and go directly to start
+                        // The start API will clean up and recreate the container
 
-                        // Wait a moment for clean shutdown
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-
-                        // Then start it again
+                        // Start the server
                         const startResponse = await this.apiCall(`/api/servers/${id}/start`, { method: 'POST' }, 120000);
                         if (!startResponse.ok) {
                             const error = await startResponse.json();
