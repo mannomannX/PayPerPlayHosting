@@ -110,6 +110,8 @@ func (s *RecoveryService) attemptRecovery(server *models.MinecraftServer) {
 	// Apply appropriate recovery strategy
 	var recovered bool
 	switch crashCause {
+	case "version_mismatch":
+		recovered = s.recoverFromVersionMismatch(server)
 	case "config_corruption":
 		recovered = s.recoverFromConfigCorruption(server)
 	case "oom":
@@ -155,6 +157,12 @@ func (s *RecoveryService) attemptRecovery(server *models.MinecraftServer) {
 // analyzeCrashLogs analyzes container logs to determine crash cause
 func (s *RecoveryService) analyzeCrashLogs(logs string) string {
 	logsLower := strings.ToLower(logs)
+
+	// Check for version mismatch (chunk version or config version)
+	if strings.Contains(logsLower, "chunk saved with newer version") ||
+		strings.Contains(logsLower, "loading a newer configuration than is supported") {
+		return "version_mismatch"
+	}
 
 	// Check for config corruption (NumberFormatException, YAML errors, etc.)
 	if strings.Contains(logsLower, "numberformatexception") ||
@@ -300,6 +308,32 @@ func (s *RecoveryService) fixPaperConfig(serverDir string) error {
 	}
 
 	return nil
+}
+
+// recoverFromVersionMismatch handles version mismatch errors
+func (s *RecoveryService) recoverFromVersionMismatch(server *models.MinecraftServer) bool {
+	logger.Error("Server crashed due to version mismatch", fmt.Errorf("world was created with newer Minecraft version"), map[string]interface{}{
+		"server_id":         server.ID,
+		"current_version":   server.MinecraftVersion,
+	})
+
+	// Version mismatch cannot be automatically recovered
+	// The user must update the server version via Configuration tab
+	// We set status to error with a helpful message
+
+	server.Status = models.StatusError
+	s.serverRepo.Update(server)
+
+	// Broadcast specific error message via WebSocket
+	if s.wsHub != nil {
+		s.wsHub.Broadcast("server_status", map[string]interface{}{
+			"server_id": server.ID,
+			"status":    string(models.StatusError),
+			"error":     fmt.Sprintf("Version mismatch: World was created with newer Minecraft version than %s. Please update server version via Configuration tab.", server.MinecraftVersion),
+		})
+	}
+
+	return false // Cannot auto-recover
 }
 
 // recoverFromOOM recovers a server from OOM

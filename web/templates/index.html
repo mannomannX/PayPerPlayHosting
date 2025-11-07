@@ -1242,6 +1242,28 @@
                         return;
                     }
 
+                    // Special warning for version changes
+                    if (changes.minecraft_version) {
+                        const oldVersion = server.MinecraftVersion;
+                        const newVersion = changes.minecraft_version;
+
+                        // Parse major version (e.g., "1.20.4" -> "1.20", "1.21.1" -> "1.21")
+                        const oldMajor = oldVersion.split('.').slice(0, 2).join('.');
+                        const newMajor = newVersion.split('.').slice(0, 2).join('.');
+
+                        // Warn about downgrades
+                        if (newMajor < oldMajor) {
+                            if (!confirm(`⚠️ WARNING: Version Downgrade Detected!\n\nYou are downgrading from ${oldVersion} to ${newVersion}.\n\nThis will likely FAIL if your world was created with ${oldVersion}!\nMinecraft cannot load worlds from newer versions.\n\nOnly proceed if:\n- This is a fresh/new world\n- You have a backup from the older version\n\nContinue anyway?`)) {
+                                return;
+                            }
+                        } else if (newMajor > oldMajor) {
+                            // Info about upgrades
+                            if (!confirm(`Version Upgrade: ${oldVersion} → ${newVersion}\n\nThis should work, but always make sure you have backups!\n\nContinue?`)) {
+                                return;
+                            }
+                        }
+                    }
+
                     // Confirm changes
                     const changesList = Object.entries(changes)
                         .map(([key, value]) => `${key}: ${value}`)
