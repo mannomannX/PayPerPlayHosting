@@ -6,6 +6,7 @@
     <title>{{ .title }}</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/js/version-features.js"></script>
 </head>
 <body class="bg-gray-900 text-white">
     <div x-data="app()" x-init="init()" class="min-h-screen">
@@ -526,12 +527,18 @@
                                         <label class="block text-sm font-medium mb-2">Gamemode</label>
                                         <select x-model="configForm.gamemode"
                                                 class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
-                                            <option value="survival">Survival</option>
-                                            <option value="creative">Creative</option>
-                                            <option value="adventure">Adventure</option>
-                                            <option value="spectator">Spectator</option>
+                                            <template x-for="mode in getAvailableGamemodes()" :key="mode.value">
+                                                <option :value="mode.value"
+                                                        :disabled="!mode.enabled"
+                                                        :class="!mode.enabled ? 'text-gray-500' : ''"
+                                                        x-text="mode.label + (!mode.enabled ? ' (Not available in this version)' : '')">
+                                                </option>
+                                            </template>
                                         </select>
                                         <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.Gamemode || 'survival'"></span></p>
+                                        <p x-show="!isGamemodeSupported(configForm.gamemode)" class="text-xs text-red-400 mt-1">
+                                            ⚠️ <span x-text="getGamemodeWarning(configForm.gamemode)"></span>
+                                        </p>
                                     </div>
 
                                     <!-- Difficulty -->
@@ -560,13 +567,18 @@
 
                                     <!-- Command Blocks -->
                                     <div class="mb-4">
-                                        <label class="flex items-center cursor-pointer">
+                                        <label class="flex items-center cursor-pointer"
+                                               :class="!areCommandBlocksSupported() ? 'opacity-50 cursor-not-allowed' : ''">
                                             <input type="checkbox"
                                                    x-model="configForm.enable_command_block"
+                                                   :disabled="!areCommandBlocksSupported()"
                                                    class="mr-2 w-5 h-5">
                                             <span class="text-sm font-medium">Enable Command Blocks</span>
                                         </label>
                                         <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.EnableCommandBlock ? 'Enabled' : 'Disabled'"></span></p>
+                                        <p x-show="!areCommandBlocksSupported()" class="text-xs text-red-400 mt-1">
+                                            ⚠️ Command blocks require Minecraft 1.4.2+. Current: <span x-text="configForm.minecraft_version"></span>
+                                        </p>
                                     </div>
 
                                     <!-- Level Seed -->
@@ -1458,6 +1470,50 @@
                     const mins = Math.floor(seconds / 60);
                     const secs = seconds % 60;
                     return `${mins}m ${secs}s`;
+                },
+
+                // Version-aware feature validation
+                getAvailableGamemodes() {
+                    if (!window.VersionFeatures) return [
+                        { value: 'survival', label: 'Survival', enabled: true },
+                        { value: 'creative', label: 'Creative', enabled: true },
+                        { value: 'adventure', label: 'Adventure', enabled: true },
+                        { value: 'spectator', label: 'Spectator', enabled: true }
+                    ];
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    const serverType = this.configForm.server_type || 'paper';
+                    return window.VersionFeatures.getAvailableGamemodes(version, serverType);
+                },
+
+                isGamemodeSupported(gamemode) {
+                    if (!window.VersionFeatures || !gamemode) return true;
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    const feature = `gamemode_${gamemode}`;
+                    return window.VersionFeatures.isFeatureSupported(feature, version);
+                },
+
+                getGamemodeWarning(gamemode) {
+                    if (!window.VersionFeatures || !gamemode) return '';
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    const feature = `gamemode_${gamemode}`;
+                    return window.VersionFeatures.getUnsupportedFeatureMessage(feature, version);
+                },
+
+                areCommandBlocksSupported() {
+                    if (!window.VersionFeatures) return true;
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    return window.VersionFeatures.areCommandBlocksSupported(version);
+                },
+
+                areSeedsSupported() {
+                    if (!window.VersionFeatures) return true;
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    return window.VersionFeatures.areSeedsSupported(version);
                 }
             }
         }
