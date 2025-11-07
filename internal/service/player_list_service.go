@@ -112,6 +112,56 @@ func (s *PlayerListService) GetList(serverID string, listType PlayerListType) (i
 	}
 }
 
+// GetOnlinePlayers retrieves currently online players via RCON
+func (s *PlayerListService) GetOnlinePlayers(serverID string) ([]string, error) {
+	server, err := s.serverRepo.FindByID(serverID)
+	if err != nil {
+		return nil, fmt.Errorf("server not found: %w", err)
+	}
+
+	// Only works for running servers
+	if server.Status != models.StatusRunning {
+		return []string{}, nil
+	}
+
+	// Execute "list" command via RCON
+	output, err := s.consoleService.ExecuteCommand(serverID, "list")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get online players: %w", err)
+	}
+
+	// Parse output: "There are 2 of a max of 20 players online: player1, player2"
+	players := parseOnlinePlayers(output)
+	return players, nil
+}
+
+// GetHistoricPlayers retrieves all players who ever joined from usercache.json
+func (s *PlayerListService) GetHistoricPlayers(serverID string) ([]PlayerEntry, error) {
+	server, err := s.serverRepo.FindByID(serverID)
+	if err != nil {
+		return nil, fmt.Errorf("server not found: %w", err)
+	}
+
+	// Path to usercache.json
+	usercachePath := filepath.Join(s.config.ServersBasePath, server.ID, "usercache.json")
+
+	data, err := os.ReadFile(usercachePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No players have joined yet
+			return []PlayerEntry{}, nil
+		}
+		return nil, fmt.Errorf("failed to read usercache: %w", err)
+	}
+
+	var usercache []PlayerEntry
+	if err := json.Unmarshal(data, &usercache); err != nil {
+		return nil, fmt.Errorf("failed to parse usercache: %w", err)
+	}
+
+	return usercache, nil
+}
+
 // AddToList adds a player to a specific list
 func (s *PlayerListService) AddToList(serverID, username string, listType PlayerListType) error {
 	server, err := s.serverRepo.FindByID(serverID)
@@ -351,4 +401,32 @@ func (s *PlayerListService) emptyListForType(listType PlayerListType) interface{
 	default:
 		return []PlayerEntry{}
 	}
+}
+
+// parseOnlinePlayers parses the output of the "list" RCON command
+// Example: "There are 2 of a max of 20 players online: player1, player2"
+func parseOnlinePlayers(output string) []string {
+	// Find the player list after the colon
+	parts := strings.Split(output, ":")
+	if len(parts) < 2 {
+		return []string{}
+	}
+
+	// Get the player names part and trim whitespace
+	playersStr := strings.TrimSpace(parts[1])
+	if playersStr == "" {
+		return []string{}
+	}
+
+	// Split by comma and trim each name
+	players := strings.Split(playersStr, ",")
+	result := []string{}
+	for _, player := range players {
+		trimmed := strings.TrimSpace(player)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+
+	return result
 }

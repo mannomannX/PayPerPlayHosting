@@ -1032,6 +1032,8 @@
                                  whitelist: [],
                                  ops: [],
                                  bannedPlayers: [],
+                                 onlinePlayers: [],
+                                 historicPlayers: [],
                                  newPlayerName: '',
                                  loading: false,
                                  async loadPlayerList(listType) {
@@ -1092,6 +1094,38 @@
                                      } catch (err) {
                                          alert('Failed to remove player: ' + err.message);
                                      }
+                                 },
+                                 async loadOnlinePlayers() {
+                                     this.loading = true;
+                                     try {
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/players-online`, {
+                                             headers: { 'Authorization': `Bearer ${token}` }
+                                         });
+                                         if (response.ok) {
+                                             const data = await response.json();
+                                             this.onlinePlayers = data.players || [];
+                                         }
+                                     } catch (err) {
+                                         console.error('Failed to load online players:', err);
+                                     } finally {
+                                         this.loading = false;
+                                     }
+                                 },
+                                 async loadHistoricPlayers() {
+                                     this.loading = true;
+                                     try {
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/players-history`, {
+                                             headers: { 'Authorization': `Bearer ${token}` }
+                                         });
+                                         if (response.ok) {
+                                             const data = await response.json();
+                                             this.historicPlayers = data.players || [];
+                                         }
+                                     } catch (err) {
+                                         console.error('Failed to load historic players:', err);
+                                     } finally {
+                                         this.loading = false;
+                                     }
                                  }
                              }"
                              x-init="$watch('detailsModal.server', () => { if (detailsModal.server) { loadPlayerList('whitelist'); loadPlayerList('ops'); loadPlayerList('banned-players'); } })">
@@ -1112,6 +1146,16 @@
                                         :class="activePlayerList === 'banned-players' ? 'border-red-400 text-red-400' : 'border-transparent'"
                                         class="px-4 py-2 border-b-2 transition">
                                     🚫 Banned
+                                </button>
+                                <button @click="activePlayerList = 'online'; loadOnlinePlayers()"
+                                        :class="activePlayerList === 'online' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                        class="px-4 py-2 border-b-2 transition">
+                                    🟢 Online
+                                </button>
+                                <button @click="activePlayerList = 'history'; loadHistoricPlayers()"
+                                        :class="activePlayerList === 'history' ? 'border-orange-400 text-orange-400' : 'border-transparent'"
+                                        class="px-4 py-2 border-b-2 transition">
+                                    📜 History
                                 </button>
                             </div>
 
@@ -1260,6 +1304,74 @@
                                         </template>
                                         <div x-show="bannedPlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
                                             No banned players
+                                        </div>
+                                        <div x-show="loading" class="text-center py-8 text-gray-400">
+                                            Loading...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Online Players Section -->
+                            <div x-show="activePlayerList === 'online'" class="space-y-4">
+                                <div class="bg-gray-700 p-4 rounded-lg">
+                                    <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
+                                        <span>🟢</span>
+                                        <span>Online Players</span>
+                                    </h4>
+                                    <p class="text-sm text-gray-300 mb-4">
+                                        Players currently connected to the server. Updates when you switch to this tab.
+                                    </p>
+
+                                    <!-- Player List -->
+                                    <div class="space-y-2">
+                                        <div class="text-sm font-semibold text-gray-400 mb-2 flex items-center justify-between">
+                                            <span>Currently Online (<span x-text="onlinePlayers.length"></span>):</span>
+                                            <button @click="loadOnlinePlayers()" class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-xs rounded">
+                                                Refresh
+                                            </button>
+                                        </div>
+                                        <template x-for="player in onlinePlayers" :key="player">
+                                            <div class="flex items-center bg-gray-600 p-3 rounded">
+                                                <span class="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                                                <span x-text="player" class="font-medium"></span>
+                                            </div>
+                                        </template>
+                                        <div x-show="onlinePlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                            No players online
+                                        </div>
+                                        <div x-show="loading" class="text-center py-8 text-gray-400">
+                                            Loading...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Historic Players Section -->
+                            <div x-show="activePlayerList === 'history'" class="space-y-4">
+                                <div class="bg-gray-700 p-4 rounded-lg">
+                                    <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
+                                        <span>📜</span>
+                                        <span>Player History</span>
+                                    </h4>
+                                    <p class="text-sm text-gray-300 mb-4">
+                                        All players who have ever joined this server.
+                                    </p>
+
+                                    <!-- Player List -->
+                                    <div class="space-y-2">
+                                        <div class="text-sm font-semibold text-gray-400 mb-2">
+                                            Total Players (<span x-text="historicPlayers.length"></span>):
+                                        </div>
+                                        <div class="max-h-96 overflow-y-auto space-y-2">
+                                            <template x-for="player in historicPlayers" :key="player.uuid">
+                                                <div class="flex items-center bg-gray-600 p-3 rounded">
+                                                    <span x-text="player.name" class="font-medium"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div x-show="historicPlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                            No players have joined yet
                                         </div>
                                         <div x-show="loading" class="text-center py-8 text-gray-400">
                                             Loading...

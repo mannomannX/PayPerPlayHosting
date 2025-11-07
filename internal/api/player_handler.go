@@ -150,3 +150,47 @@ func (h *PlayerHandler) RemoveFromPlayerList(c *gin.Context) {
 		"list_type": listType,
 	})
 }
+
+// GetOnlinePlayers returns currently online players
+// GET /api/servers/:id/players/online
+func (h *PlayerHandler) GetOnlinePlayers(c *gin.Context) {
+	serverID := c.Param("id")
+
+	players, err := h.playerListService.GetOnlinePlayers(serverID)
+	if err != nil {
+		logger.Error("Failed to get online players", err, map[string]interface{}{
+			"server_id": serverID,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get online players",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"players": players,
+		"count":   len(players),
+	})
+}
+
+// GetHistoricPlayers returns all players who ever joined the server
+// GET /api/servers/:id/players/history
+func (h *PlayerHandler) GetHistoricPlayers(c *gin.Context) {
+	serverID := c.Param("id")
+
+	players, err := h.playerListService.GetHistoricPlayers(serverID)
+	if err != nil {
+		logger.Error("Failed to get historic players", err, map[string]interface{}{
+			"server_id": serverID,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get historic players",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"players": players,
+		"count":   len(players),
+	})
+}

@@ -154,6 +154,10 @@ func SetupRouter(
 			servers.GET("/:id/players/:listType", playerHandler.GetPlayerList)
 			servers.POST("/:id/players/:listType/add", playerHandler.AddToPlayerList)
 			servers.DELETE("/:id/players/:listType/:username", playerHandler.RemoveFromPlayerList)
+
+			// Online & Historic Players
+			servers.GET("/:id/players-online", playerHandler.GetOnlinePlayers)
+			servers.GET("/:id/players-history", playerHandler.GetHistoricPlayers)
 		}
 
 		// Admin endpoints
