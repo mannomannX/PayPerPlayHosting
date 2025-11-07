@@ -138,6 +138,7 @@ func SetupRouter(
 			// Console Access (WebSocket for real-time logs and command execution)
 			servers.GET("/:id/console/stream", consoleHandler.HandleConsoleWebSocket)
 			servers.GET("/:id/console/logs", consoleHandler.GetConsoleLogs)
+			servers.POST("/:id/console/command", consoleHandler.ExecuteConsoleCommand)
 
 			// Configuration Management
 			servers.POST("/:id/config", configHandler.ApplyConfigChanges)

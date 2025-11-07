@@ -142,3 +142,45 @@ func (h *ConsoleHandler) GetConsoleLogs(c *gin.Context) {
 		"ws_url":  "/api/servers/" + serverID + "/console/stream",
 	})
 }
+
+// ExecuteConsoleCommand executes a single command via RCON
+// POST /api/servers/:id/console/command
+// Body: { "command": "kick player reason" }
+func (h *ConsoleHandler) ExecuteConsoleCommand(c *gin.Context) {
+	serverID := c.Param("id")
+
+	var req struct {
+		Command string `json:"command" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body. 'command' is required",
+		})
+		return
+	}
+
+	// Execute command via RCON
+	response, err := h.consoleService.ExecuteCommand(serverID, req.Command)
+	if err != nil {
+		logger.Error("Failed to execute console command", err, map[string]interface{}{
+			"server_id": serverID,
+			"command":   req.Command,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to execute command: " + err.Error(),
+		})
+		return
+	}
+
+	logger.Info("Console command executed", map[string]interface{}{
+		"server_id": serverID,
+		"command":   req.Command,
+	})
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":   "success",
+		"command":  req.Command,
+		"response": response,
+	})
+}

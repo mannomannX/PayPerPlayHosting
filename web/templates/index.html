@@ -1126,6 +1126,56 @@
                                      } finally {
                                          this.loading = false;
                                      }
+                                 },
+                                 async sendMessage(playerName) {
+                                     const message = prompt(`Send message to ${playerName}:`);
+                                     if (!message || !message.trim()) return;
+
+                                     try {
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/console/command`, {
+                                             method: 'POST',
+                                             headers: {
+                                                 'Authorization': `Bearer ${token}`,
+                                                 'Content-Type': 'application/json'
+                                             },
+                                             body: JSON.stringify({ command: `msg ${playerName} ${message.trim()}` })
+                                         });
+
+                                         if (response.ok) {
+                                             alert(`Message sent to ${playerName}`);
+                                         } else {
+                                             const error = await response.json();
+                                             alert('Failed to send message: ' + (error.error || 'Unknown error'));
+                                         }
+                                     } catch (err) {
+                                         alert('Failed to send message: ' + err.message);
+                                     }
+                                 },
+                                 async kickPlayer(playerName) {
+                                     const reason = prompt(`Kick ${playerName}? Enter reason (optional):`, 'Kicked by admin');
+                                     if (reason === null) return; // User cancelled
+
+                                     try {
+                                         const command = reason.trim() ? `kick ${playerName} ${reason.trim()}` : `kick ${playerName}`;
+                                         const response = await fetch(`/api/servers/${detailsModal.server.ID}/console/command`, {
+                                             method: 'POST',
+                                             headers: {
+                                                 'Authorization': `Bearer ${token}`,
+                                                 'Content-Type': 'application/json'
+                                             },
+                                             body: JSON.stringify({ command: command })
+                                         });
+
+                                         if (response.ok) {
+                                             alert(`${playerName} has been kicked`);
+                                             await this.loadOnlinePlayers(); // Refresh list
+                                         } else {
+                                             const error = await response.json();
+                                             alert('Failed to kick player: ' + (error.error || 'Unknown error'));
+                                         }
+                                     } catch (err) {
+                                         alert('Failed to kick player: ' + err.message);
+                                     }
                                  }
                              }"
                              x-init="$watch('detailsModal.server', () => { if (detailsModal.server) { loadPlayerList('whitelist'); loadPlayerList('ops'); loadPlayerList('banned-players'); } })">
@@ -1332,9 +1382,21 @@
                                             </button>
                                         </div>
                                         <template x-for="player in onlinePlayers" :key="player">
-                                            <div class="flex items-center bg-gray-600 p-3 rounded">
-                                                <span class="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
-                                                <span x-text="player" class="font-medium"></span>
+                                            <div class="flex items-center justify-between bg-gray-600 p-3 rounded">
+                                                <div class="flex items-center">
+                                                    <span class="w-2 h-2 bg-green-400 rounded-full mr-3"></span>
+                                                    <span x-text="player" class="font-medium"></span>
+                                                </div>
+                                                <div class="flex gap-2">
+                                                    <button @click="sendMessage(player)"
+                                                            class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors">
+                                                        💬 Message
+                                                    </button>
+                                                    <button @click="kickPlayer(player)"
+                                                            class="px-3 py-1 bg-orange-500 hover:bg-orange-600 text-white text-xs rounded transition-colors">
+                                                        👢 Kick
+                                                    </button>
+                                                </div>
                                             </div>
                                         </template>
                                         <div x-show="onlinePlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
