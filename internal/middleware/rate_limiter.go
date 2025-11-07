@@ -114,15 +114,15 @@ func RateLimitMiddleware(rl *RateLimiter) gin.HandlerFunc {
 
 // Different rate limiters for different endpoints
 var (
-	// Global rate limiter: 100 requests per minute
-	GlobalRateLimiter = NewRateLimiter(600*time.Millisecond, 100)
+	// Global rate limiter: 300 requests per minute (very lenient for GET requests)
+	GlobalRateLimiter = NewRateLimiter(200*time.Millisecond, 300)
 
-	// API rate limiter: 60 requests per minute
-	APIRateLimiter = NewRateLimiter(1*time.Second, 60)
+	// API rate limiter: 120 requests per minute (2 per second for normal API operations)
+	APIRateLimiter = NewRateLimiter(500*time.Millisecond, 120)
 
-	// File upload operations: 20 requests per minute (icons, resource packs, etc.)
-	FileUploadRateLimiter = NewRateLimiter(3*time.Second, 20)
+	// File upload operations: 30 requests per minute (icons, resource packs, etc.)
+	FileUploadRateLimiter = NewRateLimiter(2*time.Second, 30)
 
-	// Expensive operations: 10 requests per minute (backups, restores, etc.)
-	ExpensiveRateLimiter = NewRateLimiter(6*time.Second, 10)
+	// Expensive operations: 15 requests per minute (backups, restores, etc.)
+	ExpensiveRateLimiter = NewRateLimiter(4*time.Second, 15)
 )
