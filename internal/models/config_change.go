@@ -15,6 +15,12 @@ const (
 	ConfigChangeServerType       ConfigChangeType = "server_type"
 	ConfigChangeServerProperties ConfigChangeType = "server_properties"
 	ConfigChangeMaxPlayers       ConfigChangeType = "max_players"
+	// Phase 1 Gameplay Settings
+	ConfigChangeGamemode          ConfigChangeType = "gamemode"
+	ConfigChangeDifficulty        ConfigChangeType = "difficulty"
+	ConfigChangePVP               ConfigChangeType = "pvp"
+	ConfigChangeCommandBlock      ConfigChangeType = "enable_command_block"
+	ConfigChangeLevelSeed         ConfigChangeType = "level_seed"
 )
 
 // ConfigChangeStatus represents the status of a configuration change

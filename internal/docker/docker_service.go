@@ -54,6 +54,11 @@ func (d *DockerService) CreateContainer(
 	ramMB int,
 	port int,
 	maxPlayers int,
+	gamemode string,
+	difficulty string,
+	pvp bool,
+	enableCommandBlock bool,
+	levelSeed string,
 ) (string, error) {
 	ctx := context.Background()
 
@@ -99,6 +104,16 @@ func (d *DockerService) CreateContainer(
 		"ENABLE_RCON=true",
 		"RCON_PASSWORD=minecraft",
 		"RCON_PORT=25575",
+		// Gameplay Settings (Phase 1)
+		fmt.Sprintf("MODE=%s", gamemode),
+		fmt.Sprintf("DIFFICULTY=%s", difficulty),
+		fmt.Sprintf("PVP=%t", pvp),
+		fmt.Sprintf("ENABLE_COMMAND_BLOCK=%t", enableCommandBlock),
+	}
+
+	// Add SEED only if provided (empty = random)
+	if levelSeed != "" {
+		env = append(env, fmt.Sprintf("SEED=%s", levelSeed))
 	}
 
 	// Note: RCON port is NOT mapped to host for security

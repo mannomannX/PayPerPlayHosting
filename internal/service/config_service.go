@@ -106,6 +106,51 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 				return nil, fmt.Errorf("server type change from %s to %s is not supported (only paper/spigot/bukkit are compatible)", server.ServerType, newType)
 			}
 
+		// Phase 1 Gameplay Settings
+		case "gamemode":
+			change.ChangeType = models.ConfigChangeGamemode
+			change.OldValue = server.Gamemode
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate gamemode
+			newGamemode := fmt.Sprintf("%v", newValue)
+			validGamemodes := []string{"survival", "creative", "adventure", "spectator"}
+			if !contains(validGamemodes, newGamemode) {
+				return nil, fmt.Errorf("invalid gamemode: %s (must be survival, creative, adventure, or spectator)", newGamemode)
+			}
+
+		case "difficulty":
+			change.ChangeType = models.ConfigChangeDifficulty
+			change.OldValue = server.Difficulty
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate difficulty
+			newDifficulty := fmt.Sprintf("%v", newValue)
+			validDifficulties := []string{"peaceful", "easy", "normal", "hard"}
+			if !contains(validDifficulties, newDifficulty) {
+				return nil, fmt.Errorf("invalid difficulty: %s (must be peaceful, easy, normal, or hard)", newDifficulty)
+			}
+
+		case "pvp":
+			change.ChangeType = models.ConfigChangePVP
+			change.OldValue = fmt.Sprintf("%t", server.PVP)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "enable_command_block":
+			change.ChangeType = models.ConfigChangeCommandBlock
+			change.OldValue = fmt.Sprintf("%t", server.EnableCommandBlock)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "level_seed":
+			change.ChangeType = models.ConfigChangeLevelSeed
+			change.OldValue = server.LevelSeed
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
 		default:
 			return nil, fmt.Errorf("unsupported config change: %s", key)
 		}
@@ -198,6 +243,22 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 
 		case "server_type":
 			server.ServerType = models.ServerType(value.(string))
+
+		// Phase 1 Gameplay Settings
+		case "gamemode":
+			server.Gamemode = value.(string)
+
+		case "difficulty":
+			server.Difficulty = value.(string)
+
+		case "pvp":
+			server.PVP = value.(bool)
+
+		case "enable_command_block":
+			server.EnableCommandBlock = value.(bool)
+
+		case "level_seed":
+			server.LevelSeed = value.(string)
 		}
 	}
 
@@ -243,6 +304,11 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 			server.RAMMb,
 			server.Port,
 			server.MaxPlayers,
+			server.Gamemode,
+			server.Difficulty,
+			server.PVP,
+			server.EnableCommandBlock,
+			server.LevelSeed,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create new container: %w", err)
@@ -319,4 +385,14 @@ func (s *ConfigService) isCompatibleServerType(oldType, newType string) bool {
 // GetConfigHistory returns the configuration change history for a server
 func (s *ConfigService) GetConfigHistory(serverID string) ([]models.ConfigChange, error) {
 	return s.configChangeRepo.FindByServerID(serverID)
+}
+
+// contains checks if a string slice contains a specific string
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if s == str {
+			return true
+		}
+	}
+	return false
 }

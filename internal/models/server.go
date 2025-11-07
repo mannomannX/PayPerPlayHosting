@@ -45,6 +45,13 @@ type MinecraftServer struct {
 	MaxPlayers       int        `gorm:"default:20"`
 	Port             int        `gorm:"unique"`
 
+	// Gameplay Settings (Phase 1)
+	Gamemode           string `gorm:"default:survival"`       // survival, creative, adventure, spectator
+	Difficulty         string `gorm:"default:normal"`         // peaceful, easy, normal, hard
+	PVP                bool   `gorm:"default:true"`           // Enable PvP
+	EnableCommandBlock bool   `gorm:"default:false"`          // Enable command blocks
+	LevelSeed          string `gorm:"size:256;default:''"`    // World seed (empty = random)
+
 	// Container Info
 	Status      ServerStatus `gorm:"default:stopped"`
 	ContainerID string       `gorm:"size:128"`

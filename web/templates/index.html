@@ -517,6 +517,70 @@
                                     <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.MaxPlayers"></span></p>
                                 </div>
 
+                                <!-- Gameplay Settings Section -->
+                                <div class="border-t border-gray-600 my-4 pt-4">
+                                    <h4 class="text-lg font-semibold mb-3">🎮 Gameplay Settings</h4>
+
+                                    <!-- Gamemode -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">Gamemode</label>
+                                        <select x-model="configForm.gamemode"
+                                                class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                            <option value="survival">Survival</option>
+                                            <option value="creative">Creative</option>
+                                            <option value="adventure">Adventure</option>
+                                            <option value="spectator">Spectator</option>
+                                        </select>
+                                        <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.Gamemode || 'survival'"></span></p>
+                                    </div>
+
+                                    <!-- Difficulty -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">Difficulty</label>
+                                        <select x-model="configForm.difficulty"
+                                                class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                            <option value="peaceful">Peaceful</option>
+                                            <option value="easy">Easy</option>
+                                            <option value="normal">Normal</option>
+                                            <option value="hard">Hard</option>
+                                        </select>
+                                        <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.Difficulty || 'normal'"></span></p>
+                                    </div>
+
+                                    <!-- PVP -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center cursor-pointer">
+                                            <input type="checkbox"
+                                                   x-model="configForm.pvp"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Enable PvP</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.PVP ? 'Enabled' : 'Disabled'"></span></p>
+                                    </div>
+
+                                    <!-- Command Blocks -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center cursor-pointer">
+                                            <input type="checkbox"
+                                                   x-model="configForm.enable_command_block"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Enable Command Blocks</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.EnableCommandBlock ? 'Enabled' : 'Disabled'"></span></p>
+                                    </div>
+
+                                    <!-- Level Seed -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">World Seed (optional)</label>
+                                        <input type="text"
+                                               x-model="configForm.level_seed"
+                                               placeholder="Leave empty for random"
+                                               class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.LevelSeed || 'Random'"></span></p>
+                                        <p class="text-xs text-yellow-400 mt-1">⚠️ Only affects new worlds</p>
+                                    </div>
+                                </div>
+
                                 <!-- Apply Button -->
                                 <button @click="applyConfigChanges()"
                                         :disabled="configApplying"
@@ -940,6 +1004,12 @@
                     this.configForm.minecraft_version = server.MinecraftVersion;
                     this.configForm.server_type = server.ServerType;
                     this.configForm.max_players = server.MaxPlayers;
+                    // Phase 1 Gameplay Settings
+                    this.configForm.gamemode = server.Gamemode || 'survival';
+                    this.configForm.difficulty = server.Difficulty || 'normal';
+                    this.configForm.pvp = server.PVP !== undefined ? server.PVP : true;
+                    this.configForm.enable_command_block = server.EnableCommandBlock || false;
+                    this.configForm.level_seed = server.LevelSeed || '';
 
                     // Load usage logs
                     try {
@@ -1252,6 +1322,28 @@
 
                     if (this.configForm.max_players !== server.MaxPlayers) {
                         changes.max_players = parseInt(this.configForm.max_players);
+                    }
+
+                    // Phase 1 Gameplay Settings
+                    if (this.configForm.gamemode !== (server.Gamemode || 'survival')) {
+                        changes.gamemode = this.configForm.gamemode;
+                    }
+
+                    if (this.configForm.difficulty !== (server.Difficulty || 'normal')) {
+                        changes.difficulty = this.configForm.difficulty;
+                    }
+
+                    const serverPVP = server.PVP !== undefined ? server.PVP : true;
+                    if (this.configForm.pvp !== serverPVP) {
+                        changes.pvp = this.configForm.pvp;
+                    }
+
+                    if (this.configForm.enable_command_block !== (server.EnableCommandBlock || false)) {
+                        changes.enable_command_block = this.configForm.enable_command_block;
+                    }
+
+                    if (this.configForm.level_seed !== (server.LevelSeed || '')) {
+                        changes.level_seed = this.configForm.level_seed;
                     }
 
                     // Check if there are any changes
