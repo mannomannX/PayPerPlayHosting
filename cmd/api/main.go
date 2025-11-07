@@ -154,8 +154,12 @@ func main() {
 	// Metrics handler
 	metricsHandler := api.NewMetricsHandler()
 
+	// Player list service for whitelist, ops, banned players
+	playerListService := service.NewPlayerListService(serverRepo, consoleService, cfg)
+	playerHandler := api.NewPlayerHandler(playerListService)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

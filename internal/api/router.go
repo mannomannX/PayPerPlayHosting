@@ -21,6 +21,7 @@ func SetupRouter(
 	fileHandler *FileHandler,
 	motdHandler *MOTDHandler,
 	metricsHandler *MetricsHandler,
+	playerHandler *PlayerHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -148,6 +149,11 @@ func SetupRouter(
 
 			// Server Icon (publicly accessible for display)
 			servers.GET("/:id/icon", fileHandler.GetServerIcon)
+
+			// Player Management (Whitelist, Ops, Banned)
+			servers.GET("/:id/players/:listType", playerHandler.GetPlayerList)
+			servers.POST("/:id/players/:listType/add", playerHandler.AddToPlayerList)
+			servers.DELETE("/:id/players/:listType/:username", playerHandler.RemoveFromPlayerList)
 		}
 
 		// Admin endpoints
