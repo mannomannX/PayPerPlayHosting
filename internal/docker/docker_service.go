@@ -53,6 +53,7 @@ func (d *DockerService) CreateContainer(
 	minecraftVersion string,
 	ramMB int,
 	port int,
+	maxPlayers int,
 ) (string, error) {
 	ctx := context.Background()
 
@@ -91,6 +92,7 @@ func (d *DockerService) CreateContainer(
 		fmt.Sprintf("TYPE=%s", d.getServerTypeEnv(serverType)),
 		fmt.Sprintf("VERSION=%s", minecraftVersion),
 		fmt.Sprintf("MEMORY=%dM", ramMB),
+		fmt.Sprintf("MAX_PLAYERS=%d", maxPlayers),
 		"ONLINE_MODE=TRUE",
 		"SERVER_NAME=PayPerPlay Server",
 		// Enable RCON for monitoring

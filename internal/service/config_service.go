@@ -87,7 +87,7 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 			change.ChangeType = models.ConfigChangeMaxPlayers
 			change.OldValue = fmt.Sprintf("%d", server.MaxPlayers)
 			change.NewValue = fmt.Sprintf("%v", newValue)
-			requiresRestart = false // Can be changed via RCON
+			requiresRestart = true // Requires restart to take effect
 
 		case "server_type":
 			change.ChangeType = models.ConfigChangeServerType
@@ -242,6 +242,7 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 			server.MinecraftVersion,
 			server.RAMMb,
 			server.Port,
+			server.MaxPlayers,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create new container: %w", err)

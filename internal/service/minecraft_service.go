@@ -187,6 +187,7 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			server.MinecraftVersion,
 			server.RAMMb,
 			server.Port,
+			server.MaxPlayers,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create container: %w", err)

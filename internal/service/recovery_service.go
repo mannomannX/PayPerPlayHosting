@@ -410,6 +410,7 @@ func (s *RecoveryService) restartContainer(server *models.MinecraftServer) bool 
 		server.MinecraftVersion,
 		server.RAMMb,
 		server.Port,
+		server.MaxPlayers,
 	)
 	if err != nil {
 		logger.Error("Failed to create container during recovery", err, map[string]interface{}{
