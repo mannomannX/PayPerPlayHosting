@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload Component - Example</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/static/js/file-upload-component.js"></script>
+    <script src="/static/js/file-upload-ui.js"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-green-400 mb-2">File Upload Component</h1>
+            <p class="text-gray-400">Reusable file upload component for PayPerPlay Minecraft servers</p>
+        </header>
+
+        <!-- Example 1: Tabbed Interface -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Example 1: Tabbed Interface</h2>
+            <div x-data="{
+                serverId: 'demo-server-123',
+                activeTab: 'resource_pack'
+            }">
+                <!-- Tabs -->
+                <div class="flex gap-2 mb-6 border-b border-gray-700 overflow-x-auto">
+                    <template x-for="(config, type) in FILE_TYPE_CONFIG" :key="type">
+                        <button @click="activeTab = type"
+                                :class="activeTab === type ? 'border-green-400 text-green-400' : 'border-transparent text-gray-400'"
+                                class="px-4 py-2 border-b-2 transition font-semibold whitespace-nowrap flex items-center gap-2">
+                            <span x-text="config.icon"></span>
+                            <span x-text="config.label"></span>
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Tab Content: Resource Pack -->
+                <div x-show="activeTab === 'resource_pack'"
+                     x-data="fileUploader(serverId, 'resource_pack')"
+                     x-init="init()">
+                    <div x-html="renderUploadZone.call($data)"></div>
+                    <div x-html="renderFileList.call($data)"></div>
+                </div>
+
+                <!-- Tab Content: Data Pack -->
+                <div x-show="activeTab === 'data_pack'"
+                     x-data="fileUploader(serverId, 'data_pack')"
+                     x-init="init()">
+                    <div x-html="renderUploadZone.call($data)"></div>
+                    <div x-html="renderFileList.call($data)"></div>
+                </div>
+
+                <!-- Tab Content: Server Icon -->
+                <div x-show="activeTab === 'server_icon'"
+                     x-data="fileUploader(serverId, 'server_icon')"
+                     x-init="init()">
+                    <div x-html="renderUploadZone.call($data)"></div>
+                    <div x-html="renderFileList.call($data)"></div>
+                </div>
+
+                <!-- Tab Content: World Gen -->
+                <div x-show="activeTab === 'world_gen'"
+                     x-data="fileUploader(serverId, 'world_gen')"
+                     x-init="init()">
+                    <div x-html="renderUploadZone.call($data)"></div>
+                    <div x-html="renderFileList.call($data)"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Example 2: Standalone Uploader -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Example 2: Standalone Resource Pack Uploader</h2>
+            <div x-data="fileUploader('demo-server-456', 'resource_pack', 'My Custom Resource Pack')"
+                 x-init="init()">
+                <div x-html="renderUploadZone.call($data)"></div>
+                <div x-html="renderFileList.call($data)" class="mt-6"></div>
+            </div>
+        </div>
+
+        <!-- Example 3: Compact Uploader (for modals/small spaces) -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Example 3: Compact Uploader</h2>
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Data Pack Compact -->
+                <div x-data="fileUploader('demo-server-789', 'data_pack')" x-init="init()">
+                    <h3 class="text-lg font-semibold text-purple-400 mb-3">Data Pack</h3>
+                    <div x-html="renderCompactUploader.call($data)"></div>
+                </div>
+
+                <!-- Server Icon Compact -->
+                <div x-data="fileUploader('demo-server-789', 'server_icon')" x-init="init()">
+                    <h3 class="text-lg font-semibold text-green-400 mb-3">Server Icon</h3>
+                    <div x-html="renderCompactUploader.call($data)"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Integration Guide -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Integration Guide</h2>
+
+            <div class="space-y-6 text-gray-300">
+                <div>
+                    <h3 class="text-lg font-semibold text-green-400 mb-2">1. Include Scripts</h3>
+                    <pre class="bg-gray-900 rounded p-4 overflow-x-auto text-sm"><code>&lt;script src="/static/js/file-upload-component.js"&gt;&lt;/script&gt;
+&lt;script src="/static/js/file-upload-ui.js"&gt;&lt;/script&gt;</code></pre>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold text-green-400 mb-2">2. Basic Usage</h3>
+                    <pre class="bg-gray-900 rounded p-4 overflow-x-auto text-sm"><code>&lt;div x-data="fileUploader('server-id', 'resource_pack')" x-init="init()"&gt;
+    &lt;div x-html="renderUploadZone.call($data)"&gt;&lt;/div&gt;
+    &lt;div x-html="renderFileList.call($data)"&gt;&lt;/div&gt;
+&lt;/div&gt;</code></pre>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold text-green-400 mb-2">3. File Types</h3>
+                    <ul class="list-disc list-inside space-y-1 text-sm">
+                        <li><code class="bg-gray-900 px-2 py-0.5 rounded">resource_pack</code> - Resource packs (ZIP, max 100MB)</li>
+                        <li><code class="bg-gray-900 px-2 py-0.5 rounded">data_pack</code> - Data packs (ZIP, max 50MB)</li>
+                        <li><code class="bg-gray-900 px-2 py-0.5 rounded">server_icon</code> - Server icons (PNG 64x64, max 1MB)</li>
+                        <li><code class="bg-gray-900 px-2 py-0.5 rounded">world_gen</code> - World generation configs (JSON, max 5MB)</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold text-green-400 mb-2">4. Features</h3>
+                    <ul class="list-disc list-inside space-y-1 text-sm">
+                        <li>Drag & drop support</li>
+                        <li>Upload progress tracking</li>
+                        <li>Client-side validation (file type, size, dimensions)</li>
+                        <li>File activation/deactivation (only one active per type)</li>
+                        <li>File versioning and metadata</li>
+                        <li>SHA1 hash verification</li>
+                        <li>Download and delete actions</li>
+                        <li>Auto-activate option</li>
+                        <li>Responsive design with TailwindCSS</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-semibold text-green-400 mb-2">5. API Endpoints</h3>
+                    <pre class="bg-gray-900 rounded p-4 overflow-x-auto text-sm"><code>POST   /api/servers/:id/uploads              - Upload file
+GET    /api/servers/:id/uploads?type=...     - List files
+GET    /api/servers/:id/uploads/:fileId      - Download file
+PUT    /api/servers/:id/uploads/:fileId/activate   - Activate
+PUT    /api/servers/:id/uploads/:fileId/deactivate - Deactivate
+DELETE /api/servers/:id/uploads/:fileId      - Delete file</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Add render methods to the component
+        Object.assign(window.fileUploader, window.fileUploaderUI);
+    </script>
+</body>
+</html>

@@ -300,6 +300,19 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 				return nil, fmt.Errorf("invalid network compression threshold: %d (must be -1 for disabled or positive)", int(netComp))
 			}
 
+		// Phase 4 Server Description (MOTD)
+		case "motd":
+			change.ChangeType = models.ConfigChangeMOTD
+			change.OldValue = server.MOTD
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate MOTD length
+			motd := fmt.Sprintf("%v", newValue)
+			if len(motd) > 512 {
+				return nil, fmt.Errorf("MOTD too long: %d characters (max 512)", len(motd))
+			}
+
 		default:
 			return nil, fmt.Errorf("unsupported config change: %s", key)
 		}
@@ -454,6 +467,10 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 
 		case "network_compression_threshold":
 			server.NetworkCompressionThreshold = int(value.(float64))
+
+		// Phase 4 Server Description (MOTD)
+		case "motd":
+			server.MOTD = value.(string)
 		}
 	}
 

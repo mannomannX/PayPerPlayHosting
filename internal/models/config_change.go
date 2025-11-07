@@ -44,6 +44,9 @@ const (
 	// Phase 2 Network & Performance Settings
 	ConfigChangeMaxTickTime                 ConfigChangeType = "max_tick_time"
 	ConfigChangeNetworkCompressionThreshold ConfigChangeType = "network_compression_threshold"
+
+	// Phase 4 Server Description
+	ConfigChangeMOTD ConfigChangeType = "motd"
 )
 
 // ConfigChangeStatus represents the status of a configuration change

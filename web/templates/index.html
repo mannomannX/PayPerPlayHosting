@@ -7,6 +7,8 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/static/js/version-features.js"></script>
+    <script src="/static/js/file-upload-component.js"></script>
+    <script src="/static/js/file-upload-ui.js"></script>
 </head>
 <body class="bg-gray-900 text-white">
     <div x-data="app()" x-init="init()" class="min-h-screen">
@@ -307,6 +309,11 @@
                                 :class="detailsModal.tab === 'config' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Configuration
+                        </button>
+                        <button @click="detailsModal.tab = 'files'"
+                                :class="detailsModal.tab === 'files' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Files
                         </button>
                     </div>
 
@@ -778,6 +785,32 @@
                                     </div>
                                 </div>
 
+                                <!-- Phase 4: Server Description (MOTD) -->
+                                <div class="border-t border-gray-600 my-4 pt-4">
+                                    <h4 class="text-lg font-semibold mb-3">📝 Server Description (MOTD)</h4>
+
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">Message of the Day</label>
+                                        <textarea x-model="configForm.motd"
+                                                  rows="3"
+                                                  maxlength="512"
+                                                  placeholder="A Minecraft Server"
+                                                  class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500 font-mono text-sm"></textarea>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            Current: <span x-text="detailsModal.server?.MOTD || 'A Minecraft Server'"></span>
+                                        </p>
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            <span x-text="(configForm.motd || '').length"></span>/512 characters
+                                        </p>
+                                        <p class="text-xs text-blue-400 mt-1">
+                                            💡 Tip: Use Minecraft color codes like §a (green), §c (red), §l (bold)
+                                        </p>
+                                        <p class="text-xs text-yellow-400 mt-1">
+                                            ⚠️ Requires server restart to take effect
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <!-- Apply Button -->
                                 <button @click="applyConfigChanges()"
                                         :disabled="configApplying"
@@ -819,6 +852,67 @@
                                     <div x-show="configHistory.length === 0" class="text-center py-4 text-gray-400">
                                         No configuration changes yet
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Files Tab -->
+                        <div x-show="detailsModal.tab === 'files'" class="space-y-4">
+                            <div x-data="{ activeFileType: 'resource_pack' }">
+                                <!-- File Type Tabs -->
+                                <div class="flex gap-2 mb-4 border-b border-gray-700">
+                                    <button @click="activeFileType = 'resource_pack'"
+                                            :class="activeFileType === 'resource_pack' ? 'border-blue-400 text-blue-400' : 'border-transparent'"
+                                            class="px-4 py-2 border-b-2 transition">
+                                        📦 Resource Packs
+                                    </button>
+                                    <button @click="activeFileType = 'data_pack'"
+                                            :class="activeFileType === 'data_pack' ? 'border-purple-400 text-purple-400' : 'border-transparent'"
+                                            class="px-4 py-2 border-b-2 transition">
+                                        📊 Data Packs
+                                    </button>
+                                    <button @click="activeFileType = 'server_icon'"
+                                            :class="activeFileType === 'server_icon' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                            class="px-4 py-2 border-b-2 transition">
+                                        🖼️ Server Icon
+                                    </button>
+                                    <button @click="activeFileType = 'world_gen'"
+                                            :class="activeFileType === 'world_gen' ? 'border-yellow-400 text-yellow-400' : 'border-transparent'"
+                                            class="px-4 py-2 border-b-2 transition">
+                                        🌍 World Gen
+                                    </button>
+                                </div>
+
+                                <!-- Resource Packs -->
+                                <div x-show="activeFileType === 'resource_pack'"
+                                     x-data="fileUploader(detailsModal.server?.ID, 'resource_pack')"
+                                     x-init="init()">
+                                    <div x-html="renderUploadZone.call($data)"></div>
+                                    <div x-html="renderFileList.call($data)" class="mt-4"></div>
+                                </div>
+
+                                <!-- Data Packs -->
+                                <div x-show="activeFileType === 'data_pack'"
+                                     x-data="fileUploader(detailsModal.server?.ID, 'data_pack')"
+                                     x-init="init()">
+                                    <div x-html="renderUploadZone.call($data)"></div>
+                                    <div x-html="renderFileList.call($data)" class="mt-4"></div>
+                                </div>
+
+                                <!-- Server Icon -->
+                                <div x-show="activeFileType === 'server_icon'"
+                                     x-data="fileUploader(detailsModal.server?.ID, 'server_icon')"
+                                     x-init="init()">
+                                    <div x-html="renderUploadZone.call($data)"></div>
+                                    <div x-html="renderFileList.call($data)" class="mt-4"></div>
+                                </div>
+
+                                <!-- World Gen -->
+                                <div x-show="activeFileType === 'world_gen'"
+                                     x-data="fileUploader(detailsModal.server?.ID, 'world_gen')"
+                                     x-init="init()">
+                                    <div x-html="renderUploadZone.call($data)"></div>
+                                    <div x-html="renderFileList.call($data)" class="mt-4"></div>
                                 </div>
                             </div>
                         </div>
@@ -1225,6 +1319,8 @@
                     // Phase 2 Network & Performance Settings
                     this.configForm.max_tick_time = server.MaxTickTime || 60000;
                     this.configForm.network_compression_threshold = server.NetworkCompressionThreshold || 256;
+                    // Phase 4 Server Description (MOTD)
+                    this.configForm.motd = server.MOTD || 'A Minecraft Server';
 
                     // Load usage logs
                     try {
@@ -1628,6 +1724,11 @@
                         changes.network_compression_threshold = parseInt(this.configForm.network_compression_threshold);
                     }
 
+                    // Phase 4 Server Description (MOTD)
+                    if (this.configForm.motd !== (server.MOTD || 'A Minecraft Server')) {
+                        changes.motd = this.configForm.motd;
+                    }
+
                     // Check if there are any changes
                     if (Object.keys(changes).length === 0) {
                         alert('No changes detected');
@@ -1808,6 +1909,13 @@
                     return window.VersionFeatures.isSimulationDistanceSupported(version);
                 }
             }
+        }
+    </script>
+
+    <script>
+        // Initialize file upload UI render methods
+        if (window.fileUploader && window.fileUploaderUI) {
+            Object.assign(window.fileUploader, window.fileUploaderUI);
         }
     </script>
 

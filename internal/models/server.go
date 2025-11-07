@@ -74,6 +74,9 @@ type MinecraftServer struct {
 	MaxTickTime                 int `gorm:"default:60000"` // Watchdog timeout in milliseconds
 	NetworkCompressionThreshold int `gorm:"default:256"`   // Network compression threshold in bytes
 
+	// Server Description (Phase 4)
+	MOTD string `gorm:"size:512;default:'A Minecraft Server'"` // Message of the Day - server description
+
 	// Container Info
 	Status      ServerStatus `gorm:"default:stopped"`
 	ContainerID string       `gorm:"size:128"`

@@ -18,6 +18,9 @@ func SetupRouter(
 	fileManagerHandler *FileManagerHandler,
 	consoleHandler *ConsoleHandler,
 	configHandler *ConfigHandler,
+	fileHandler *FileHandler,
+	motdHandler *MOTDHandler,
+	metricsHandler *MetricsHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -113,11 +116,23 @@ func SetupRouter(
 			// Mod packs
 			servers.POST("/:id/modpack", pluginHandler.InstallModPack)
 
-			// File Manager
+			// File Manager (server.properties, configs, etc.)
 			servers.GET("/:id/files", fileManagerHandler.GetAllowedFiles)
 			servers.GET("/:id/files/read", fileManagerHandler.ReadFile)
 			servers.POST("/:id/files/write", fileManagerHandler.WriteFile)
 			servers.GET("/:id/files/list", fileManagerHandler.ListFiles)
+
+			// Uploaded Files (resource packs, data packs, icons, world gen)
+			uploads := servers.Group("/:id/uploads")
+			uploads.Use(middleware.RateLimitMiddleware(middleware.ExpensiveRateLimiter))
+			{
+				uploads.POST("", fileHandler.UploadFile)
+				uploads.GET("", fileHandler.ListFiles)
+				uploads.GET("/:fileId", fileHandler.GetFile)
+				uploads.PUT("/:fileId/activate", fileHandler.ActivateFile)
+				uploads.PUT("/:fileId/deactivate", fileHandler.DeactivateFile)
+				uploads.DELETE("/:fileId", fileHandler.DeleteFile)
+			}
 
 			// Console Access (WebSocket for real-time logs and command execution)
 			servers.GET("/:id/console/stream", consoleHandler.HandleConsoleWebSocket)
@@ -126,6 +141,10 @@ func SetupRouter(
 			// Configuration Management
 			servers.POST("/:id/config", configHandler.ApplyConfigChanges)
 			servers.GET("/:id/config/history", configHandler.GetConfigHistory)
+
+			// MOTD (Message of the Day)
+			servers.GET("/:id/motd", motdHandler.GetMOTD)
+			servers.PUT("/:id/motd", motdHandler.UpdateMOTD)
 		}
 
 		// Admin endpoints
@@ -141,6 +160,13 @@ func SetupRouter(
 		// Plugin/Mod marketplace
 		api.GET("/plugins/search", pluginHandler.SearchPlugins)
 		api.GET("/modpacks/search", pluginHandler.SearchModPacks)
+
+		// Metrics
+		metrics := api.Group("/metrics")
+		{
+			metrics.GET("/files", metricsHandler.GetFileMetrics)
+			metrics.POST("/files/reset", metricsHandler.ResetFileMetrics) // Admin only
+		}
 	}
 
 	// Internal API (for Velocity plugin - NO AUTH required, network isolation)

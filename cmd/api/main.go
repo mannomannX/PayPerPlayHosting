@@ -52,6 +52,7 @@ func main() {
 	serverRepo := repository.NewServerRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	configChangeRepo := repository.NewConfigChangeRepository(db)
+	fileRepo := repository.NewFileRepository(db)
 
 	// Initialize services
 	authService := service.NewAuthService(userRepo, cfg)
@@ -75,6 +76,7 @@ func main() {
 	}
 	pluginService := service.NewPluginService(serverRepo, cfg)
 	fileManagerService := service.NewFileManagerService(serverRepo, cfg)
+	fileService := service.NewFileService(fileRepo, serverRepo, cfg.ServersBasePath)
 
 	// Initialize WebSocket Hub
 	wsHub := websocket.NewHub()
@@ -136,8 +138,24 @@ func main() {
 	configService := service.NewConfigService(serverRepo, configChangeRepo, dockerService, backupService)
 	configHandler := api.NewConfigHandler(configService, mcService)
 
+	// MOTD (Message of the Day) service
+	motdService := service.NewMOTDService(serverRepo, cfg)
+	motdHandler := api.NewMOTDHandler(motdService)
+
+	// Resource pack integration service
+	resourcePackService := service.NewResourcePackService(fileRepo, serverRepo, cfg)
+
+	// File integration service (handles all file types: resource packs, data packs, icons, world gen)
+	fileIntegrationService := service.NewFileIntegrationService(fileRepo, serverRepo, resourcePackService, cfg)
+
+	// File management handler for resource packs, data packs, etc.
+	fileHandler := api.NewFileHandler(fileService, fileIntegrationService)
+
+	// Metrics handler
+	metricsHandler := api.NewMetricsHandler()
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

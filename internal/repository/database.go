@@ -53,6 +53,7 @@ func InitDB(cfg *config.Config) error {
 		&models.MinecraftServer{},
 		&models.UsageLog{},
 		&models.ConfigChange{},
+		&models.ServerFile{},
 	)
 	if err != nil {
 		return err
