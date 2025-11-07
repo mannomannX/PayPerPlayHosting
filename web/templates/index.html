@@ -766,11 +766,11 @@
                 },
 
                 // API helper with connection tracking
-                async apiCall(url, options = {}) {
+                async apiCall(url, options = {}, timeout = 10000) {
                     try {
                         // Add timeout to detect hung connections
                         const controller = new AbortController();
-                        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+                        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
                         const headers = {
                             'Authorization': `Bearer ${this.token}`,
@@ -882,7 +882,8 @@
 
                 async startServer(id) {
                     try {
-                        const response = await this.apiCall(`/api/servers/${id}/start`, { method: 'POST' });
+                        // Use 90s timeout for server start (server initialization can take time)
+                        const response = await this.apiCall(`/api/servers/${id}/start`, { method: 'POST' }, 90000);
                         if (response.ok) {
                             await this.loadServers();
                         }
@@ -893,7 +894,8 @@
 
                 async stopServer(id) {
                     try {
-                        const response = await this.apiCall(`/api/servers/${id}/stop`, { method: 'POST' });
+                        // Use 60s timeout for server stop (world save and graceful shutdown)
+                        const response = await this.apiCall(`/api/servers/${id}/stop`, { method: 'POST' }, 60000);
                         if (response.ok) {
                             await this.loadServers();
                         }
@@ -1252,11 +1254,12 @@
                     this.configApplying = true;
 
                     try {
+                        // Use 90s timeout for config changes (may trigger container recreate)
                         const response = await this.apiCall(`/api/servers/${server.ID}/config`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ changes })
-                        });
+                        }, 90000);
 
                         if (response.ok) {
                             const result = await response.json();
