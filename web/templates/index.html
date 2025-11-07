@@ -593,6 +593,191 @@
                                     </div>
                                 </div>
 
+                                <!-- Phase 2: Performance Settings -->
+                                <div class="border-t border-gray-600 my-4 pt-4">
+                                    <h4 class="text-lg font-semibold mb-3">⚡ Performance Settings</h4>
+
+                                    <!-- View Distance -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">View Distance</label>
+                                        <input type="number"
+                                               x-model.number="configForm.view_distance"
+                                               min="2" max="32" step="1"
+                                               class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <p class="text-xs text-gray-400 mt-1">Render distance in chunks (2-32). Current: <span x-text="detailsModal.server?.ViewDistance || 10"></span></p>
+                                        <p class="text-xs text-yellow-400 mt-1">⚠️ Higher values require more RAM and CPU</p>
+                                    </div>
+
+                                    <!-- Simulation Distance -->
+                                    <div class="mb-4"
+                                         :class="!isSimulationDistanceSupported() ? 'opacity-50' : ''">
+                                        <label class="block text-sm font-medium mb-2">Simulation Distance</label>
+                                        <input type="number"
+                                               x-model.number="configForm.simulation_distance"
+                                               :disabled="!isSimulationDistanceSupported()"
+                                               min="3" max="32" step="1"
+                                               class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <p class="text-xs text-gray-400 mt-1">Simulation distance in chunks (3-32). Current: <span x-text="detailsModal.server?.SimulationDistance || 10"></span></p>
+                                        <p x-show="!isSimulationDistanceSupported()" class="text-xs text-red-400 mt-1">
+                                            ⚠️ Simulation distance requires Minecraft 1.18+. Current: <span x-text="configForm.minecraft_version"></span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Phase 2: World Generation Settings -->
+                                <div class="border-t border-gray-600 my-4 pt-4">
+                                    <h4 class="text-lg font-semibold mb-3">🌍 World Generation Settings</h4>
+
+                                    <!-- World Type -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">World Type</label>
+                                        <select x-model="configForm.world_type"
+                                                class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                            <template x-for="type in getAvailableWorldTypes()" :key="type.value">
+                                                <option :value="type.value"
+                                                        :disabled="!type.enabled"
+                                                        :class="!type.enabled ? 'text-gray-500' : ''"
+                                                        x-text="type.label + (!type.enabled ? ' (Not available in this version)' : '')">
+                                                </option>
+                                            </template>
+                                        </select>
+                                        <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.WorldType || 'default'"></span></p>
+                                        <p class="text-xs text-yellow-400 mt-1">⚠️ Only affects new worlds</p>
+                                    </div>
+
+                                    <!-- Dimensions -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center cursor-pointer mb-2">
+                                            <input type="checkbox"
+                                                   x-model="configForm.allow_nether"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Enable Nether</span>
+                                        </label>
+                                        <label class="flex items-center cursor-pointer">
+                                            <input type="checkbox"
+                                                   x-model="configForm.allow_end"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Enable End</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-2">
+                                            Current: Nether <span x-text="detailsModal.server?.AllowNether ? 'Enabled' : 'Disabled'"></span>,
+                                            End <span x-text="detailsModal.server?.AllowEnd ? 'Enabled' : 'Disabled'"></span>
+                                        </p>
+                                    </div>
+
+                                    <!-- Structures -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center cursor-pointer">
+                                            <input type="checkbox"
+                                                   x-model="configForm.generate_structures"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Generate Structures</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-1">Villages, temples, strongholds, etc. Current: <span x-text="detailsModal.server?.GenerateStructures ? 'Enabled' : 'Disabled'"></span></p>
+                                        <p class="text-xs text-yellow-400 mt-1">⚠️ Only affects new worlds</p>
+                                    </div>
+
+                                    <!-- Bonus Chest -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center cursor-pointer">
+                                            <input type="checkbox"
+                                                   x-model="configForm.bonus_chest"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Bonus Chest</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-1">Spawn with starting items. Current: <span x-text="detailsModal.server?.BonusChest ? 'Enabled' : 'Disabled'"></span></p>
+                                        <p class="text-xs text-yellow-400 mt-1">⚠️ Only affects new worlds</p>
+                                    </div>
+
+                                    <!-- Max World Size -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">Max World Size (blocks)</label>
+                                        <input type="number"
+                                               x-model.number="configForm.max_world_size"
+                                               min="1" max="29999984" step="1000"
+                                               class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <p class="text-xs text-gray-400 mt-1">World border size. Current: <span x-text="detailsModal.server?.MaxWorldSize || 29999984"></span></p>
+                                    </div>
+                                </div>
+
+                                <!-- Phase 2: Spawn Settings -->
+                                <div class="border-t border-gray-600 my-4 pt-4">
+                                    <h4 class="text-lg font-semibold mb-3">🐷 Spawn Settings</h4>
+
+                                    <!-- Spawn Protection -->
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium mb-2">Spawn Protection Radius</label>
+                                        <input type="number"
+                                               x-model.number="configForm.spawn_protection"
+                                               min="0" max="128" step="1"
+                                               class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                        <p class="text-xs text-gray-400 mt-1">Radius around spawn where only ops can build (0 to disable). Current: <span x-text="detailsModal.server?.SpawnProtection || 16"></span></p>
+                                    </div>
+
+                                    <!-- Mob Spawning -->
+                                    <div class="mb-4">
+                                        <label class="flex items-center cursor-pointer mb-2">
+                                            <input type="checkbox"
+                                                   x-model="configForm.spawn_animals"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Spawn Animals</span>
+                                        </label>
+                                        <label class="flex items-center cursor-pointer mb-2">
+                                            <input type="checkbox"
+                                                   x-model="configForm.spawn_monsters"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Spawn Monsters</span>
+                                        </label>
+                                        <label class="flex items-center cursor-pointer">
+                                            <input type="checkbox"
+                                                   x-model="configForm.spawn_npcs"
+                                                   class="mr-2 w-5 h-5">
+                                            <span class="text-sm font-medium">Spawn NPCs (Villagers)</span>
+                                        </label>
+                                        <p class="text-xs text-gray-400 mt-2">
+                                            Current: Animals <span x-text="detailsModal.server?.SpawnAnimals ? 'Yes' : 'No'"></span>,
+                                            Monsters <span x-text="detailsModal.server?.SpawnMonsters ? 'Yes' : 'No'"></span>,
+                                            NPCs <span x-text="detailsModal.server?.SpawnNPCs ? 'Yes' : 'No'"></span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Phase 2: Advanced Network Settings (Collapsible) -->
+                                <div class="border-t border-gray-600 my-4 pt-4" x-data="{ advancedExpanded: false }">
+                                    <button @click="advancedExpanded = !advancedExpanded"
+                                            class="w-full flex items-center justify-between text-lg font-semibold mb-3 hover:text-blue-400 transition">
+                                        <span>🔧 Advanced Network & Performance</span>
+                                        <svg class="w-5 h-5 transition-transform" :class="advancedExpanded ? 'rotate-180' : ''"
+                                             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                        </svg>
+                                    </button>
+
+                                    <div x-show="advancedExpanded" x-collapse>
+                                        <!-- Max Tick Time -->
+                                        <div class="mb-4">
+                                            <label class="block text-sm font-medium mb-2">Max Tick Time (ms)</label>
+                                            <input type="number"
+                                                   x-model.number="configForm.max_tick_time"
+                                                   min="-1" step="1000"
+                                                   class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                            <p class="text-xs text-gray-400 mt-1">Watchdog timeout in milliseconds (-1 to disable). Current: <span x-text="detailsModal.server?.MaxTickTime || 60000"></span></p>
+                                            <p class="text-xs text-yellow-400 mt-1">⚠️ Only change if you know what you're doing</p>
+                                        </div>
+
+                                        <!-- Network Compression Threshold -->
+                                        <div class="mb-4">
+                                            <label class="block text-sm font-medium mb-2">Network Compression Threshold (bytes)</label>
+                                            <input type="number"
+                                                   x-model.number="configForm.network_compression_threshold"
+                                                   min="-1" step="64"
+                                                   class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500">
+                                            <p class="text-xs text-gray-400 mt-1">Packet compression threshold (-1 to disable). Current: <span x-text="detailsModal.server?.NetworkCompressionThreshold || 256"></span></p>
+                                            <p class="text-xs text-yellow-400 mt-1">⚠️ Only change if you know what you're doing</p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <!-- Apply Button -->
                                 <button @click="applyConfigChanges()"
                                         :disabled="configApplying"
@@ -1022,6 +1207,24 @@
                     this.configForm.pvp = server.PVP !== undefined ? server.PVP : true;
                     this.configForm.enable_command_block = server.EnableCommandBlock || false;
                     this.configForm.level_seed = server.LevelSeed || '';
+                    // Phase 2 Performance Settings
+                    this.configForm.view_distance = server.ViewDistance || 10;
+                    this.configForm.simulation_distance = server.SimulationDistance || 10;
+                    // Phase 2 World Generation Settings
+                    this.configForm.allow_nether = server.AllowNether !== undefined ? server.AllowNether : true;
+                    this.configForm.allow_end = server.AllowEnd !== undefined ? server.AllowEnd : true;
+                    this.configForm.generate_structures = server.GenerateStructures !== undefined ? server.GenerateStructures : true;
+                    this.configForm.world_type = server.WorldType || 'default';
+                    this.configForm.bonus_chest = server.BonusChest || false;
+                    this.configForm.max_world_size = server.MaxWorldSize || 29999984;
+                    // Phase 2 Spawn Settings
+                    this.configForm.spawn_protection = server.SpawnProtection !== undefined ? server.SpawnProtection : 16;
+                    this.configForm.spawn_animals = server.SpawnAnimals !== undefined ? server.SpawnAnimals : true;
+                    this.configForm.spawn_monsters = server.SpawnMonsters !== undefined ? server.SpawnMonsters : true;
+                    this.configForm.spawn_npcs = server.SpawnNPCs !== undefined ? server.SpawnNPCs : true;
+                    // Phase 2 Network & Performance Settings
+                    this.configForm.max_tick_time = server.MaxTickTime || 60000;
+                    this.configForm.network_compression_threshold = server.NetworkCompressionThreshold || 256;
 
                     // Load usage logs
                     try {
@@ -1358,6 +1561,73 @@
                         changes.level_seed = this.configForm.level_seed;
                     }
 
+                    // Phase 2 Performance Settings
+                    if (this.configForm.view_distance !== (server.ViewDistance || 10)) {
+                        changes.view_distance = parseInt(this.configForm.view_distance);
+                    }
+
+                    if (this.configForm.simulation_distance !== (server.SimulationDistance || 10)) {
+                        changes.simulation_distance = parseInt(this.configForm.simulation_distance);
+                    }
+
+                    // Phase 2 World Generation Settings
+                    const serverAllowNether = server.AllowNether !== undefined ? server.AllowNether : true;
+                    if (this.configForm.allow_nether !== serverAllowNether) {
+                        changes.allow_nether = this.configForm.allow_nether;
+                    }
+
+                    const serverAllowEnd = server.AllowEnd !== undefined ? server.AllowEnd : true;
+                    if (this.configForm.allow_end !== serverAllowEnd) {
+                        changes.allow_end = this.configForm.allow_end;
+                    }
+
+                    const serverGenerateStructures = server.GenerateStructures !== undefined ? server.GenerateStructures : true;
+                    if (this.configForm.generate_structures !== serverGenerateStructures) {
+                        changes.generate_structures = this.configForm.generate_structures;
+                    }
+
+                    if (this.configForm.world_type !== (server.WorldType || 'default')) {
+                        changes.world_type = this.configForm.world_type;
+                    }
+
+                    if (this.configForm.bonus_chest !== (server.BonusChest || false)) {
+                        changes.bonus_chest = this.configForm.bonus_chest;
+                    }
+
+                    if (this.configForm.max_world_size !== (server.MaxWorldSize || 29999984)) {
+                        changes.max_world_size = parseInt(this.configForm.max_world_size);
+                    }
+
+                    // Phase 2 Spawn Settings
+                    const serverSpawnProtection = server.SpawnProtection !== undefined ? server.SpawnProtection : 16;
+                    if (this.configForm.spawn_protection !== serverSpawnProtection) {
+                        changes.spawn_protection = parseInt(this.configForm.spawn_protection);
+                    }
+
+                    const serverSpawnAnimals = server.SpawnAnimals !== undefined ? server.SpawnAnimals : true;
+                    if (this.configForm.spawn_animals !== serverSpawnAnimals) {
+                        changes.spawn_animals = this.configForm.spawn_animals;
+                    }
+
+                    const serverSpawnMonsters = server.SpawnMonsters !== undefined ? server.SpawnMonsters : true;
+                    if (this.configForm.spawn_monsters !== serverSpawnMonsters) {
+                        changes.spawn_monsters = this.configForm.spawn_monsters;
+                    }
+
+                    const serverSpawnNPCs = server.SpawnNPCs !== undefined ? server.SpawnNPCs : true;
+                    if (this.configForm.spawn_npcs !== serverSpawnNPCs) {
+                        changes.spawn_npcs = this.configForm.spawn_npcs;
+                    }
+
+                    // Phase 2 Network & Performance Settings
+                    if (this.configForm.max_tick_time !== (server.MaxTickTime || 60000)) {
+                        changes.max_tick_time = parseInt(this.configForm.max_tick_time);
+                    }
+
+                    if (this.configForm.network_compression_threshold !== (server.NetworkCompressionThreshold || 256)) {
+                        changes.network_compression_threshold = parseInt(this.configForm.network_compression_threshold);
+                    }
+
                     // Check if there are any changes
                     if (Object.keys(changes).length === 0) {
                         alert('No changes detected');
@@ -1514,6 +1784,28 @@
 
                     const version = this.configForm.minecraft_version || '1.8.9';
                     return window.VersionFeatures.areSeedsSupported(version);
+                },
+
+                // Phase 2 Helper Functions
+                getAvailableWorldTypes() {
+                    if (!window.VersionFeatures) {
+                        return [
+                            { value: 'default', label: 'Default', enabled: true },
+                            { value: 'flat', label: 'Superflat', enabled: true },
+                            { value: 'largeBiomes', label: 'Large Biomes', enabled: true },
+                            { value: 'amplified', label: 'Amplified', enabled: true }
+                        ];
+                    }
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    return window.VersionFeatures.getAvailableWorldTypes(version);
+                },
+
+                isSimulationDistanceSupported() {
+                    if (!window.VersionFeatures) return true;
+
+                    const version = this.configForm.minecraft_version || '1.8.9';
+                    return window.VersionFeatures.isSimulationDistanceSupported(version);
                 }
             }
         }

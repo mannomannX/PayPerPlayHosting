@@ -151,6 +151,155 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 			change.NewValue = fmt.Sprintf("%v", newValue)
 			requiresRestart = true
 
+		// Phase 2 Performance Settings
+		case "view_distance":
+			change.ChangeType = models.ConfigChangeViewDistance
+			change.OldValue = fmt.Sprintf("%d", server.ViewDistance)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate view distance (2-32 chunks)
+			viewDist, ok := newValue.(float64)
+			if !ok {
+				return nil, fmt.Errorf("invalid view distance type")
+			}
+			if viewDist < 2 || viewDist > 32 {
+				return nil, fmt.Errorf("invalid view distance: %d (must be between 2 and 32)", int(viewDist))
+			}
+
+		case "simulation_distance":
+			change.ChangeType = models.ConfigChangeSimulationDistance
+			change.OldValue = fmt.Sprintf("%d", server.SimulationDistance)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate simulation distance (3-32 chunks, 1.18+ only)
+			simDist, ok := newValue.(float64)
+			if !ok {
+				return nil, fmt.Errorf("invalid simulation distance type")
+			}
+			if simDist < 3 || simDist > 32 {
+				return nil, fmt.Errorf("invalid simulation distance: %d (must be between 3 and 32)", int(simDist))
+			}
+
+		// Phase 2 World Generation Settings
+		case "allow_nether":
+			change.ChangeType = models.ConfigChangeAllowNether
+			change.OldValue = fmt.Sprintf("%t", server.AllowNether)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "allow_end":
+			change.ChangeType = models.ConfigChangeAllowEnd
+			change.OldValue = fmt.Sprintf("%t", server.AllowEnd)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "generate_structures":
+			change.ChangeType = models.ConfigChangeGenerateStructures
+			change.OldValue = fmt.Sprintf("%t", server.GenerateStructures)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "world_type":
+			change.ChangeType = models.ConfigChangeWorldType
+			change.OldValue = server.WorldType
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate world type
+			newWorldType := fmt.Sprintf("%v", newValue)
+			validWorldTypes := []string{"default", "flat", "largeBiomes", "amplified", "buffet", "single_biome_surface"}
+			if !contains(validWorldTypes, newWorldType) {
+				return nil, fmt.Errorf("invalid world type: %s (must be default, flat, largeBiomes, amplified, buffet, or single_biome_surface)", newWorldType)
+			}
+
+		case "bonus_chest":
+			change.ChangeType = models.ConfigChangeBonusChest
+			change.OldValue = fmt.Sprintf("%t", server.BonusChest)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "max_world_size":
+			change.ChangeType = models.ConfigChangeMaxWorldSize
+			change.OldValue = fmt.Sprintf("%d", server.MaxWorldSize)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate max world size
+			maxSize, ok := newValue.(float64)
+			if !ok {
+				return nil, fmt.Errorf("invalid max world size type")
+			}
+			if maxSize < 1 || maxSize > 29999984 {
+				return nil, fmt.Errorf("invalid max world size: %d (must be between 1 and 29999984)", int(maxSize))
+			}
+
+		// Phase 2 Spawn Settings
+		case "spawn_protection":
+			change.ChangeType = models.ConfigChangeSpawnProtection
+			change.OldValue = fmt.Sprintf("%d", server.SpawnProtection)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate spawn protection (0+ blocks)
+			spawnProt, ok := newValue.(float64)
+			if !ok {
+				return nil, fmt.Errorf("invalid spawn protection type")
+			}
+			if spawnProt < 0 {
+				return nil, fmt.Errorf("invalid spawn protection: %d (must be 0 or higher)", int(spawnProt))
+			}
+
+		case "spawn_animals":
+			change.ChangeType = models.ConfigChangeSpawnAnimals
+			change.OldValue = fmt.Sprintf("%t", server.SpawnAnimals)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "spawn_monsters":
+			change.ChangeType = models.ConfigChangeSpawnMonsters
+			change.OldValue = fmt.Sprintf("%t", server.SpawnMonsters)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		case "spawn_npcs":
+			change.ChangeType = models.ConfigChangeSpawnNPCs
+			change.OldValue = fmt.Sprintf("%t", server.SpawnNPCs)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+		// Phase 2 Network & Performance Settings
+		case "max_tick_time":
+			change.ChangeType = models.ConfigChangeMaxTickTime
+			change.OldValue = fmt.Sprintf("%d", server.MaxTickTime)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate max tick time
+			maxTick, ok := newValue.(float64)
+			if !ok {
+				return nil, fmt.Errorf("invalid max tick time type")
+			}
+			if maxTick < -1 {
+				return nil, fmt.Errorf("invalid max tick time: %d (must be -1 for disabled or positive)", int(maxTick))
+			}
+
+		case "network_compression_threshold":
+			change.ChangeType = models.ConfigChangeNetworkCompressionThreshold
+			change.OldValue = fmt.Sprintf("%d", server.NetworkCompressionThreshold)
+			change.NewValue = fmt.Sprintf("%v", newValue)
+			requiresRestart = true
+
+			// Validate network compression threshold
+			netComp, ok := newValue.(float64)
+			if !ok {
+				return nil, fmt.Errorf("invalid network compression threshold type")
+			}
+			if netComp < -1 {
+				return nil, fmt.Errorf("invalid network compression threshold: %d (must be -1 for disabled or positive)", int(netComp))
+			}
+
 		default:
 			return nil, fmt.Errorf("unsupported config change: %s", key)
 		}
@@ -259,6 +408,52 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 
 		case "level_seed":
 			server.LevelSeed = value.(string)
+
+		// Phase 2 Performance Settings
+		case "view_distance":
+			server.ViewDistance = int(value.(float64))
+
+		case "simulation_distance":
+			server.SimulationDistance = int(value.(float64))
+
+		// Phase 2 World Generation Settings
+		case "allow_nether":
+			server.AllowNether = value.(bool)
+
+		case "allow_end":
+			server.AllowEnd = value.(bool)
+
+		case "generate_structures":
+			server.GenerateStructures = value.(bool)
+
+		case "world_type":
+			server.WorldType = value.(string)
+
+		case "bonus_chest":
+			server.BonusChest = value.(bool)
+
+		case "max_world_size":
+			server.MaxWorldSize = int(value.(float64))
+
+		// Phase 2 Spawn Settings
+		case "spawn_protection":
+			server.SpawnProtection = int(value.(float64))
+
+		case "spawn_animals":
+			server.SpawnAnimals = value.(bool)
+
+		case "spawn_monsters":
+			server.SpawnMonsters = value.(bool)
+
+		case "spawn_npcs":
+			server.SpawnNPCs = value.(bool)
+
+		// Phase 2 Network & Performance Settings
+		case "max_tick_time":
+			server.MaxTickTime = int(value.(float64))
+
+		case "network_compression_threshold":
+			server.NetworkCompressionThreshold = int(value.(float64))
 		}
 	}
 
@@ -303,12 +498,31 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 			server.MinecraftVersion,
 			server.RAMMb,
 			server.Port,
+			// Phase 1 Parameters
 			server.MaxPlayers,
 			server.Gamemode,
 			server.Difficulty,
 			server.PVP,
 			server.EnableCommandBlock,
 			server.LevelSeed,
+			// Phase 2 Parameters - Performance
+			server.ViewDistance,
+			server.SimulationDistance,
+			// Phase 2 Parameters - World Generation
+			server.AllowNether,
+			server.AllowEnd,
+			server.GenerateStructures,
+			server.WorldType,
+			server.BonusChest,
+			server.MaxWorldSize,
+			// Phase 2 Parameters - Spawn Settings
+			server.SpawnProtection,
+			server.SpawnAnimals,
+			server.SpawnMonsters,
+			server.SpawnNPCs,
+			// Phase 2 Parameters - Network & Performance
+			server.MaxTickTime,
+			server.NetworkCompressionThreshold,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create new container: %w", err)

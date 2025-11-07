@@ -410,12 +410,31 @@ func (s *RecoveryService) restartContainer(server *models.MinecraftServer) bool 
 		server.MinecraftVersion,
 		server.RAMMb,
 		server.Port,
+		// Phase 1 Parameters
 		server.MaxPlayers,
 		server.Gamemode,
 		server.Difficulty,
 		server.PVP,
 		server.EnableCommandBlock,
 		server.LevelSeed,
+		// Phase 2 Parameters - Performance
+		server.ViewDistance,
+		server.SimulationDistance,
+		// Phase 2 Parameters - World Generation
+		server.AllowNether,
+		server.AllowEnd,
+		server.GenerateStructures,
+		server.WorldType,
+		server.BonusChest,
+		server.MaxWorldSize,
+		// Phase 2 Parameters - Spawn Settings
+		server.SpawnProtection,
+		server.SpawnAnimals,
+		server.SpawnMonsters,
+		server.SpawnNPCs,
+		// Phase 2 Parameters - Network & Performance
+		server.MaxTickTime,
+		server.NetworkCompressionThreshold,
 	)
 	if err != nil {
 		logger.Error("Failed to create container during recovery", err, map[string]interface{}{
