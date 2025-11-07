@@ -158,8 +158,12 @@ func main() {
 	playerListService := service.NewPlayerListService(serverRepo, consoleService, cfg)
 	playerHandler := api.NewPlayerHandler(playerListService)
 
+	// World management service
+	worldService := service.NewWorldService(serverRepo, backupService, cfg)
+	worldHandler := api.NewWorldHandler(worldService)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

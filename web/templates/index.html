@@ -339,6 +339,11 @@
                                 class="px-4 py-2 border-b-2 transition">
                             Players
                         </button>
+                        <button @click="detailsModal.tab = 'worlds'; loadWorlds()"
+                                :class="detailsModal.tab === 'worlds' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Worlds
+                        </button>
                     </div>
 
                     <!-- Tab Content -->
@@ -1177,6 +1182,12 @@
                                          alert('Failed to kick player: ' + err.message);
                                      }
                                  }
+,
+                                async loadWorlds() { this.loading=true; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds`,{headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){ const d=await r.json(); const w=document.querySelector('[x-show="detailsModal.tab === \'worlds\'"]'); if(w&&w.__x){w.__x.$data.worlds=d.worlds;} } } catch(e){ alert('Failed: '+e.message); } finally{ this.loading=false; } },
+                                async downloadWorld(n) { try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/${n}/download`,{headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){ const b=await r.blob(), u=URL.createObjectURL(b), a=document.createElement('a'); a.href=u; a.download=`${detailsModal.server.Name}-${n}.zip`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(u); document.body.removeChild(a); } } catch(e){ alert('Failed: '+e.message); } },
+                                async uploadWorld(n,e) { const f=e.target.files[0]; if(!f)return; if(!f.name.endsWith('.zip')){alert('ZIP only'); return;} if(!confirm('Upload? Backup created first.')){e.target.value=''; return;} const w=document.querySelector('[x-show="detailsModal.tab === \'worlds\'"]'); if(w&&w.__x){w.__x.$data.uploading=true;} try { const fd=new FormData(); fd.append('file',f); fd.append('worldName',n); const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/upload`,{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); if(r.ok){alert('Uploaded!'); await this.loadWorlds();} } catch(er){alert('Failed: '+er.message);} finally{ if(w&&w.__x){w.__x.$data.uploading=false;} e.target.value=''; } },
+                                async resetWorld(n,d) { if(!confirm(`Reset ${d}?`))return; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/${n}/reset`,{method:'POST',headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){alert('Reset!'); await this.loadWorlds();} } catch(e){alert('Failed: '+e.message);} },
+                                async deleteWorld(n,d) { if(!confirm(`Delete ${d}?`))return; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/${n}`,{method:'DELETE',headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){alert('Deleted!'); await this.loadWorlds();} } catch(e){alert('Failed: '+e.message);} }
                              }"
                              x-init="$watch('detailsModal.server', () => { if (detailsModal.server) { loadPlayerList('whitelist'); loadPlayerList('ops'); loadPlayerList('banned-players'); } })">
 
@@ -1439,6 +1450,134 @@
                                             Loading...
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Worlds Tab -->
+                        <div x-show="detailsModal.tab === 'worlds'" class="space-y-4"
+                             x-data="{
+                                 worlds: [],
+                                 uploading: false,
+                                 uploadWorldName: 'world'
+                             }">
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
+                                    <span>🗺️</span>
+                                    <span>World Management</span>
+                                </h4>
+                                <p class="text-sm text-gray-300 mb-4">
+                                    Manage your server's worlds (Overworld, Nether, The End). Download, upload, or reset worlds as needed.
+                                </p>
+
+                                <!-- Warning -->
+                                <div x-show="detailsModal.server?.Status === 'running'" class="mb-4 p-3 bg-yellow-900/30 border border-yellow-600 rounded">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-yellow-400">⚠️</span>
+                                        <span class="text-sm text-yellow-200">Server must be stopped to upload or reset worlds</span>
+                                    </div>
+                                </div>
+
+                                <!-- World List -->
+                                <div class="space-y-3">
+                                    <template x-for="world in worlds" :key="world.name">
+                                        <div class="bg-gray-600 p-4 rounded-lg">
+                                            <!-- World Header -->
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div class="flex items-center gap-3">
+                                                    <div x-text="world.display_name" class="text-lg font-semibold"></div>
+                                                    <span x-show="world.exists"
+                                                          class="px-2 py-1 bg-green-500 text-xs rounded">
+                                                        Active
+                                                    </span>
+                                                    <span x-show="!world.exists"
+                                                          class="px-2 py-1 bg-gray-500 text-xs rounded">
+                                                        Not Generated
+                                                    </span>
+                                                </div>
+                                                <div class="text-sm text-gray-300">
+                                                    <span x-show="world.exists" x-text="world.size_formatted"></span>
+                                                </div>
+                                            </div>
+
+                                            <!-- World Info -->
+                                            <div x-show="world.exists" class="text-xs text-gray-400 mb-3">
+                                                Last modified: <span x-text="new Date(world.last_modified).toLocaleString()"></span>
+                                            </div>
+
+                                            <!-- Action Buttons -->
+                                            <div class="flex gap-2 flex-wrap">
+                                                <!-- Download -->
+                                                <button @click="downloadWorld(world.name)"
+                                                        x-show="world.exists"
+                                                        class="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition-colors">
+                                                    ⬇️ Download
+                                                </button>
+
+                                                <!-- Upload -->
+                                                <button @click="$refs['worldUpload_' + world.name].click()"
+                                                        x-show="detailsModal.server?.Status !== 'running'"
+                                                        :disabled="uploading"
+                                                        class="px-3 py-2 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition-colors disabled:opacity-50">
+                                                    ⬆️ Upload
+                                                </button>
+                                                <input type="file"
+                                                       :x-ref="'worldUpload_' + world.name"
+                                                       accept=".zip"
+                                                       @change="uploadWorld(world.name, $event)"
+                                                       class="hidden">
+
+                                                <!-- Reset -->
+                                                <button @click="resetWorld(world.name, world.display_name)"
+                                                        x-show="world.can_delete && world.exists && detailsModal.server?.Status !== 'running'"
+                                                        class="px-3 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm rounded transition-colors">
+                                                    🔄 Reset
+                                                </button>
+
+                                                <!-- Delete -->
+                                                <button @click="deleteWorld(world.name, world.display_name)"
+                                                        x-show="world.can_delete && world.exists && detailsModal.server?.Status !== 'running'"
+                                                        class="px-3 py-2 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors">
+                                                    🗑️ Delete
+                                                </button>
+                                            </div>
+
+                                            <!-- Info Messages -->
+                                            <div x-show="!world.exists" class="mt-3 text-xs text-gray-400">
+                                                This world will be generated when the server starts.
+                                            </div>
+                                            <div x-show="world.name === 'world'" class="mt-3 text-xs text-yellow-400">
+                                                ⚠️ Overworld cannot be reset (too risky). Use upload to replace it.
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <!-- Loading State -->
+                                    <div x-show="worlds.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                        Click "Refresh" to load world information
+                                    </div>
+                                    <div x-show="loading" class="text-center py-8 text-gray-400">
+                                        Loading worlds...
+                                    </div>
+                                </div>
+
+                                <!-- Refresh Button -->
+                                <button @click="loadWorlds()" class="mt-4 w-full px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors">
+                                    🔄 Refresh World List
+                                </button>
+                            </div>
+
+                            <!-- Help Section -->
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <h5 class="font-semibold mb-2">📖 Help</h5>
+                                <ul class="text-sm text-gray-300 space-y-1">
+                                    <li><strong>Download:</strong> Save a world as a ZIP file to your computer</li>
+                                    <li><strong>Upload:</strong> Replace a world with a ZIP file from your computer</li>
+                                    <li><strong>Reset:</strong> Delete a dimension (Nether/End) - it will regenerate on server start</li>
+                                    <li><strong>Delete:</strong> Same as reset - dimensions regenerate automatically</li>
+                                </ul>
+                                <div class="mt-3 p-2 bg-yellow-900/30 border border-yellow-600 rounded text-xs text-yellow-200">
+                                    ⚠️ Automatic backups are created before upload/reset operations for safety.
                                 </div>
                             </div>
                         </div>

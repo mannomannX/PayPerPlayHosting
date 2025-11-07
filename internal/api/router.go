@@ -22,6 +22,7 @@ func SetupRouter(
 	motdHandler *MOTDHandler,
 	metricsHandler *MetricsHandler,
 	playerHandler *PlayerHandler,
+	worldHandler *WorldHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -159,6 +160,13 @@ func SetupRouter(
 			// Online & Historic Players
 			servers.GET("/:id/players-online", playerHandler.GetOnlinePlayers)
 			servers.GET("/:id/players-history", playerHandler.GetHistoricPlayers)
+
+			// World Management
+			servers.GET("/:id/worlds", worldHandler.ListWorlds)
+			servers.GET("/:id/worlds/:name/download", worldHandler.DownloadWorld)
+			servers.POST("/:id/worlds/upload", worldHandler.UploadWorld)
+			servers.POST("/:id/worlds/:name/reset", worldHandler.ResetWorld)
+			servers.DELETE("/:id/worlds/:name", worldHandler.DeleteWorld)
 		}
 
 		// Admin endpoints
