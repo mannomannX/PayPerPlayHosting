@@ -91,6 +91,20 @@
                     </p>
                 </div>
                 <div class="text-right">
+                    <!-- Connection Status Indicator -->
+                    <div class="mb-2 flex items-center justify-end gap-2">
+                        <div :class="{
+                            'bg-green-500': connectionStatus === 'connected',
+                            'bg-yellow-500': connectionStatus === 'reconnecting',
+                            'bg-red-500': connectionStatus === 'disconnected'
+                        }" class="w-2 h-2 rounded-full animate-pulse"></div>
+                        <span class="text-xs text-gray-400" x-text="{
+                            'connected': 'Connected',
+                            'reconnecting': 'Reconnecting...',
+                            'disconnected': 'Connection Lost'
+                        }[connectionStatus]"></span>
+                    </div>
+
                     <div class="text-sm text-gray-400">
                         <span x-text="user?.username || user?.email"></span>
                     </div>
@@ -548,6 +562,12 @@
     <script>
         function app() {
             return {
+                // Connection state
+                connectionStatus: 'connected', // 'connected' | 'reconnecting' | 'disconnected'
+                consecutiveFailures: 0,
+                lastSuccessfulRequest: Date.now(),
+                connectionCheckInterval: null,
+
                 // Auth state
                 isAuthenticated: false,
                 authTab: 'login',
@@ -598,6 +618,64 @@
                     this.token = localStorage.getItem('token');
                     if (this.token) {
                         await this.loadProfile();
+                    }
+
+                    // Start connection monitoring
+                    this.startConnectionMonitoring();
+                },
+
+                // Connection monitoring methods
+                startConnectionMonitoring() {
+                    // Check connection every 10 seconds
+                    this.connectionCheckInterval = setInterval(() => {
+                        const timeSinceLastSuccess = Date.now() - this.lastSuccessfulRequest;
+
+                        // If no successful request in last 30 seconds, check connection
+                        if (timeSinceLastSuccess > 30000 && this.isAuthenticated) {
+                            this.checkConnection();
+                        }
+                    }, 10000);
+                },
+
+                async checkConnection() {
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                        const response = await fetch('/health', {
+                            signal: controller.signal
+                        });
+
+                        clearTimeout(timeoutId);
+
+                        if (response.ok) {
+                            this.markRequestSuccess();
+                        } else {
+                            this.markRequestFailure();
+                        }
+                    } catch (error) {
+                        this.markRequestFailure();
+                    }
+                },
+
+                markRequestSuccess() {
+                    this.lastSuccessfulRequest = Date.now();
+                    this.consecutiveFailures = 0;
+                    if (this.connectionStatus !== 'connected') {
+                        this.connectionStatus = 'connected';
+                        console.log('✅ Connection restored');
+                    }
+                },
+
+                markRequestFailure() {
+                    this.consecutiveFailures++;
+
+                    if (this.consecutiveFailures >= 3) {
+                        this.connectionStatus = 'disconnected';
+                        console.error('❌ Connection lost after', this.consecutiveFailures, 'failures');
+                    } else if (this.consecutiveFailures >= 1) {
+                        this.connectionStatus = 'reconnecting';
+                        console.warn('⚠️ Connection issues detected, attempt', this.consecutiveFailures);
                     }
                 },
 
@@ -652,9 +730,7 @@
 
                 async loadProfile() {
                     try {
-                        const response = await fetch('/api/auth/profile', {
-                            headers: { 'Authorization': `Bearer ${this.token}` }
-                        });
+                        const response = await this.apiCall('/api/auth/profile');
 
                         if (response.ok) {
                             const data = await response.json();
@@ -673,7 +749,11 @@
                         }
                     } catch (error) {
                         console.error('Failed to load profile:', error);
-                        this.logout();
+                        // Don't logout on network errors, only on auth failures
+                        if (this.consecutiveFailures < 3) {
+                            // Keep trying to reconnect
+                            setTimeout(() => this.loadProfile(), 5000);
+                        }
                     }
                 },
 
@@ -685,21 +765,43 @@
                     localStorage.removeItem('token');
                 },
 
-                // API helper
+                // API helper with connection tracking
                 async apiCall(url, options = {}) {
-                    const headers = {
-                        'Authorization': `Bearer ${this.token}`,
-                        ...options.headers
-                    };
+                    try {
+                        // Add timeout to detect hung connections
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-                    const response = await fetch(url, { ...options, headers });
+                        const headers = {
+                            'Authorization': `Bearer ${this.token}`,
+                            ...options.headers
+                        };
 
-                    if (response.status === 401) {
-                        this.logout();
-                        throw new Error('Session expired. Please login again.');
+                        const response = await fetch(url, {
+                            ...options,
+                            headers,
+                            signal: controller.signal
+                        });
+
+                        clearTimeout(timeoutId);
+
+                        // Mark request as successful
+                        this.markRequestSuccess();
+
+                        // Check for authentication errors
+                        if (response.status === 401) {
+                            this.logout();
+                            throw new Error('Session expired. Please login again.');
+                        }
+
+                        return response;
+                    } catch (error) {
+                        // Mark request as failed
+                        this.markRequestFailure();
+
+                        // Re-throw the error
+                        throw error;
                     }
-
-                    return response;
                 },
 
                 // Server methods
