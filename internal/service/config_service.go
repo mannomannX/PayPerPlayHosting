@@ -17,6 +17,7 @@ type ConfigService struct {
 	configChangeRepo *repository.ConfigChangeRepository
 	dockerService    *docker.DockerService
 	backupService    *BackupService
+	motdService      *MOTDService
 }
 
 // NewConfigService creates a new configuration service
@@ -25,12 +26,14 @@ func NewConfigService(
 	configChangeRepo *repository.ConfigChangeRepository,
 	dockerService *docker.DockerService,
 	backupService *BackupService,
+	motdService *MOTDService,
 ) *ConfigService {
 	return &ConfigService{
 		serverRepo:       serverRepo,
 		configChangeRepo: configChangeRepo,
 		dockerService:    dockerService,
 		backupService:    backupService,
+		motdService:      motdService,
 	}
 }
 
@@ -305,7 +308,9 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 			change.ChangeType = models.ConfigChangeMOTD
 			change.OldValue = server.MOTD
 			change.NewValue = fmt.Sprintf("%v", newValue)
-			requiresRestart = true
+			// MOTD doesn't require container restart - just write to server.properties
+			// User can manually restart server for changes to take effect
+			requiresRestart = false
 
 			// Validate MOTD length
 			motd := fmt.Sprintf("%v", newValue)
@@ -478,6 +483,23 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 	err := s.serverRepo.Update(server)
 	if err != nil {
 		return fmt.Errorf("failed to update server in database: %w", err)
+	}
+
+	// Apply MOTD to server.properties if MOTD was changed
+	if _, hasMOTD := changes["motd"]; hasMOTD {
+		err = s.motdService.applyMOTD(server)
+		if err != nil {
+			logger.Warn("Failed to apply MOTD to server.properties", map[string]interface{}{
+				"server_id": server.ID,
+				"error":     err.Error(),
+			})
+			// Don't fail the whole operation if just the MOTD write fails
+		} else {
+			logger.Info("MOTD applied to server.properties", map[string]interface{}{
+				"server_id": server.ID,
+				"motd":      server.MOTD,
+			})
+		}
 	}
 
 	// If requires restart and server was running, recreate container

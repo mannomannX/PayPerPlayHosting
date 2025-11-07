@@ -134,13 +134,13 @@ func main() {
 	consoleService := service.NewConsoleService(serverRepo, dockerService)
 	consoleHandler := api.NewConsoleHandler(consoleService)
 
-	// Configuration service for server configuration changes
-	configService := service.NewConfigService(serverRepo, configChangeRepo, dockerService, backupService)
-	configHandler := api.NewConfigHandler(configService, mcService)
-
 	// MOTD (Message of the Day) service
 	motdService := service.NewMOTDService(serverRepo, cfg)
 	motdHandler := api.NewMOTDHandler(motdService)
+
+	// Configuration service for server configuration changes (needs motdService)
+	configService := service.NewConfigService(serverRepo, configChangeRepo, dockerService, backupService, motdService)
+	configHandler := api.NewConfigHandler(configService, mcService)
 
 	// Resource pack integration service
 	resourcePackService := service.NewResourcePackService(fileRepo, serverRepo, cfg)
