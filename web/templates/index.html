@@ -971,10 +971,13 @@
                                 <!-- Current Icon Preview -->
                                 <div class="mb-4">
                                     <div class="text-sm font-semibold mb-2">Current Icon:</div>
-                                    <img :src="`/api/servers/${detailsModal.server?.ID}/icon?t=${Date.now()}`"
+                                    <img :src="`/api/servers/${detailsModal.server?.ID}/icon`"
                                          :alt="`${detailsModal.server?.Name} icon`"
-                                         @error="$el.src='/static/default-server-icon.png'"
+                                         @error="$el.style.display='none'"
                                          class="w-32 h-32 rounded border-2 border-gray-600 object-cover">
+                                    <div x-show="false" class="w-32 h-32 rounded border-2 border-gray-600 bg-gray-600 flex items-center justify-center text-4xl">
+                                        📦
+                                    </div>
                                 </div>
 
                                 <!-- Upload New Icon -->
@@ -1458,11 +1461,14 @@
 
                         if (response.ok) {
                             alert('Server icon uploaded successfully! The icon will be visible immediately.');
-                            // Reload icon by adding timestamp
-                            const iconImg = document.querySelector(`img[src*="/api/servers/${serverId}/icon"]`);
-                            if (iconImg) {
-                                iconImg.src = `/api/servers/${serverId}/icon?t=${Date.now()}`;
-                            }
+                            // Reload all icon images for this server with timestamp to bypass cache
+                            const timestamp = Date.now();
+                            const iconImgs = document.querySelectorAll(`img[src*="/api/servers/${serverId}/icon"]`);
+                            iconImgs.forEach(img => {
+                                // Remove old timestamp query param if exists
+                                const baseUrl = img.src.split('?')[0];
+                                img.src = `${baseUrl}?t=${timestamp}`;
+                            });
                             await this.loadServers();
                         } else {
                             const error = await response.json();
