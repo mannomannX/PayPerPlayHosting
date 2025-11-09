@@ -162,8 +162,15 @@ func main() {
 	worldService := service.NewWorldService(serverRepo, backupService, cfg)
 	worldHandler := api.NewWorldHandler(worldService)
 
+	// Template service
+	templateService, err := service.NewTemplateService("templates/server-templates.json")
+	if err != nil {
+		logger.Fatal("Failed to initialize template service", err, nil)
+	}
+	templateHandler := api.NewTemplateHandler(templateService)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

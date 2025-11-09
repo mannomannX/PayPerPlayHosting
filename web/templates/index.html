@@ -142,7 +142,13 @@
 
             <!-- Create Server Form -->
             <div class="bg-gray-800 rounded-lg p-6 mb-8">
-                <h2 class="text-2xl font-bold mb-4">Create New Server</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-2xl font-bold">Create New Server</h2>
+                    <button type="button" @click="openTemplateModal()"
+                            class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded transition text-sm font-medium">
+                        Browse Templates
+                    </button>
+                </div>
                 <form @submit.prevent="createServer" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium mb-2">Server Name</label>
@@ -280,6 +286,89 @@
                             </div>
                         </div>
                     </template>
+                </div>
+            </div>
+
+            <!-- Template Selection Modal -->
+            <div x-show="templateModal.show"
+                 class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+                 x-cloak>
+                <div class="bg-gray-800 rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="text-2xl font-bold">Choose a Server Template</h3>
+                        <button @click="closeTemplateModal()"
+                                class="text-gray-400 hover:text-white text-2xl font-bold">
+                            &times;
+                        </button>
+                    </div>
+
+                    <!-- Search and Filter -->
+                    <div class="mb-6 space-y-4">
+                        <input type="text"
+                               x-model="templateModal.searchQuery"
+                               placeholder="Search templates..."
+                               class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-blue-400 focus:outline-none">
+
+                        <div class="flex gap-2 flex-wrap">
+                            <button @click="templateModal.selectedCategory = 'all'"
+                                    :class="templateModal.selectedCategory == 'all' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'"
+                                    class="px-4 py-2 rounded transition text-sm">
+                                All
+                            </button>
+                            <template x-for="cat in templateModal.categories" :key="cat.id">
+                                <button @click="templateModal.selectedCategory = cat.id"
+                                        :class="templateModal.selectedCategory == cat.id ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'"
+                                        class="px-4 py-2 rounded transition text-sm"
+                                        x-text="cat.icon + ' ' + cat.name"></button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Templates Grid -->
+                    <div x-show="templateModal.loading" class="text-center py-8">
+                        <p class="text-gray-400">Loading templates...</p>
+                    </div>
+
+                    <div x-show="!templateModal.loading && filteredTemplates.length == 0" class="text-center py-8">
+                        <p class="text-gray-400">No templates found matching your search.</p>
+                    </div>
+
+                    <div x-show="!templateModal.loading && filteredTemplates.length > 0"
+                         class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <template x-for="template in filteredTemplates" :key="template.id">
+                            <div class="bg-gray-700 rounded-lg p-4 hover:bg-gray-600 transition cursor-pointer"
+                                 @click="selectTemplate(template)">
+                                <div class="flex items-start gap-3">
+                                    <div class="text-3xl" x-text="template.icon"></div>
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2 mb-1">
+                                            <h4 class="font-bold text-lg" x-text="template.name"></h4>
+                                            <span x-show="template.popular"
+                                                  class="bg-yellow-600 text-xs px-2 py-0.5 rounded">Popular</span>
+                                        </div>
+                                        <p class="text-sm text-gray-300 mb-2" x-text="template.description"></p>
+                                        <div class="flex gap-2 text-xs text-gray-400">
+                                            <span x-text="template.serverType"></span>
+                                            <span>•</span>
+                                            <span x-text="template.version"></span>
+                                            <span>•</span>
+                                            <span x-text="(template.memory / 1024).toFixed(1) + ' GB RAM'"></span>
+                                        </div>
+                                        <div class="flex gap-1 flex-wrap mt-2">
+                                            <template x-for="tag in (template.tags || []).slice(0, 3)" :key="tag">
+                                                <span class="bg-gray-800 text-xs px-2 py-0.5 rounded"
+                                                      x-text="tag"></span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="mt-6 text-center text-sm text-gray-400">
+                        <p>Click any template to apply it to your new server</p>
+                    </div>
                 </div>
             </div>
 
@@ -1633,6 +1722,14 @@
                     consoleConnected: false,
                     consoleWs: null
                 },
+                templateModal: {
+                    show: false,
+                    templates: [],
+                    categories: [],
+                    selectedCategory: 'all',
+                    searchQuery: '',
+                    loading: false
+                },
                 pluginSearch: '',
                 availablePlugins: [],
                 consoleCommand: '',
@@ -1911,6 +2008,69 @@
                     } catch (error) {
                         alert('Failed to create server: ' + error.message);
                     }
+                },
+
+                // Template functions
+                async openTemplateModal() {
+                    this.templateModal.show = true;
+                    await this.loadTemplates();
+                },
+
+                closeTemplateModal() {
+                    this.templateModal.show = false;
+                    this.templateModal.searchQuery = '';
+                    this.templateModal.selectedCategory = 'all';
+                },
+
+                async loadTemplates() {
+                    this.templateModal.loading = true;
+                    try {
+                        const response = await this.apiCall('/api/templates');
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.templateModal.templates = data.templates || [];
+                        }
+
+                        const catResponse = await this.apiCall('/api/templates/categories');
+                        if (catResponse.ok) {
+                            const catData = await catResponse.json();
+                            this.templateModal.categories = catData.categories || [];
+                        }
+                    } catch (error) {
+                        console.error('Failed to load templates:', error);
+                    } finally {
+                        this.templateModal.loading = false;
+                    }
+                },
+
+                get filteredTemplates() {
+                    let filtered = this.templateModal.templates;
+
+                    if (this.templateModal.selectedCategory != 'all') {
+                        filtered = filtered.filter(t => t.category == this.templateModal.selectedCategory);
+                    }
+
+                    if (this.templateModal.searchQuery) {
+                        const query = this.templateModal.searchQuery.toLowerCase();
+                        filtered = filtered.filter(t =>
+                            t.name.toLowerCase().includes(query) ||
+                            t.description.toLowerCase().includes(query) ||
+                            (t.tags && t.tags.some(tag => tag.toLowerCase().includes(query)))
+                        );
+                    }
+
+                    return filtered;
+                },
+
+                selectTemplate(template) {
+                    this.newServer.server_type = template.serverType;
+                    this.newServer.minecraft_version = template.version;
+                    this.newServer.ram_mb = template.memory;
+                    if (!this.newServer.name) {
+                        this.newServer.name = template.name + ' Server';
+                    }
+                    this.closeTemplateModal();
+                    alert(`Template "${template.name}" loaded! Adjust settings if needed and click Create Server.`);
                 },
 
                 async startServer(id) {

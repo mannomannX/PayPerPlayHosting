@@ -1,0 +1,252 @@
+{
+  "templates": [
+    {
+      "id": "vanilla-1-21",
+      "name": "Vanilla 1.21",
+      "description": "Pure Minecraft experience without modifications. Perfect for vanilla survival with friends.",
+      "category": "vanilla",
+      "icon": "⛏️",
+      "version": "1.21",
+      "serverType": "vanilla",
+      "memory": 2048,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "survival",
+        "max-players": 20,
+        "pvp": true,
+        "online-mode": true
+      },
+      "plugins": [],
+      "mods": [],
+      "tags": ["vanilla", "survival", "beginner-friendly", "latest"],
+      "popular": true
+    },
+    {
+      "id": "paper-1-20-6",
+      "name": "Paper 1.20.6 (Optimized)",
+      "description": "High-performance Paper server with essential plugins. Best choice for survival servers.",
+      "category": "optimized",
+      "icon": "📄",
+      "version": "1.20.6",
+      "serverType": "paper",
+      "memory": 3072,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "survival",
+        "max-players": 50,
+        "pvp": true,
+        "view-distance": 10
+      },
+      "plugins": ["essentialsx", "worldedit", "luckperms"],
+      "mods": [],
+      "tags": ["paper", "optimized", "plugins", "performance", "popular"],
+      "popular": true
+    },
+    {
+      "id": "fabric-1-21",
+      "name": "Fabric 1.21 (Modded)",
+      "description": "Fabric modloader for lightweight mods. Includes performance optimization mods.",
+      "category": "modded",
+      "icon": "🧵",
+      "version": "1.21",
+      "serverType": "fabric",
+      "memory": 4096,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "survival",
+        "max-players": 20
+      },
+      "plugins": [],
+      "mods": ["fabric-api", "lithium", "phosphor", "ferritecore"],
+      "tags": ["fabric", "modded", "performance", "tech"],
+      "popular": true
+    },
+    {
+      "id": "skyblock",
+      "name": "SkyBlock",
+      "description": "Classic SkyBlock experience with void world preset. Start on a small island!",
+      "category": "minigame",
+      "icon": "🏝️",
+      "version": "1.20.6",
+      "serverType": "paper",
+      "memory": 2048,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "survival",
+        "max-players": 10,
+        "generate-structures": false
+      },
+      "plugins": ["essentialsx", "worldedit"],
+      "mods": [],
+      "worldPreset": "void",
+      "tags": ["skyblock", "challenge", "minigame", "popular"],
+      "popular": true
+    },
+    {
+      "id": "creative-build",
+      "name": "Creative Building",
+      "description": "Creative mode server for building projects. WorldEdit included.",
+      "category": "creative",
+      "icon": "🏗️",
+      "version": "1.20.6",
+      "serverType": "paper",
+      "memory": 3072,
+      "properties": {
+        "difficulty": "peaceful",
+        "gamemode": "creative",
+        "max-players": 20,
+        "pvp": false,
+        "spawn-monsters": false
+      },
+      "plugins": ["worldedit", "worldguard", "essentialsx"],
+      "mods": [],
+      "tags": ["creative", "building", "worldedit"],
+      "popular": false
+    },
+    {
+      "id": "forge-1-20-1",
+      "name": "Forge 1.20.1 (Heavy Mods)",
+      "description": "Forge modloader for heavy mod packs. Recommended for Create, Tech, or Magic mods.",
+      "category": "modded",
+      "icon": "⚙️",
+      "version": "1.20.1",
+      "serverType": "forge",
+      "memory": 6144,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "survival",
+        "max-players": 10
+      },
+      "plugins": [],
+      "mods": [],
+      "tags": ["forge", "modded", "heavy", "tech", "magic"],
+      "popular": false
+    },
+    {
+      "id": "pvp-arena",
+      "name": "PvP Arena",
+      "description": "Fast-paced PvP server with flat world. Perfect for practice or tournaments.",
+      "category": "minigame",
+      "icon": "⚔️",
+      "version": "1.20.6",
+      "serverType": "paper",
+      "memory": 2048,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "adventure",
+        "max-players": 20,
+        "pvp": true
+      },
+      "plugins": ["essentialsx", "worldguard"],
+      "mods": [],
+      "worldPreset": "flat",
+      "tags": ["pvp", "arena", "minigame", "fast"],
+      "popular": false
+    },
+    {
+      "id": "peaceful-survival",
+      "name": "Peaceful Survival",
+      "description": "Relaxing survival without monsters. Focus on building and farming.",
+      "category": "vanilla",
+      "icon": "🌻",
+      "version": "1.21",
+      "serverType": "vanilla",
+      "memory": 2048,
+      "properties": {
+        "difficulty": "peaceful",
+        "gamemode": "survival",
+        "max-players": 10,
+        "spawn-monsters": false,
+        "spawn-animals": true
+      },
+      "plugins": [],
+      "mods": [],
+      "tags": ["peaceful", "relaxing", "survival", "beginner-friendly"],
+      "popular": false
+    },
+    {
+      "id": "hardcore",
+      "name": "Hardcore Survival",
+      "description": "Hardcore mode - one life only! For experienced players seeking a challenge.",
+      "category": "vanilla",
+      "icon": "💀",
+      "version": "1.21",
+      "serverType": "vanilla",
+      "memory": 2048,
+      "properties": {
+        "difficulty": "hard",
+        "hardcore": true,
+        "gamemode": "survival",
+        "max-players": 10
+      },
+      "plugins": [],
+      "mods": [],
+      "tags": ["hardcore", "challenge", "expert", "survival"],
+      "popular": false
+    },
+    {
+      "id": "roleplay",
+      "name": "Roleplay Server",
+      "description": "Roleplay-focused server with economy and permission plugins.",
+      "category": "roleplay",
+      "icon": "🎭",
+      "version": "1.20.6",
+      "serverType": "paper",
+      "memory": 4096,
+      "properties": {
+        "difficulty": "normal",
+        "gamemode": "survival",
+        "max-players": 30,
+        "pvp": false
+      },
+      "plugins": ["essentialsx", "luckperms", "worldguard"],
+      "mods": [],
+      "tags": ["roleplay", "economy", "community", "survival"],
+      "popular": false
+    }
+  ],
+  "categories": [
+    {
+      "id": "vanilla",
+      "name": "Vanilla",
+      "description": "Pure Minecraft without mods or plugins",
+      "icon": "⛏️",
+      "order": 1
+    },
+    {
+      "id": "optimized",
+      "name": "Optimized",
+      "description": "High-performance servers with plugins",
+      "icon": "⚡",
+      "order": 2
+    },
+    {
+      "id": "modded",
+      "name": "Modded",
+      "description": "Fabric, Forge, and modpack servers",
+      "icon": "🔧",
+      "order": 3
+    },
+    {
+      "id": "minigame",
+      "name": "Minigames",
+      "description": "SkyBlock, PvP, and game modes",
+      "icon": "🎮",
+      "order": 4
+    },
+    {
+      "id": "creative",
+      "name": "Creative",
+      "description": "Building and creative projects",
+      "icon": "🏗️",
+      "order": 5
+    },
+    {
+      "id": "roleplay",
+      "name": "Roleplay",
+      "description": "RP servers with economy and permissions",
+      "icon": "🎭",
+      "order": 6
+    }
+  ]
+}

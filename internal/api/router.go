@@ -23,6 +23,7 @@ func SetupRouter(
 	metricsHandler *MetricsHandler,
 	playerHandler *PlayerHandler,
 	worldHandler *WorldHandler,
+	templateHandler *TemplateHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -83,6 +84,18 @@ func SetupRouter(
 	api.Use(middleware.AuthMiddleware())                                // Auth with JWT
 	api.Use(middleware.RateLimitMiddleware(middleware.APIRateLimiter))  // API rate limiting
 	{
+		// Server Templates (public within auth)
+		templates := api.Group("/templates")
+		{
+			templates.GET("", templateHandler.GetAllTemplates)
+			templates.GET("/popular", templateHandler.GetPopularTemplates)
+			templates.GET("/categories", templateHandler.GetCategories)
+			templates.GET("/category/:category", templateHandler.GetTemplatesByCategory)
+			templates.GET("/search", templateHandler.SearchTemplates)
+			templates.GET("/recommendations", templateHandler.GetRecommendations)
+			templates.GET("/:id", templateHandler.GetTemplate)
+		}
+
 		// Server management
 		servers := api.Group("/servers")
 		{
@@ -94,6 +107,7 @@ func SetupRouter(
 			servers.DELETE("/:id", handler.DeleteServer)
 			servers.GET("/:id/usage", handler.GetServerUsage)
 			servers.GET("/:id/logs", handler.GetServerLogs)
+			servers.POST("/:id/apply-template", templateHandler.ApplyTemplate)
 
 			// Monitoring
 			servers.GET("/:id/status", monitoringHandler.GetServerStatus)
