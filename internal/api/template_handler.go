@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/payperplay/hosting/internal/service"
@@ -164,7 +165,7 @@ func (h *TemplateHandler) GetRecommendations(c *gin.Context) {
 	modded := false   // default
 
 	if p := c.Query("players"); p != "" {
-		if parsed, err := c.GetInt("players"); err == nil {
+		if parsed, err := strconv.Atoi(p); err == nil {
 			playerCount = parsed
 		}
 	}
