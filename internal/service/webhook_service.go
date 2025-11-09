@@ -30,7 +30,7 @@ func NewWebhookService(db *gorm.DB) *WebhookService {
 }
 
 // GetWebhook returns a webhook configuration for a server
-func (s *WebhookService) GetWebhook(serverID uint) (*models.ServerWebhook, error) {
+func (s *WebhookService) GetWebhook(serverID string) (*models.ServerWebhook, error) {
 	var webhook models.ServerWebhook
 	if err := s.db.Where("server_id = ?", serverID).First(&webhook).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -42,7 +42,7 @@ func (s *WebhookService) GetWebhook(serverID uint) (*models.ServerWebhook, error
 }
 
 // CreateWebhook creates a new webhook configuration
-func (s *WebhookService) CreateWebhook(serverID uint, webhookURL string) (*models.ServerWebhook, error) {
+func (s *WebhookService) CreateWebhook(serverID string, webhookURL string) (*models.ServerWebhook, error) {
 	// Check if webhook already exists
 	existing, err := s.GetWebhook(serverID)
 	if err != nil {
@@ -72,7 +72,7 @@ func (s *WebhookService) CreateWebhook(serverID uint, webhookURL string) (*model
 }
 
 // UpdateWebhook updates an existing webhook configuration
-func (s *WebhookService) UpdateWebhook(serverID uint, updates map[string]interface{}) (*models.ServerWebhook, error) {
+func (s *WebhookService) UpdateWebhook(serverID string, updates map[string]interface{}) (*models.ServerWebhook, error) {
 	webhook, err := s.GetWebhook(serverID)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (s *WebhookService) UpdateWebhook(serverID uint, updates map[string]interfa
 }
 
 // DeleteWebhook deletes a webhook configuration
-func (s *WebhookService) DeleteWebhook(serverID uint) error {
+func (s *WebhookService) DeleteWebhook(serverID string) error {
 	return s.db.Where("server_id = ?", serverID).Delete(&models.ServerWebhook{}).Error
 }
 
@@ -258,7 +258,7 @@ func (s *WebhookService) sendWebhook(webhookURL string, payload models.DiscordWe
 }
 
 // NotifyServerStart sends a server start notification
-func (s *WebhookService) NotifyServerStart(serverID uint, serverName string) {
+func (s *WebhookService) NotifyServerStart(serverID string, serverName string) {
 	go s.SendEvent(models.WebhookEventData{
 		ServerID:   serverID,
 		ServerName: serverName,
@@ -268,7 +268,7 @@ func (s *WebhookService) NotifyServerStart(serverID uint, serverName string) {
 }
 
 // NotifyServerStop sends a server stop notification
-func (s *WebhookService) NotifyServerStop(serverID uint, serverName string) {
+func (s *WebhookService) NotifyServerStop(serverID string, serverName string) {
 	go s.SendEvent(models.WebhookEventData{
 		ServerID:   serverID,
 		ServerName: serverName,
@@ -278,7 +278,7 @@ func (s *WebhookService) NotifyServerStop(serverID uint, serverName string) {
 }
 
 // NotifyServerCrash sends a server crash notification
-func (s *WebhookService) NotifyServerCrash(serverID uint, serverName string, errorMsg string) {
+func (s *WebhookService) NotifyServerCrash(serverID string, serverName string, errorMsg string) {
 	go s.SendEvent(models.WebhookEventData{
 		ServerID:   serverID,
 		ServerName: serverName,
@@ -289,7 +289,7 @@ func (s *WebhookService) NotifyServerCrash(serverID uint, serverName string, err
 }
 
 // NotifyPlayerJoin sends a player join notification
-func (s *WebhookService) NotifyPlayerJoin(serverID uint, serverName string, playerName string) {
+func (s *WebhookService) NotifyPlayerJoin(serverID string, serverName string, playerName string) {
 	go s.SendEvent(models.WebhookEventData{
 		ServerID:   serverID,
 		ServerName: serverName,
@@ -300,7 +300,7 @@ func (s *WebhookService) NotifyPlayerJoin(serverID uint, serverName string, play
 }
 
 // NotifyPlayerLeave sends a player leave notification
-func (s *WebhookService) NotifyPlayerLeave(serverID uint, serverName string, playerName string) {
+func (s *WebhookService) NotifyPlayerLeave(serverID string, serverName string, playerName string) {
 	go s.SendEvent(models.WebhookEventData{
 		ServerID:   serverID,
 		ServerName: serverName,
@@ -311,7 +311,7 @@ func (s *WebhookService) NotifyPlayerLeave(serverID uint, serverName string, pla
 }
 
 // NotifyBackupCreated sends a backup created notification
-func (s *WebhookService) NotifyBackupCreated(serverID uint, serverName string, backupSize string) {
+func (s *WebhookService) NotifyBackupCreated(serverID string, serverName string, backupSize string) {
 	go s.SendEvent(models.WebhookEventData{
 		ServerID:   serverID,
 		ServerName: serverName,
@@ -332,7 +332,7 @@ type WebhookRepository struct {
 }
 
 // FindByServerID finds a webhook by server ID
-func (r *WebhookRepository) FindByServerID(serverID uint) (*models.ServerWebhook, error) {
+func (r *WebhookRepository) FindByServerID(serverID string) (*models.ServerWebhook, error) {
 	var webhook models.ServerWebhook
 	if err := r.db.Where("server_id = ?", serverID).First(&webhook).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -354,6 +354,6 @@ func (r *WebhookRepository) Update(webhook *models.ServerWebhook) error {
 }
 
 // Delete deletes a webhook
-func (r *WebhookRepository) Delete(serverID uint) error {
+func (r *WebhookRepository) Delete(serverID string) error {
 	return r.db.Where("server_id = ?", serverID).Delete(&models.ServerWebhook{}).Error
 }

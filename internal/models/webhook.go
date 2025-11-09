@@ -7,7 +7,7 @@ import (
 // ServerWebhook represents a Discord webhook configuration for a server
 type ServerWebhook struct {
 	ID        uint             `gorm:"primaryKey" json:"id"`
-	ServerID  uint             `gorm:"not null;index" json:"server_id"`
+	ServerID  string           `gorm:"size:64;not null;index" json:"server_id"`
 	Server    *MinecraftServer `gorm:"foreignKey:ServerID" json:"-"`
 	WebhookURL string          `gorm:"type:text;not null" json:"webhook_url"`
 	Enabled   bool             `gorm:"default:true;not null" json:"enabled"`
@@ -69,7 +69,7 @@ type DiscordEmbedFooter struct {
 
 // WebhookEventData contains event-specific data for webhooks
 type WebhookEventData struct {
-	ServerID   uint
+	ServerID   string
 	ServerName string
 	EventType  WebhookEvent
 	PlayerName string // for player events
