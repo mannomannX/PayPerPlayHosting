@@ -21,19 +21,19 @@
                 <!-- Tabs -->
                 <div class="flex gap-2 mb-6 border-b border-gray-700">
                     <button @click="authTab = 'login'"
-                            :class="authTab === 'login' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                            :class="authTab == 'login' ? 'border-green-400 text-green-400' : 'border-transparent'"
                             class="px-4 py-2 border-b-2 transition font-semibold">
                         Login
                     </button>
                     <button @click="authTab = 'register'"
-                            :class="authTab === 'register' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                            :class="authTab == 'register' ? 'border-green-400 text-green-400' : 'border-transparent'"
                             class="px-4 py-2 border-b-2 transition font-semibold">
                         Register
                     </button>
                 </div>
 
                 <!-- Login Form -->
-                <form x-show="authTab === 'login'" @submit.prevent="login" class="space-y-4">
+                <form x-show="authTab == 'login'" @submit.prevent="login" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium mb-2">Email</label>
                         <input type="email" x-model="loginForm.email" required
@@ -51,7 +51,7 @@
                 </form>
 
                 <!-- Register Form -->
-                <form x-show="authTab === 'register'" @submit.prevent="register" class="space-y-4">
+                <form x-show="authTab == 'register'" @submit.prevent="register" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium mb-2">Username</label>
                         <input type="text" x-model="registerForm.username" required minlength="3"
@@ -97,9 +97,9 @@
                     <!-- Connection Status Indicator -->
                     <div class="mb-2 flex items-center justify-end gap-2">
                         <div :class="{
-                            'bg-green-500': connectionStatus === 'connected',
-                            'bg-yellow-500': connectionStatus === 'reconnecting',
-                            'bg-red-500': connectionStatus === 'disconnected'
+                            'bg-green-500': connectionStatus == 'connected',
+                            'bg-yellow-500': connectionStatus == 'reconnecting',
+                            'bg-red-500': connectionStatus == 'disconnected'
                         }" class="w-2 h-2 rounded-full animate-pulse"></div>
                         <span class="text-xs text-gray-400" x-text="{
                             'connected': 'Connected',
@@ -197,7 +197,7 @@
                     <p class="text-gray-400">Loading servers...</p>
                 </div>
 
-                <div x-show="!loading && servers.length === 0" class="text-center py-8">
+                <div x-show="!loading && servers.length == 0" class="text-center py-8">
                     <p class="text-gray-400">No servers yet. Create one above!</p>
                 </div>
 
@@ -217,10 +217,10 @@
                                         <h3 class="text-xl font-bold flex items-center gap-2">
                                             <span x-text="server.Name"></span>
                                             <span :class="{
-                                                'bg-green-500': server.Status === 'running',
-                                                'bg-gray-500': server.Status === 'stopped',
-                                                'bg-yellow-500': server.Status === 'starting' || server.Status === 'stopping',
-                                                'bg-red-500': server.Status === 'error'
+                                                'bg-green-500': server.Status == 'running',
+                                                'bg-gray-500': server.Status == 'stopped',
+                                                'bg-yellow-500': server.Status == 'starting' || server.Status == 'stopping',
+                                                'bg-red-500': server.Status == 'error'
                                             }" class="px-3 py-1 rounded-full text-xs font-semibold uppercase">
                                                 <span x-text="server.Status"></span>
                                             </span>
@@ -237,7 +237,7 @@
                                     </div>
 
                                     <!-- Real-time Status (if running) -->
-                                    <div x-show="server.Status === 'running' && serverStatuses[server.ID]"
+                                    <div x-show="server.Status == 'running' && serverStatuses[server.ID]"
                                          class="mt-2 text-xs text-gray-400 flex gap-4">
                                         <span class="flex items-center gap-1">
                                             <span class="text-blue-400">👥</span>
@@ -253,18 +253,18 @@
 
                                 <div class="flex gap-2 flex-wrap">
                                     <button @click="startServer(server.ID)"
-                                            x-show="server.Status === 'stopped'"
+                                            x-show="server.Status == 'stopped'"
                                             class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded transition text-sm">
                                         Start
                                     </button>
                                     <button @click="stopServer(server.ID)"
-                                            x-show="server.Status === 'running'"
+                                            x-show="server.Status == 'running'"
                                             class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded transition text-sm">
                                         Stop
                                     </button>
                                     <button @click="restartServer(server.ID)"
-                                            x-show="server.Status === 'running' || server.Status === 'error'"
-                                            :class="server.Status === 'error' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-purple-500 hover:bg-purple-600'"
+                                            x-show="server.Status == 'running' || server.Status == 'error'"
+                                            :class="server.Status == 'error' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-purple-500 hover:bg-purple-600'"
                                             class="text-white px-4 py-2 rounded transition text-sm">
                                         Restart
                                     </button>
@@ -293,54 +293,54 @@
                     <!-- Tabs -->
                     <div class="flex gap-2 mb-4 border-b border-gray-700 overflow-x-auto">
                         <button @click="detailsModal.tab = 'usage'"
-                                :class="detailsModal.tab === 'usage' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'usage' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Usage
                         </button>
                         <button @click="detailsModal.tab = 'backups'"
-                                :class="detailsModal.tab === 'backups' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'backups' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Backups
                         </button>
                         <button @click="detailsModal.tab = 'plugins'"
-                                :class="detailsModal.tab === 'plugins' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'plugins' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition"
                                 x-show="['paper', 'spigot', 'purpur'].includes(detailsModal.server?.ServerType)">
                             Plugins
                         </button>
                         <button @click="detailsModal.tab = 'logs'"
-                                :class="detailsModal.tab === 'logs' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'logs' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Logs
                         </button>
                         <button @click="detailsModal.tab = 'console'; connectConsole()"
-                                :class="detailsModal.tab === 'console' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'console' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition"
-                                x-show="detailsModal.server?.Status === 'running'">
+                                x-show="detailsModal.server?.Status == 'running'">
                             Console
                         </button>
                         <button @click="detailsModal.tab = 'config'"
-                                :class="detailsModal.tab === 'config' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'config' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Configuration
                         </button>
                         <button @click="detailsModal.tab = 'files'"
-                                :class="detailsModal.tab === 'files' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'files' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Files
                         </button>
                         <button @click="detailsModal.tab = 'appearance'"
-                                :class="detailsModal.tab === 'appearance' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'appearance' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Appearance
                         </button>
                         <button @click="detailsModal.tab = 'players'"
-                                :class="detailsModal.tab === 'players' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'players' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Players
                         </button>
                         <button @click="detailsModal.tab = 'worlds'; loadWorlds()"
-                                :class="detailsModal.tab === 'worlds' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                :class="detailsModal.tab == 'worlds' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                 class="px-4 py-2 border-b-2 transition">
                             Worlds
                         </button>
@@ -349,7 +349,7 @@
                     <!-- Tab Content -->
                     <div class="min-h-[400px]">
                         <!-- Usage Tab -->
-                        <div x-show="detailsModal.tab === 'usage'" class="space-y-2">
+                        <div x-show="detailsModal.tab == 'usage'" class="space-y-2">
                             <template x-for="log in detailsModal.usageLogs" :key="log.ID">
                                 <div class="bg-gray-700 p-3 rounded">
                                     <div class="flex justify-between">
@@ -369,13 +369,13 @@
                                     </div>
                                 </div>
                             </template>
-                            <div x-show="detailsModal.usageLogs.length === 0" class="text-center py-8 text-gray-400">
+                            <div x-show="detailsModal.usageLogs.length == 0" class="text-center py-8 text-gray-400">
                                 No usage logs yet
                             </div>
                         </div>
 
                         <!-- Backups Tab -->
-                        <div x-show="detailsModal.tab === 'backups'" class="space-y-3">
+                        <div x-show="detailsModal.tab == 'backups'" class="space-y-3">
                             <button @click="createBackup(detailsModal.server?.ID)"
                                     class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded transition">
                                 Create Backup Now
@@ -401,13 +401,13 @@
                                     </div>
                                 </div>
                             </template>
-                            <div x-show="detailsModal.backups.length === 0" class="text-center py-8 text-gray-400">
+                            <div x-show="detailsModal.backups.length == 0" class="text-center py-8 text-gray-400">
                                 No backups yet. Create one above!
                             </div>
                         </div>
 
                         <!-- Plugins Tab -->
-                        <div x-show="detailsModal.tab === 'plugins'" class="space-y-3">
+                        <div x-show="detailsModal.tab == 'plugins'" class="space-y-3">
                             <div class="flex gap-2">
                                 <input type="text" x-model="pluginSearch" placeholder="Search plugins..."
                                        class="flex-1 px-4 py-2 bg-gray-700 rounded border border-gray-600">
@@ -444,35 +444,35 @@
                                         </button>
                                     </div>
                                 </template>
-                                <div x-show="detailsModal.plugins.length === 0" class="text-center py-4 text-gray-400 text-sm">
+                                <div x-show="detailsModal.plugins.length == 0" class="text-center py-4 text-gray-400 text-sm">
                                     No plugins installed
                                 </div>
                             </div>
                         </div>
 
                         <!-- Logs Tab -->
-                        <div x-show="detailsModal.tab === 'logs'">
+                        <div x-show="detailsModal.tab == 'logs'">
                             <pre class="bg-gray-900 p-4 rounded text-xs overflow-auto max-h-96 text-green-400 font-mono"
                                  x-text="detailsModal.logs"></pre>
                         </div>
 
                         <!-- Console Tab -->
-                        <div x-show="detailsModal.tab === 'console'" class="space-y-3">
+                        <div x-show="detailsModal.tab == 'console'" class="space-y-3">
                             <!-- Console output -->
                             <div class="bg-gray-900 rounded p-4 h-96 overflow-y-auto font-mono text-xs"
                                  x-ref="consoleOutput">
                                 <template x-for="(line, idx) in detailsModal.consoleLogs" :key="idx">
                                     <div :class="{
-                                        'text-green-400': line.type === 'log',
-                                        'text-blue-400': line.type === 'command',
-                                        'text-yellow-400': line.type === 'response',
-                                        'text-red-400': line.type === 'error'
+                                        'text-green-400': line.type == 'log',
+                                        'text-blue-400': line.type == 'command',
+                                        'text-yellow-400': line.type == 'response',
+                                        'text-red-400': line.type == 'error'
                                     }">
-                                        <span x-show="line.type === 'command'">&gt; </span>
+                                        <span x-show="line.type == 'command'">&gt; </span>
                                         <span x-text="line.content"></span>
                                     </div>
                                 </template>
-                                <div x-show="detailsModal.consoleLogs.length === 0" class="text-gray-500">
+                                <div x-show="detailsModal.consoleLogs.length == 0" class="text-gray-500">
                                     Connecting to console...
                                 </div>
                             </div>
@@ -503,7 +503,7 @@
                         </div>
 
                         <!-- Configuration Tab -->
-                        <div x-show="detailsModal.tab === 'config'" class="space-y-4">
+                        <div x-show="detailsModal.tab == 'config'" class="space-y-4">
                             <div class="bg-gray-700 p-4 rounded">
                                 <h3 class="text-lg font-semibold mb-4">Server Configuration</h3>
 
@@ -863,9 +863,9 @@
                                             <div class="flex justify-between items-start">
                                                 <span class="font-medium" x-text="change.ChangeType"></span>
                                                 <span :class="{
-                                                    'text-green-400': change.Status === 'completed',
-                                                    'text-yellow-400': change.Status === 'pending' || change.Status === 'applying',
-                                                    'text-red-400': change.Status === 'failed'
+                                                    'text-green-400': change.Status == 'completed',
+                                                    'text-yellow-400': change.Status == 'pending' || change.Status == 'applying',
+                                                    'text-red-400': change.Status == 'failed'
                                                 }" x-text="change.Status"></span>
                                             </div>
                                             <div class="text-xs text-gray-400 mt-1">
@@ -878,7 +878,7 @@
                                             </div>
                                         </div>
                                     </template>
-                                    <div x-show="configHistory.length === 0" class="text-center py-4 text-gray-400">
+                                    <div x-show="configHistory.length == 0" class="text-center py-4 text-gray-400">
                                         No configuration changes yet
                                     </div>
                                 </div>
@@ -886,34 +886,34 @@
                         </div>
 
                         <!-- Files Tab -->
-                        <div x-show="detailsModal.tab === 'files'" class="space-y-4">
+                        <div x-show="detailsModal.tab == 'files'" class="space-y-4">
                             <div x-data="{ activeFileType: 'resource_pack' }">
                                 <!-- File Type Tabs -->
                                 <div class="flex gap-2 mb-4 border-b border-gray-700">
                                     <button @click="activeFileType = 'resource_pack'"
-                                            :class="activeFileType === 'resource_pack' ? 'border-blue-400 text-blue-400' : 'border-transparent'"
+                                            :class="activeFileType == 'resource_pack' ? 'border-blue-400 text-blue-400' : 'border-transparent'"
                                             class="px-4 py-2 border-b-2 transition">
                                         📦 Resource Packs
                                     </button>
                                     <button @click="activeFileType = 'data_pack'"
-                                            :class="activeFileType === 'data_pack' ? 'border-purple-400 text-purple-400' : 'border-transparent'"
+                                            :class="activeFileType == 'data_pack' ? 'border-purple-400 text-purple-400' : 'border-transparent'"
                                             class="px-4 py-2 border-b-2 transition">
                                         📊 Data Packs
                                     </button>
                                     <button @click="activeFileType = 'server_icon'"
-                                            :class="activeFileType === 'server_icon' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                            :class="activeFileType == 'server_icon' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                             class="px-4 py-2 border-b-2 transition">
                                         🖼️ Server Icon
                                     </button>
                                     <button @click="activeFileType = 'world_gen'"
-                                            :class="activeFileType === 'world_gen' ? 'border-yellow-400 text-yellow-400' : 'border-transparent'"
+                                            :class="activeFileType == 'world_gen' ? 'border-yellow-400 text-yellow-400' : 'border-transparent'"
                                             class="px-4 py-2 border-b-2 transition">
                                         🌍 World Gen
                                     </button>
                                 </div>
 
                                 <!-- Resource Packs -->
-                                <div x-show="activeFileType === 'resource_pack'"
+                                <div x-show="activeFileType == 'resource_pack'"
                                      x-data="fileUploader(detailsModal.server?.ID, 'resource_pack')"
                                      x-init="init()">
                                     <div x-html="renderUploadZone.call($data)"></div>
@@ -921,7 +921,7 @@
                                 </div>
 
                                 <!-- Data Packs -->
-                                <div x-show="activeFileType === 'data_pack'"
+                                <div x-show="activeFileType == 'data_pack'"
                                      x-data="fileUploader(detailsModal.server?.ID, 'data_pack')"
                                      x-init="init()">
                                     <div x-html="renderUploadZone.call($data)"></div>
@@ -929,7 +929,7 @@
                                 </div>
 
                                 <!-- Server Icon -->
-                                <div x-show="activeFileType === 'server_icon'"
+                                <div x-show="activeFileType == 'server_icon'"
                                      x-data="fileUploader(detailsModal.server?.ID, 'server_icon')"
                                      x-init="init()">
                                     <div x-html="renderUploadZone.call($data)"></div>
@@ -937,7 +937,7 @@
                                 </div>
 
                                 <!-- World Gen -->
-                                <div x-show="activeFileType === 'world_gen'"
+                                <div x-show="activeFileType == 'world_gen'"
                                      x-data="fileUploader(detailsModal.server?.ID, 'world_gen')"
                                      x-init="init()">
                                     <div x-html="renderUploadZone.call($data)"></div>
@@ -947,7 +947,7 @@
                         </div>
 
                         <!-- Appearance Tab -->
-                        <div x-show="detailsModal.tab === 'appearance'" class="space-y-6"
+                        <div x-show="detailsModal.tab == 'appearance'" class="space-y-6"
                              x-data="{
                                  motdInput: '',
                                  motdDirty: false,
@@ -956,7 +956,7 @@
                                      this.motdDirty = false;
                                  },
                                  checkDirty() {
-                                     this.motdDirty = this.motdInput !== (detailsModal.server?.MOTD || 'A Minecraft Server');
+                                     this.motdDirty = this.motdInput != (detailsModal.server?.MOTD || 'A Minecraft Server');
                                  }
                              }"
                              x-init="$watch('detailsModal.server', () => initMOTD())">
@@ -1031,7 +1031,7 @@
                         </div>
 
                         <!-- Players Tab -->
-                        <div x-show="detailsModal.tab === 'players'" class="space-y-4"
+                        <div x-show="detailsModal.tab == 'players'" class="space-y-4"
                              x-data="{
                                  activePlayerList: 'whitelist',
                                  whitelist: [],
@@ -1158,7 +1158,7 @@
                                  },
                                  async kickPlayer(playerName) {
                                      const reason = prompt(`Kick ${playerName}? Enter reason (optional):`, 'Kicked by admin');
-                                     if (reason === null) return; // User cancelled
+                                     if (reason == null) return; // User cancelled
 
                                      try {
                                          const command = reason.trim() ? `kick ${playerName} ${reason.trim()}` : `kick ${playerName}`;
@@ -1183,9 +1183,9 @@
                                      }
                                  }
 ,
-                                async loadWorlds() { this.loading=true; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds`,{headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){ const d=await r.json(); const w=document.querySelector('[x-show="detailsModal.tab === \'worlds\'"]'); if(w&&w.__x){w.__x.$data.worlds=d.worlds;} } } catch(e){ alert('Failed: '+e.message); } finally{ this.loading=false; } },
+                                async loadWorlds() { this.loading=true; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds`,{headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){ const d=await r.json(); const w=document.querySelector('[x-show="detailsModal.tab == \'worlds\'"]'); if(w&&w.__x){w.__x.$data.worlds=d.worlds;} } } catch(e){ alert('Failed: '+e.message); } finally{ this.loading=false; } },
                                 async downloadWorld(n) { try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/${n}/download`,{headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){ const b=await r.blob(), u=URL.createObjectURL(b), a=document.createElement('a'); a.href=u; a.download=`${detailsModal.server.Name}-${n}.zip`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(u); document.body.removeChild(a); } } catch(e){ alert('Failed: '+e.message); } },
-                                async uploadWorld(n,e) { const f=e.target.files[0]; if(!f)return; if(!f.name.endsWith('.zip')){alert('ZIP only'); return;} if(!confirm('Upload? Backup created first.')){e.target.value=''; return;} const w=document.querySelector('[x-show="detailsModal.tab === \'worlds\'"]'); if(w&&w.__x){w.__x.$data.uploading=true;} try { const fd=new FormData(); fd.append('file',f); fd.append('worldName',n); const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/upload`,{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); if(r.ok){alert('Uploaded!'); await this.loadWorlds();} } catch(er){alert('Failed: '+er.message);} finally{ if(w&&w.__x){w.__x.$data.uploading=false;} e.target.value=''; } },
+                                async uploadWorld(n,e) { const f=e.target.files[0]; if(!f)return; if(!f.name.endsWith('.zip')){alert('ZIP only'); return;} if(!confirm('Upload? Backup created first.')){e.target.value=''; return;} const w=document.querySelector('[x-show="detailsModal.tab == \'worlds\'"]'); if(w&&w.__x){w.__x.$data.uploading=true;} try { const fd=new FormData(); fd.append('file',f); fd.append('worldName',n); const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/upload`,{method:'POST',headers:{'Authorization':`Bearer ${token}`},body:fd}); if(r.ok){alert('Uploaded!'); await this.loadWorlds();} } catch(er){alert('Failed: '+er.message);} finally{ if(w&&w.__x){w.__x.$data.uploading=false;} e.target.value=''; } },
                                 async resetWorld(n,d) { if(!confirm(`Reset ${d}?`))return; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/${n}/reset`,{method:'POST',headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){alert('Reset!'); await this.loadWorlds();} } catch(e){alert('Failed: '+e.message);} },
                                 async deleteWorld(n,d) { if(!confirm(`Delete ${d}?`))return; try { const r=await fetch(`/api/servers/${detailsModal.server.ID}/worlds/${n}`,{method:'DELETE',headers:{'Authorization':`Bearer ${token}`}}); if(r.ok){alert('Deleted!'); await this.loadWorlds();} } catch(e){alert('Failed: '+e.message);} }
                              }"
@@ -1194,34 +1194,34 @@
                             <!-- Player List Type Tabs -->
                             <div class="flex gap-2 border-b border-gray-700">
                                 <button @click="activePlayerList = 'whitelist'; loadPlayerList('whitelist')"
-                                        :class="activePlayerList === 'whitelist' ? 'border-blue-400 text-blue-400' : 'border-transparent'"
+                                        :class="activePlayerList == 'whitelist' ? 'border-blue-400 text-blue-400' : 'border-transparent'"
                                         class="px-4 py-2 border-b-2 transition">
                                     ✅ Whitelist
                                 </button>
                                 <button @click="activePlayerList = 'ops'; loadPlayerList('ops')"
-                                        :class="activePlayerList === 'ops' ? 'border-purple-400 text-purple-400' : 'border-transparent'"
+                                        :class="activePlayerList == 'ops' ? 'border-purple-400 text-purple-400' : 'border-transparent'"
                                         class="px-4 py-2 border-b-2 transition">
                                     👑 Operators
                                 </button>
                                 <button @click="activePlayerList = 'banned-players'; loadPlayerList('banned-players')"
-                                        :class="activePlayerList === 'banned-players' ? 'border-red-400 text-red-400' : 'border-transparent'"
+                                        :class="activePlayerList == 'banned-players' ? 'border-red-400 text-red-400' : 'border-transparent'"
                                         class="px-4 py-2 border-b-2 transition">
                                     🚫 Banned
                                 </button>
                                 <button @click="activePlayerList = 'online'; loadOnlinePlayers()"
-                                        :class="activePlayerList === 'online' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                        :class="activePlayerList == 'online' ? 'border-green-400 text-green-400' : 'border-transparent'"
                                         class="px-4 py-2 border-b-2 transition">
                                     🟢 Online
                                 </button>
                                 <button @click="activePlayerList = 'history'; loadHistoricPlayers()"
-                                        :class="activePlayerList === 'history' ? 'border-orange-400 text-orange-400' : 'border-transparent'"
+                                        :class="activePlayerList == 'history' ? 'border-orange-400 text-orange-400' : 'border-transparent'"
                                         class="px-4 py-2 border-b-2 transition">
                                     📜 History
                                 </button>
                             </div>
 
                             <!-- Whitelist Section -->
-                            <div x-show="activePlayerList === 'whitelist'" class="space-y-4">
+                            <div x-show="activePlayerList == 'whitelist'" class="space-y-4">
                                 <div class="bg-gray-700 p-4 rounded-lg">
                                     <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
                                         <span>✅</span>
@@ -1259,7 +1259,7 @@
                                                 </button>
                                             </div>
                                         </template>
-                                        <div x-show="whitelist.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                        <div x-show="whitelist.length == 0 && !loading" class="text-center py-8 text-gray-400">
                                             No whitelisted players yet
                                         </div>
                                         <div x-show="loading" class="text-center py-8 text-gray-400">
@@ -1270,7 +1270,7 @@
                             </div>
 
                             <!-- Operators Section -->
-                            <div x-show="activePlayerList === 'ops'" class="space-y-4">
+                            <div x-show="activePlayerList == 'ops'" class="space-y-4">
                                 <div class="bg-gray-700 p-4 rounded-lg">
                                     <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
                                         <span>👑</span>
@@ -1311,7 +1311,7 @@
                                                 </button>
                                             </div>
                                         </template>
-                                        <div x-show="ops.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                        <div x-show="ops.length == 0 && !loading" class="text-center py-8 text-gray-400">
                                             No operators yet
                                         </div>
                                         <div x-show="loading" class="text-center py-8 text-gray-400">
@@ -1322,7 +1322,7 @@
                             </div>
 
                             <!-- Banned Players Section -->
-                            <div x-show="activePlayerList === 'banned-players'" class="space-y-4">
+                            <div x-show="activePlayerList == 'banned-players'" class="space-y-4">
                                 <div class="bg-gray-700 p-4 rounded-lg">
                                     <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
                                         <span>🚫</span>
@@ -1363,7 +1363,7 @@
                                                 </button>
                                             </div>
                                         </template>
-                                        <div x-show="bannedPlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                        <div x-show="bannedPlayers.length == 0 && !loading" class="text-center py-8 text-gray-400">
                                             No banned players
                                         </div>
                                         <div x-show="loading" class="text-center py-8 text-gray-400">
@@ -1374,7 +1374,7 @@
                             </div>
 
                             <!-- Online Players Section -->
-                            <div x-show="activePlayerList === 'online'" class="space-y-4">
+                            <div x-show="activePlayerList == 'online'" class="space-y-4">
                                 <div class="bg-gray-700 p-4 rounded-lg">
                                     <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
                                         <span>🟢</span>
@@ -1410,7 +1410,7 @@
                                                 </div>
                                             </div>
                                         </template>
-                                        <div x-show="onlinePlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                        <div x-show="onlinePlayers.length == 0 && !loading" class="text-center py-8 text-gray-400">
                                             No players online
                                         </div>
                                         <div x-show="loading" class="text-center py-8 text-gray-400">
@@ -1421,7 +1421,7 @@
                             </div>
 
                             <!-- Historic Players Section -->
-                            <div x-show="activePlayerList === 'history'" class="space-y-4">
+                            <div x-show="activePlayerList == 'history'" class="space-y-4">
                                 <div class="bg-gray-700 p-4 rounded-lg">
                                     <h4 class="text-lg font-bold mb-2 flex items-center gap-2">
                                         <span>📜</span>
@@ -1443,7 +1443,7 @@
                                                 </div>
                                             </template>
                                         </div>
-                                        <div x-show="historicPlayers.length === 0 && !loading" class="text-center py-8 text-gray-400">
+                                        <div x-show="historicPlayers.length == 0 && !loading" class="text-center py-8 text-gray-400">
                                             No players have joined yet
                                         </div>
                                         <div x-show="loading" class="text-center py-8 text-gray-400">
@@ -1455,7 +1455,7 @@
                         </div>
 
                         <!-- Worlds Tab -->
-                        <div x-show="detailsModal.tab === 'worlds'" class="space-y-4"
+                        <div x-show="detailsModal.tab == 'worlds'" class="space-y-4"
                              x-data="{
                                  worlds: [],
                                  uploading: false,
@@ -1694,7 +1694,7 @@
                 markRequestSuccess() {
                     this.lastSuccessfulRequest = Date.now();
                     this.consecutiveFailures = 0;
-                    if (this.connectionStatus !== 'connected') {
+                    if (this.connectionStatus != 'connected') {
                         this.connectionStatus = 'connected';
                         console.log('✅ Connection restored');
                     }
@@ -1822,7 +1822,7 @@
                         this.markRequestSuccess();
 
                         // Check for authentication errors
-                        if (response.status === 401) {
+                        if (response.status == 401) {
                             this.logout();
                             throw new Error('Session expired. Please login again.');
                         }
@@ -1874,10 +1874,10 @@
                 },
 
                 async loadServerStatuses() {
-                    if (this.servers.length === 0) return;
+                    if (this.servers.length == 0) return;
 
                     for (const server of this.servers) {
-                        if (server.Status === 'running') {
+                        if (server.Status == 'running') {
                             try {
                                 const response = await this.apiCall(`/api/servers/${server.ID}/status`);
                                 if (response.ok) {
@@ -1942,10 +1942,10 @@
 
                     try {
                         // Find the server to check its status
-                        const server = this.servers.find(s => s.ID === id);
+                        const server = this.servers.find(s => s.ID == id);
 
                         // If server is running, stop it first
-                        if (server && server.Status === 'running') {
+                        if (server && server.Status == 'running') {
                             const stopResponse = await this.apiCall(`/api/servers/${id}/stop`, { method: 'POST' }, 60000);
                             if (!stopResponse.ok) {
                                 const error = await stopResponse.json();
@@ -1999,7 +1999,7 @@
                         if (response.ok) {
                             alert('MOTD updated successfully! Restart the server for changes to take effect.');
                             // Update local server object
-                            if (this.detailsModal.server && this.detailsModal.server.ID === serverId) {
+                            if (this.detailsModal.server && this.detailsModal.server.ID == serverId) {
                                 this.detailsModal.server.MOTD = newMOTD;
                             }
                             await this.loadServers();
@@ -2076,24 +2076,24 @@
                     // Phase 1 Gameplay Settings
                     this.configForm.gamemode = server.Gamemode || 'survival';
                     this.configForm.difficulty = server.Difficulty || 'normal';
-                    this.configForm.pvp = server.PVP !== undefined ? server.PVP : true;
+                    this.configForm.pvp = server.PVP != undefined ? server.PVP : true;
                     this.configForm.enable_command_block = server.EnableCommandBlock || false;
                     this.configForm.level_seed = server.LevelSeed || '';
                     // Phase 2 Performance Settings
                     this.configForm.view_distance = server.ViewDistance || 10;
                     this.configForm.simulation_distance = server.SimulationDistance || 10;
                     // Phase 2 World Generation Settings
-                    this.configForm.allow_nether = server.AllowNether !== undefined ? server.AllowNether : true;
-                    this.configForm.allow_end = server.AllowEnd !== undefined ? server.AllowEnd : true;
-                    this.configForm.generate_structures = server.GenerateStructures !== undefined ? server.GenerateStructures : true;
+                    this.configForm.allow_nether = server.AllowNether != undefined ? server.AllowNether : true;
+                    this.configForm.allow_end = server.AllowEnd != undefined ? server.AllowEnd : true;
+                    this.configForm.generate_structures = server.GenerateStructures != undefined ? server.GenerateStructures : true;
                     this.configForm.world_type = server.WorldType || 'default';
                     this.configForm.bonus_chest = server.BonusChest || false;
                     this.configForm.max_world_size = server.MaxWorldSize || 29999984;
                     // Phase 2 Spawn Settings
-                    this.configForm.spawn_protection = server.SpawnProtection !== undefined ? server.SpawnProtection : 16;
-                    this.configForm.spawn_animals = server.SpawnAnimals !== undefined ? server.SpawnAnimals : true;
-                    this.configForm.spawn_monsters = server.SpawnMonsters !== undefined ? server.SpawnMonsters : true;
-                    this.configForm.spawn_npcs = server.SpawnNPCs !== undefined ? server.SpawnNPCs : true;
+                    this.configForm.spawn_protection = server.SpawnProtection != undefined ? server.SpawnProtection : 16;
+                    this.configForm.spawn_animals = server.SpawnAnimals != undefined ? server.SpawnAnimals : true;
+                    this.configForm.spawn_monsters = server.SpawnMonsters != undefined ? server.SpawnMonsters : true;
+                    this.configForm.spawn_npcs = server.SpawnNPCs != undefined ? server.SpawnNPCs : true;
                     // Phase 2 Network & Performance Settings
                     this.configForm.max_tick_time = server.MaxTickTime || 60000;
                     this.configForm.network_compression_threshold = server.NetworkCompressionThreshold || 256;
@@ -2273,7 +2273,7 @@
                     this.detailsModal.consoleLogs = [];
 
                     // Build WebSocket URL with token parameter
-                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const protocol = window.location.protocol == 'https:' ? 'wss:' : 'ws:';
                     const wsUrl = `${protocol}//${window.location.host}/api/servers/${serverId}/console/stream?token=${this.token}`;
 
                     console.log('Connecting to console:', wsUrl);
@@ -2362,18 +2362,18 @@
                 },
 
                 navigateHistory(direction) {
-                    if (this.commandHistory.length === 0) return;
+                    if (this.commandHistory.length == 0) return;
 
-                    if (direction === -1) {
+                    if (direction == -1) {
                         // Arrow up - go to previous command
-                        if (this.historyIndex === -1) {
+                        if (this.historyIndex == -1) {
                             this.historyIndex = this.commandHistory.length - 1;
                         } else if (this.historyIndex > 0) {
                             this.historyIndex--;
                         }
-                    } else if (direction === 1) {
+                    } else if (direction == 1) {
                         // Arrow down - go to next command
-                        if (this.historyIndex !== -1) {
+                        if (this.historyIndex != -1) {
                             this.historyIndex++;
                             if (this.historyIndex >= this.commandHistory.length) {
                                 this.historyIndex = -1;
@@ -2383,7 +2383,7 @@
                         }
                     }
 
-                    if (this.historyIndex !== -1) {
+                    if (this.historyIndex != -1) {
                         this.consoleCommand = this.commandHistory[this.historyIndex];
                     }
                 },
@@ -2397,118 +2397,118 @@
                     // Build changes object (only include changed values)
                     const changes = {};
 
-                    if (this.configForm.ram_mb !== server.RAMMb) {
+                    if (this.configForm.ram_mb != server.RAMMb) {
                         changes.ram_mb = parseInt(this.configForm.ram_mb);
                     }
 
-                    if (this.configForm.minecraft_version !== server.MinecraftVersion) {
+                    if (this.configForm.minecraft_version != server.MinecraftVersion) {
                         changes.minecraft_version = this.configForm.minecraft_version;
                     }
 
-                    if (this.configForm.server_type !== server.ServerType) {
+                    if (this.configForm.server_type != server.ServerType) {
                         changes.server_type = this.configForm.server_type;
                     }
 
-                    if (this.configForm.max_players !== server.MaxPlayers) {
+                    if (this.configForm.max_players != server.MaxPlayers) {
                         changes.max_players = parseInt(this.configForm.max_players);
                     }
 
                     // Phase 1 Gameplay Settings
-                    if (this.configForm.gamemode !== (server.Gamemode || 'survival')) {
+                    if (this.configForm.gamemode != (server.Gamemode || 'survival')) {
                         changes.gamemode = this.configForm.gamemode;
                     }
 
-                    if (this.configForm.difficulty !== (server.Difficulty || 'normal')) {
+                    if (this.configForm.difficulty != (server.Difficulty || 'normal')) {
                         changes.difficulty = this.configForm.difficulty;
                     }
 
-                    const serverPVP = server.PVP !== undefined ? server.PVP : true;
-                    if (this.configForm.pvp !== serverPVP) {
+                    const serverPVP = server.PVP != undefined ? server.PVP : true;
+                    if (this.configForm.pvp != serverPVP) {
                         changes.pvp = this.configForm.pvp;
                     }
 
-                    if (this.configForm.enable_command_block !== (server.EnableCommandBlock || false)) {
+                    if (this.configForm.enable_command_block != (server.EnableCommandBlock || false)) {
                         changes.enable_command_block = this.configForm.enable_command_block;
                     }
 
-                    if (this.configForm.level_seed !== (server.LevelSeed || '')) {
+                    if (this.configForm.level_seed != (server.LevelSeed || '')) {
                         changes.level_seed = this.configForm.level_seed;
                     }
 
                     // Phase 2 Performance Settings
-                    if (this.configForm.view_distance !== (server.ViewDistance || 10)) {
+                    if (this.configForm.view_distance != (server.ViewDistance || 10)) {
                         changes.view_distance = parseInt(this.configForm.view_distance);
                     }
 
-                    if (this.configForm.simulation_distance !== (server.SimulationDistance || 10)) {
+                    if (this.configForm.simulation_distance != (server.SimulationDistance || 10)) {
                         changes.simulation_distance = parseInt(this.configForm.simulation_distance);
                     }
 
                     // Phase 2 World Generation Settings
-                    const serverAllowNether = server.AllowNether !== undefined ? server.AllowNether : true;
-                    if (this.configForm.allow_nether !== serverAllowNether) {
+                    const serverAllowNether = server.AllowNether != undefined ? server.AllowNether : true;
+                    if (this.configForm.allow_nether != serverAllowNether) {
                         changes.allow_nether = this.configForm.allow_nether;
                     }
 
-                    const serverAllowEnd = server.AllowEnd !== undefined ? server.AllowEnd : true;
-                    if (this.configForm.allow_end !== serverAllowEnd) {
+                    const serverAllowEnd = server.AllowEnd != undefined ? server.AllowEnd : true;
+                    if (this.configForm.allow_end != serverAllowEnd) {
                         changes.allow_end = this.configForm.allow_end;
                     }
 
-                    const serverGenerateStructures = server.GenerateStructures !== undefined ? server.GenerateStructures : true;
-                    if (this.configForm.generate_structures !== serverGenerateStructures) {
+                    const serverGenerateStructures = server.GenerateStructures != undefined ? server.GenerateStructures : true;
+                    if (this.configForm.generate_structures != serverGenerateStructures) {
                         changes.generate_structures = this.configForm.generate_structures;
                     }
 
-                    if (this.configForm.world_type !== (server.WorldType || 'default')) {
+                    if (this.configForm.world_type != (server.WorldType || 'default')) {
                         changes.world_type = this.configForm.world_type;
                     }
 
-                    if (this.configForm.bonus_chest !== (server.BonusChest || false)) {
+                    if (this.configForm.bonus_chest != (server.BonusChest || false)) {
                         changes.bonus_chest = this.configForm.bonus_chest;
                     }
 
-                    if (this.configForm.max_world_size !== (server.MaxWorldSize || 29999984)) {
+                    if (this.configForm.max_world_size != (server.MaxWorldSize || 29999984)) {
                         changes.max_world_size = parseInt(this.configForm.max_world_size);
                     }
 
                     // Phase 2 Spawn Settings
-                    const serverSpawnProtection = server.SpawnProtection !== undefined ? server.SpawnProtection : 16;
-                    if (this.configForm.spawn_protection !== serverSpawnProtection) {
+                    const serverSpawnProtection = server.SpawnProtection != undefined ? server.SpawnProtection : 16;
+                    if (this.configForm.spawn_protection != serverSpawnProtection) {
                         changes.spawn_protection = parseInt(this.configForm.spawn_protection);
                     }
 
-                    const serverSpawnAnimals = server.SpawnAnimals !== undefined ? server.SpawnAnimals : true;
-                    if (this.configForm.spawn_animals !== serverSpawnAnimals) {
+                    const serverSpawnAnimals = server.SpawnAnimals != undefined ? server.SpawnAnimals : true;
+                    if (this.configForm.spawn_animals != serverSpawnAnimals) {
                         changes.spawn_animals = this.configForm.spawn_animals;
                     }
 
-                    const serverSpawnMonsters = server.SpawnMonsters !== undefined ? server.SpawnMonsters : true;
-                    if (this.configForm.spawn_monsters !== serverSpawnMonsters) {
+                    const serverSpawnMonsters = server.SpawnMonsters != undefined ? server.SpawnMonsters : true;
+                    if (this.configForm.spawn_monsters != serverSpawnMonsters) {
                         changes.spawn_monsters = this.configForm.spawn_monsters;
                     }
 
-                    const serverSpawnNPCs = server.SpawnNPCs !== undefined ? server.SpawnNPCs : true;
-                    if (this.configForm.spawn_npcs !== serverSpawnNPCs) {
+                    const serverSpawnNPCs = server.SpawnNPCs != undefined ? server.SpawnNPCs : true;
+                    if (this.configForm.spawn_npcs != serverSpawnNPCs) {
                         changes.spawn_npcs = this.configForm.spawn_npcs;
                     }
 
                     // Phase 2 Network & Performance Settings
-                    if (this.configForm.max_tick_time !== (server.MaxTickTime || 60000)) {
+                    if (this.configForm.max_tick_time != (server.MaxTickTime || 60000)) {
                         changes.max_tick_time = parseInt(this.configForm.max_tick_time);
                     }
 
-                    if (this.configForm.network_compression_threshold !== (server.NetworkCompressionThreshold || 256)) {
+                    if (this.configForm.network_compression_threshold != (server.NetworkCompressionThreshold || 256)) {
                         changes.network_compression_threshold = parseInt(this.configForm.network_compression_threshold);
                     }
 
                     // Phase 4 Server Description (MOTD)
-                    if (this.configForm.motd !== (server.MOTD || 'A Minecraft Server')) {
+                    if (this.configForm.motd != (server.MOTD || 'A Minecraft Server')) {
                         changes.motd = this.configForm.motd;
                     }
 
                     // Check if there are any changes
-                    if (Object.keys(changes).length === 0) {
+                    if (Object.keys(changes).length == 0) {
                         alert('No changes detected');
                         return;
                     }
@@ -2542,9 +2542,9 @@
 
                         let warningMessage = `Server Type Change: ${oldType} → ${newType}\n\n`;
 
-                        if (oldType === 'paper' && (newType === 'spigot' || newType === 'bukkit')) {
+                        if (oldType == 'paper' && (newType == 'spigot' || newType == 'bukkit')) {
                             warningMessage += `⚠️ Paper-specific configs will be preserved but become inactive.\n\nPaper features like:\n- Paper-specific config files\n- Paper performance optimizations\n- Paper-only plugins\n\nWill no longer work until you switch back to Paper.\n\nWorld data remains safe and compatible.\n\nContinue?`;
-                        } else if ((oldType === 'spigot' || oldType === 'bukkit') && newType === 'paper') {
+                        } else if ((oldType == 'spigot' || oldType == 'bukkit') && newType == 'paper') {
                             warningMessage += `✅ Switching to Paper!\n\nBenefits:\n- Better performance\n- More configuration options\n- Paper-specific features enabled\n\nYour world and plugins should work fine.\n\nContinue?`;
                         } else {
                             warningMessage += `Your world and most plugins should remain compatible.\n\nContinue?`;
@@ -2589,7 +2589,7 @@
                             }
 
                             // Update the current server reference
-                            const updatedServer = this.servers.find(s => s.ID === server.ID);
+                            const updatedServer = this.servers.find(s => s.ID == server.ID);
                             if (updatedServer) {
                                 this.detailsModal.server = updatedServer;
                                 this.configForm.ram_mb = updatedServer.RAMMb;
