@@ -6,11 +6,11 @@ import (
 
 // ServerWebhook represents a Discord webhook configuration for a server
 type ServerWebhook struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	ServerID  uint      `gorm:"not null;index" json:"server_id"`
-	Server    *Server   `gorm:"foreignKey:ServerID" json:"-"`
-	WebhookURL string   `gorm:"type:text;not null" json:"webhook_url"`
-	Enabled   bool      `gorm:"default:true;not null" json:"enabled"`
+	ID        uint             `gorm:"primaryKey" json:"id"`
+	ServerID  uint             `gorm:"not null;index" json:"server_id"`
+	Server    *MinecraftServer `gorm:"foreignKey:ServerID" json:"-"`
+	WebhookURL string          `gorm:"type:text;not null" json:"webhook_url"`
+	Enabled   bool             `gorm:"default:true;not null" json:"enabled"`
 
 	// Event filters (which events to send)
 	OnServerStart   bool `gorm:"default:true;not null" json:"on_server_start"`
