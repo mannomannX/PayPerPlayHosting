@@ -27,6 +27,7 @@ func SetupRouter(
 	webhookHandler *WebhookHandler,
 	backupScheduleHandler *BackupScheduleHandler,
 	prometheusHandler *PrometheusHandler,
+	conductorHandler *ConductorHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -68,6 +69,15 @@ func SetupRouter(
 
 	// Prometheus metrics endpoint (no auth required for scraping)
 	router.GET("/prometheus", prometheusHandler.MetricsEndpoint)
+
+	// Conductor API endpoints (no auth required for internal monitoring)
+	conductor := router.Group("/conductor")
+	{
+		conductor.GET("/status", conductorHandler.GetStatus)
+		conductor.GET("/fleet", conductorHandler.GetFleetStats)
+		conductor.GET("/nodes", conductorHandler.GetNodes)
+		conductor.GET("/containers", conductorHandler.GetContainers)
+	}
 
 	// WebSocket endpoint (no auth required for MVP)
 	router.GET("/ws", wsHandler.HandleWebSocket)

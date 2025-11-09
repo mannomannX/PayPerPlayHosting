@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/payperplay/hosting/internal/api"
+	"github.com/payperplay/hosting/internal/conductor"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/middleware"
 	"github.com/payperplay/hosting/internal/monitoring"
@@ -134,6 +135,12 @@ func main() {
 	prometheusExporter.StartMetricsCollector(30 * time.Second) // Collect metrics every 30 seconds
 	logger.Info("Prometheus metrics exporter started", nil)
 
+	// Initialize Conductor Core for fleet orchestration
+	cond := conductor.NewConductor(60 * time.Second) // Health check every 60 seconds
+	cond.Start()
+	defer cond.Stop()
+	logger.Info("Conductor Core initialized", nil)
+
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)
 	handler := api.NewHandler(mcService)
@@ -193,8 +200,11 @@ func main() {
 	// Prometheus metrics handler
 	prometheusHandler := api.NewPrometheusHandler()
 
+	// Conductor handler for fleet orchestration
+	conductorHandler := api.NewConductorHandler(cond)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, cfg)
 
 	// Graceful shutdown
 	go func() {
