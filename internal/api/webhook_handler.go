@@ -2,10 +2,8 @@ package api
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/internal/service"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -29,23 +27,18 @@ func NewWebhookHandler(webhookService *service.WebhookService, serverRepo *repos
 // GET /api/servers/:id/webhook
 func (h *WebhookHandler) GetWebhook(c *gin.Context) {
 	serverID := c.Param("id")
-	id, err := strconv.ParseUint(serverID, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server ID"})
-		return
-	}
 
 	// Verify server exists and user has access
-	server, err := h.serverRepo.FindByID(uint(id))
+	server, err := h.serverRepo.FindByID(serverID)
 	if err != nil || server == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
 	}
 
-	webhook, err := h.webhookService.GetWebhook(uint(id))
+	webhook, err := h.webhookService.GetWebhook(server.ID)
 	if err != nil {
 		logger.Error("Failed to get webhook", err, map[string]interface{}{
-			"server_id": id,
+			"server_id": serverID,
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get webhook"})
 		return
@@ -69,14 +62,9 @@ func (h *WebhookHandler) GetWebhook(c *gin.Context) {
 // Body: {"webhook_url": "https://discord.com/api/webhooks/..."}
 func (h *WebhookHandler) CreateWebhook(c *gin.Context) {
 	serverID := c.Param("id")
-	id, err := strconv.ParseUint(serverID, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server ID"})
-		return
-	}
 
 	// Verify server exists and user has access
-	server, err := h.serverRepo.FindByID(uint(id))
+	server, err := h.serverRepo.FindByID(serverID)
 	if err != nil || server == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
@@ -97,17 +85,17 @@ func (h *WebhookHandler) CreateWebhook(c *gin.Context) {
 		return
 	}
 
-	webhook, err := h.webhookService.CreateWebhook(uint(id), request.WebhookURL)
+	webhook, err := h.webhookService.CreateWebhook(server.ID, request.WebhookURL)
 	if err != nil {
 		logger.Error("Failed to create webhook", err, map[string]interface{}{
-			"server_id": id,
+			"server_id": serverID,
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	logger.Info("Webhook created", map[string]interface{}{
-		"server_id": id,
+		"server_id": serverID,
 	})
 
 	c.JSON(http.StatusCreated, gin.H{
@@ -122,14 +110,9 @@ func (h *WebhookHandler) CreateWebhook(c *gin.Context) {
 // Body: {"enabled": true, "on_server_start": true, ...}
 func (h *WebhookHandler) UpdateWebhook(c *gin.Context) {
 	serverID := c.Param("id")
-	id, err := strconv.ParseUint(serverID, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server ID"})
-		return
-	}
 
 	// Verify server exists and user has access
-	server, err := h.serverRepo.FindByID(uint(id))
+	server, err := h.serverRepo.FindByID(serverID)
 	if err != nil || server == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
@@ -160,17 +143,17 @@ func (h *WebhookHandler) UpdateWebhook(c *gin.Context) {
 		}
 	}
 
-	webhook, err := h.webhookService.UpdateWebhook(uint(id), filteredUpdates)
+	webhook, err := h.webhookService.UpdateWebhook(server.ID, filteredUpdates)
 	if err != nil {
 		logger.Error("Failed to update webhook", err, map[string]interface{}{
-			"server_id": id,
+			"server_id": serverID,
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	logger.Info("Webhook updated", map[string]interface{}{
-		"server_id": id,
+		"server_id": serverID,
 	})
 
 	c.JSON(http.StatusOK, gin.H{
@@ -184,29 +167,24 @@ func (h *WebhookHandler) UpdateWebhook(c *gin.Context) {
 // DELETE /api/servers/:id/webhook
 func (h *WebhookHandler) DeleteWebhook(c *gin.Context) {
 	serverID := c.Param("id")
-	id, err := strconv.ParseUint(serverID, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server ID"})
-		return
-	}
 
 	// Verify server exists and user has access
-	server, err := h.serverRepo.FindByID(uint(id))
+	server, err := h.serverRepo.FindByID(serverID)
 	if err != nil || server == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
 	}
 
-	if err := h.webhookService.DeleteWebhook(uint(id)); err != nil {
+	if err := h.webhookService.DeleteWebhook(server.ID); err != nil {
 		logger.Error("Failed to delete webhook", err, map[string]interface{}{
-			"server_id": id,
+			"server_id": serverID,
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete webhook"})
 		return
 	}
 
 	logger.Info("Webhook deleted", map[string]interface{}{
-		"server_id": id,
+		"server_id": serverID,
 	})
 
 	c.JSON(http.StatusOK, gin.H{
@@ -219,20 +197,15 @@ func (h *WebhookHandler) DeleteWebhook(c *gin.Context) {
 // POST /api/servers/:id/webhook/test
 func (h *WebhookHandler) TestWebhook(c *gin.Context) {
 	serverID := c.Param("id")
-	id, err := strconv.ParseUint(serverID, 10, 32)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid server ID"})
-		return
-	}
 
 	// Verify server exists and user has access
-	server, err := h.serverRepo.FindByID(uint(id))
+	server, err := h.serverRepo.FindByID(serverID)
 	if err != nil || server == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
 	}
 
-	webhook, err := h.webhookService.GetWebhook(uint(id))
+	webhook, err := h.webhookService.GetWebhook(server.ID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get webhook"})
 		return
@@ -245,14 +218,14 @@ func (h *WebhookHandler) TestWebhook(c *gin.Context) {
 
 	if err := h.webhookService.TestWebhook(webhook.WebhookURL, server.Name); err != nil {
 		logger.Error("Failed to send test webhook", err, map[string]interface{}{
-			"server_id": id,
+			"server_id": serverID,
 		})
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send test webhook: " + err.Error()})
 		return
 	}
 
 	logger.Info("Test webhook sent", map[string]interface{}{
-		"server_id": id,
+		"server_id": serverID,
 	})
 
 	c.JSON(http.StatusOK, gin.H{
