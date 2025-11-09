@@ -45,6 +45,9 @@ COPY --from=builder /build/payperplay .
 # Copy web templates
 COPY --from=builder /build/web ./web
 
+# Copy server templates
+COPY --from=builder /build/templates ./templates
+
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
