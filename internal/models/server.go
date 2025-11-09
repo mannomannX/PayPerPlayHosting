@@ -93,6 +93,11 @@ type MinecraftServer struct {
 	VelocityRegistered  bool   `gorm:"default:false"`
 	VelocityServerName  string `gorm:"size:128"`
 
+	// RCON Integration for Metrics
+	RCONEnabled  bool   `gorm:"default:true"`
+	RCONPort     int    `gorm:"default:25575"`
+	RCONPassword string `gorm:"size:256;default:'minecraft'"`
+
 	// Relations
 	UsageLogs []UsageLog `gorm:"foreignKey:ServerID;constraint:OnDelete:CASCADE"`
 }

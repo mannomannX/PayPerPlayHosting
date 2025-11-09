@@ -26,6 +26,7 @@ func SetupRouter(
 	templateHandler *TemplateHandler,
 	webhookHandler *WebhookHandler,
 	backupScheduleHandler *BackupScheduleHandler,
+	prometheusHandler *PrometheusHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -64,6 +65,9 @@ func SetupRouter(
 	router.GET("/ready", healthHandler.ReadinessCheck)
 	router.GET("/live", healthHandler.LivenessCheck)
 	router.GET("/metrics", healthHandler.MetricsCheck)
+
+	// Prometheus metrics endpoint (no auth required for scraping)
+	router.GET("/prometheus", prometheusHandler.MetricsEndpoint)
 
 	// WebSocket endpoint (no auth required for MVP)
 	router.GET("/ws", wsHandler.HandleWebSocket)

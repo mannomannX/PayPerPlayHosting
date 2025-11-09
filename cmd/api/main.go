@@ -6,10 +6,12 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/payperplay/hosting/internal/api"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/middleware"
+	"github.com/payperplay/hosting/internal/monitoring"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/internal/service"
 	"github.com/payperplay/hosting/internal/velocity"
@@ -127,6 +129,11 @@ func main() {
 	defer monitoringService.Stop()
 	logger.Info("Monitoring service started", nil)
 
+	// Initialize Prometheus metrics exporter
+	prometheusExporter := monitoring.NewPrometheusExporter(serverRepo, dockerService.GetClient())
+	prometheusExporter.StartMetricsCollector(30 * time.Second) // Collect metrics every 30 seconds
+	logger.Info("Prometheus metrics exporter started", nil)
+
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)
 	handler := api.NewHandler(mcService)
@@ -183,8 +190,11 @@ func main() {
 	// Backup schedule handler
 	backupScheduleHandler := api.NewBackupScheduleHandler(backupScheduler, serverRepo)
 
+	// Prometheus metrics handler
+	prometheusHandler := api.NewPrometheusHandler()
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, cfg)
 
 	// Graceful shutdown
 	go func() {
