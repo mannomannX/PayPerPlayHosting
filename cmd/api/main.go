@@ -74,6 +74,13 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to initialize backup service", err, nil)
 	}
+
+	// Initialize Backup Scheduler for automated backups
+	backupScheduler := service.NewBackupScheduler(db, backupService, serverRepo)
+	backupScheduler.Start()
+	defer backupScheduler.Stop()
+	logger.Info("Backup scheduler started", nil)
+
 	pluginService := service.NewPluginService(serverRepo, cfg)
 	fileManagerService := service.NewFileManagerService(serverRepo, cfg)
 	fileService := service.NewFileService(fileRepo, serverRepo, cfg.ServersBasePath)
@@ -173,8 +180,11 @@ func main() {
 	webhookService := service.NewWebhookService(db)
 	webhookHandler := api.NewWebhookHandler(webhookService, serverRepo)
 
+	// Backup schedule handler
+	backupScheduleHandler := api.NewBackupScheduleHandler(backupScheduler, serverRepo)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

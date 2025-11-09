@@ -25,6 +25,7 @@ func SetupRouter(
 	worldHandler *WorldHandler,
 	templateHandler *TemplateHandler,
 	webhookHandler *WebhookHandler,
+	backupScheduleHandler *BackupScheduleHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -189,6 +190,12 @@ func SetupRouter(
 			servers.PUT("/:id/webhook", webhookHandler.UpdateWebhook)
 			servers.DELETE("/:id/webhook", webhookHandler.DeleteWebhook)
 			servers.POST("/:id/webhook/test", webhookHandler.TestWebhook)
+
+			// Backup Schedules
+			servers.GET("/:id/backup-schedule", backupScheduleHandler.GetSchedule)
+			servers.POST("/:id/backup-schedule", backupScheduleHandler.CreateSchedule)
+			servers.PUT("/:id/backup-schedule", backupScheduleHandler.UpdateSchedule)
+			servers.DELETE("/:id/backup-schedule", backupScheduleHandler.DeleteSchedule)
 		}
 
 		// Admin endpoints
