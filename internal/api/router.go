@@ -24,6 +24,7 @@ func SetupRouter(
 	playerHandler *PlayerHandler,
 	worldHandler *WorldHandler,
 	templateHandler *TemplateHandler,
+	webhookHandler *WebhookHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -181,6 +182,13 @@ func SetupRouter(
 			servers.POST("/:id/worlds/upload", worldHandler.UploadWorld)
 			servers.POST("/:id/worlds/:name/reset", worldHandler.ResetWorld)
 			servers.DELETE("/:id/worlds/:name", worldHandler.DeleteWorld)
+
+			// Discord Webhooks
+			servers.GET("/:id/webhook", webhookHandler.GetWebhook)
+			servers.POST("/:id/webhook", webhookHandler.CreateWebhook)
+			servers.PUT("/:id/webhook", webhookHandler.UpdateWebhook)
+			servers.DELETE("/:id/webhook", webhookHandler.DeleteWebhook)
+			servers.POST("/:id/webhook/test", webhookHandler.TestWebhook)
 		}
 
 		// Admin endpoints

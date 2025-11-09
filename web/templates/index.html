@@ -433,6 +433,11 @@
                                 class="px-4 py-2 border-b-2 transition">
                             Worlds
                         </button>
+                        <button @click="detailsModal.tab = 'webhooks'"
+                                :class="detailsModal.tab == 'webhooks' ? 'border-green-400 text-green-400' : 'border-transparent'"
+                                class="px-4 py-2 border-b-2 transition">
+                            Webhooks
+                        </button>
                     </div>
 
                     <!-- Tab Content -->
@@ -1668,6 +1673,189 @@
                                 <div class="mt-3 p-2 bg-yellow-900/30 border border-yellow-600 rounded text-xs text-yellow-200">
                                     ⚠️ Automatic backups are created before upload/reset operations for safety.
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Webhooks Tab -->
+                        <div x-show="detailsModal.tab == 'webhooks'" class="space-y-4"
+                             x-data="{
+                                 webhook: null,
+                                 configured: false,
+                                 loading: false,
+                                 webhookURL: '',
+                                 enabled: true,
+                                 async loadWebhook() {
+                                     this.loading = true;
+                                     try {
+                                         const response = await fetch('/api/servers/' + detailsModal.server.ID + '/webhook', {
+                                             headers: { 'Authorization': 'Bearer ' + token }
+                                         });
+                                         if (response.ok) {
+                                             const data = await response.json();
+                                             this.configured = data.configured;
+                                             if (data.webhook) {
+                                                 this.webhook = data.webhook;
+                                                 this.webhookURL = data.webhook.webhook_url;
+                                                 this.enabled = data.webhook.enabled;
+                                             }
+                                         }
+                                     } catch (error) {
+                                         console.error('Failed to load webhook:', error);
+                                     } finally {
+                                         this.loading = false;
+                                     }
+                                 },
+                                 async saveWebhook() {
+                                     this.loading = true;
+                                     try {
+                                         const method = this.configured ? 'PUT' : 'POST';
+                                         const body = this.configured ? JSON.stringify({ webhook_url: this.webhookURL, enabled: this.enabled }) : JSON.stringify({ webhook_url: this.webhookURL });
+                                         const response = await fetch('/api/servers/' + detailsModal.server.ID + '/webhook', {
+                                             method: method,
+                                             headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                                             body: body
+                                         });
+                                         if (response.ok) {
+                                             alert('Webhook saved successfully!');
+                                             await this.loadWebhook();
+                                         } else {
+                                             const error = await response.json();
+                                             alert('Error: ' + error.error);
+                                         }
+                                     } catch (error) {
+                                         alert('Failed to save webhook: ' + error.message);
+                                     } finally {
+                                         this.loading = false;
+                                     }
+                                 },
+                                 async testWebhook() {
+                                     this.loading = true;
+                                     try {
+                                         const response = await fetch('/api/servers/' + detailsModal.server.ID + '/webhook/test', {
+                                             method: 'POST',
+                                             headers: { 'Authorization': 'Bearer ' + token }
+                                         });
+                                         if (response.ok) {
+                                             const data = await response.json();
+                                             alert(data.message);
+                                         } else {
+                                             const error = await response.json();
+                                             alert('Error: ' + error.error);
+                                         }
+                                     } catch (error) {
+                                         alert('Failed to send test: ' + error.message);
+                                     } finally {
+                                         this.loading = false;
+                                     }
+                                 },
+                                 async deleteWebhook() {
+                                     if (!confirm('Delete webhook configuration?')) return;
+                                     this.loading = true;
+                                     try {
+                                         const response = await fetch('/api/servers/' + detailsModal.server.ID + '/webhook', {
+                                             method: 'DELETE',
+                                             headers: { 'Authorization': 'Bearer ' + token }
+                                         });
+                                         if (response.ok) {
+                                             alert('Webhook deleted');
+                                             this.configured = false;
+                                             this.webhook = null;
+                                             this.webhookURL = '';
+                                         }
+                                     } catch (error) {
+                                         alert('Failed to delete webhook: ' + error.message);
+                                     } finally {
+                                         this.loading = false;
+                                     }
+                                 }
+                             }"
+                             x-init="loadWebhook()">
+
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <h4 class="text-lg font-bold mb-3">🔔 Discord Webhooks</h4>
+                                <p class="text-sm text-gray-300 mb-4">
+                                    Receive notifications in your Discord channel for server events like starts, stops, crashes, and player joins.
+                                </p>
+
+                                <div class="space-y-4">
+                                    <!-- Webhook URL -->
+                                    <div>
+                                        <label class="block text-sm font-medium mb-2">Webhook URL</label>
+                                        <input type="url" x-model="webhookURL" placeholder="https://discord.com/api/webhooks/..."
+                                               class="w-full px-4 py-2 bg-gray-600 rounded border border-gray-500 focus:border-green-400 focus:outline-none text-sm">
+                                        <p class="text-xs text-gray-400 mt-1">
+                                            Get this from: Discord Server Settings → Integrations → Webhooks
+                                        </p>
+                                    </div>
+
+                                    <!-- Enabled Toggle -->
+                                    <div x-show="configured" class="flex items-center gap-3">
+                                        <input type="checkbox" x-model="enabled" id="webhook-enabled" class="w-5 h-5">
+                                        <label for="webhook-enabled" class="text-sm font-medium">Enable Notifications</label>
+                                    </div>
+
+                                    <!-- Action Buttons -->
+                                    <div class="flex gap-2">
+                                        <button @click="saveWebhook()" :disabled="!webhookURL || loading"
+                                                class="px-4 py-2 bg-green-500 hover:bg-green-600 disabled:bg-gray-500 text-white rounded transition-colors text-sm flex-1">
+                                            <span x-show="!loading">💾 Save Webhook</span>
+                                            <span x-show="loading">Saving...</span>
+                                        </button>
+                                        <button @click="testWebhook()" x-show="configured" :disabled="loading"
+                                                class="px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 text-white rounded transition-colors text-sm">
+                                            🧪 Test
+                                        </button>
+                                        <button @click="deleteWebhook()" x-show="configured" :disabled="loading"
+                                                class="px-4 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-500 text-white rounded transition-colors text-sm">
+                                            🗑️ Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Event Filters (Show only if configured) -->
+                            <div x-show="configured && webhook" class="bg-gray-700 p-4 rounded-lg">
+                                <h5 class="font-semibold mb-3">Event Filters</h5>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" :checked="webhook?.on_server_start" disabled class="w-4 h-4">
+                                        <span>Server Start</span>
+                                    </label>
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" :checked="webhook?.on_server_stop" disabled class="w-4 h-4">
+                                        <span>Server Stop</span>
+                                    </label>
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" :checked="webhook?.on_server_crash" disabled class="w-4 h-4">
+                                        <span>Server Crash</span>
+                                    </label>
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" :checked="webhook?.on_player_join" disabled class="w-4 h-4">
+                                        <span>Player Join</span>
+                                    </label>
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" :checked="webhook?.on_player_leave" disabled class="w-4 h-4">
+                                        <span>Player Leave</span>
+                                    </label>
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" :checked="webhook?.on_backup_created" disabled class="w-4 h-4">
+                                        <span>Backup Created</span>
+                                    </label>
+                                </div>
+                                <p class="text-xs text-gray-400 mt-3">Event filters are currently read-only. All events are enabled by default.</p>
+                            </div>
+
+                            <!-- Help -->
+                            <div class="bg-gray-700 p-4 rounded-lg">
+                                <h5 class="font-semibold mb-2">📖 How to Set Up</h5>
+                                <ol class="text-sm text-gray-300 space-y-1 list-decimal list-inside">
+                                    <li>Open your Discord server settings</li>
+                                    <li>Go to Integrations → Webhooks</li>
+                                    <li>Click "New Webhook" and name it (e.g., "PayPerPlay")</li>
+                                    <li>Choose the channel for notifications</li>
+                                    <li>Copy the webhook URL and paste it above</li>
+                                    <li>Click "Save Webhook" and test it!</li>
+                                </ol>
                             </div>
                         </div>
                     </div>

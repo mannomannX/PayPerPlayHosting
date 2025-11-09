@@ -169,8 +169,12 @@ func main() {
 	}
 	templateHandler := api.NewTemplateHandler(templateService)
 
+	// Webhook service
+	webhookService := service.NewWebhookService(db)
+	webhookHandler := api.NewWebhookHandler(webhookService, serverRepo)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, cfg)
 
 	// Graceful shutdown
 	go func() {
