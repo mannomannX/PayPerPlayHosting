@@ -34,7 +34,10 @@
       "Bash(go run:*)",
       "Bash(md5sum:*)",
       "Bash(grep:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(scp:*)",
+      "Bash(python:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

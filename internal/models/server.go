@@ -22,11 +22,23 @@ const (
 type ServerStatus string
 
 const (
-	StatusStopped  ServerStatus = "stopped"
-	StatusStarting ServerStatus = "starting"
-	StatusRunning  ServerStatus = "running"
-	StatusStopping ServerStatus = "stopping"
-	StatusError    ServerStatus = "error"
+	StatusStopped   ServerStatus = "stopped"
+	StatusStarting  ServerStatus = "starting"
+	StatusRunning   ServerStatus = "running"
+	StatusStopping  ServerStatus = "stopping"
+	StatusError     ServerStatus = "error"
+	StatusSleeping  ServerStatus = "sleeping"  // Phase 2: Container stopped, volume persists
+	StatusArchiving ServerStatus = "archiving" // Transitional: Being archived
+	StatusArchived  ServerStatus = "archived"  // Phase 3: Compressed and stored remotely
+)
+
+// LifecyclePhase represents the server's lifecycle state for billing
+type LifecyclePhase string
+
+const (
+	PhaseActive   LifecyclePhase = "active"   // Running, full billing
+	PhaseSleep    LifecyclePhase = "sleep"    // Stopped < 48h, minimal storage billing
+	PhaseArchived LifecyclePhase = "archived" // Stopped > 48h, no billing
 )
 
 // MinecraftServer represents a Minecraft server instance
@@ -84,6 +96,11 @@ type MinecraftServer struct {
 	// Timestamps
 	LastStartedAt *time.Time
 	LastStoppedAt *time.Time
+
+	// Lifecycle Management (3-Phase System)
+	LifecyclePhase  LifecyclePhase `gorm:"default:active"`      // Current lifecycle phase for billing
+	ArchivedAt      *time.Time                                  // When server was archived
+	ArchiveLocation string         `gorm:"size:512;default:''"` // Path to archive file (Storage Box)
 
 	// Settings
 	IdleTimeoutSeconds   int  `gorm:"default:300"`

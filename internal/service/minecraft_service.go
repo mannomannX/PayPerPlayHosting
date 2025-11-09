@@ -170,6 +170,17 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return fmt.Errorf("server already running")
 	}
 
+	// Wake from sleep if necessary
+	if server.LifecyclePhase == models.PhaseSleep || server.Status == models.StatusSleeping {
+		log.Printf("Waking server %s from sleep phase", serverID)
+		server.LifecyclePhase = models.PhaseActive
+		server.Status = models.StatusStopped
+		err := s.repo.Update(server)
+		if err != nil {
+			return fmt.Errorf("failed to wake from sleep: %w", err)
+		}
+	}
+
 	// CRITICAL: Remove any existing container with the same name before creating a new one
 	// This prevents "port already allocated" errors from zombie containers
 	containerName := fmt.Sprintf("mc-%s", server.ID)

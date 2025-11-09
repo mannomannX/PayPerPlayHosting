@@ -84,6 +84,12 @@ func main() {
 	defer backupScheduler.Stop()
 	logger.Info("Backup scheduler started", nil)
 
+	// Initialize Lifecycle Service for 3-phase lifecycle management
+	lifecycleService := service.NewLifecycleService(db, serverRepo)
+	lifecycleService.Start()
+	defer lifecycleService.Stop()
+	logger.Info("Lifecycle service started", nil)
+
 	pluginService := service.NewPluginService(serverRepo, cfg)
 	fileManagerService := service.NewFileManagerService(serverRepo, cfg)
 	fileService := service.NewFileService(fileRepo, serverRepo, cfg.ServersBasePath)
