@@ -87,7 +87,7 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 	}
 
 	type ServerRepository interface {
-		GetByID(serverID string) (interface{}, error)
+		FindByID(serverID string) (interface{}, error)
 	}
 
 	// Type assertions
@@ -124,7 +124,7 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 
 	for _, container := range containers {
 		// Look up server in database
-		serverInterface, err := repo.GetByID(container.ServerID)
+		serverInterface, err := repo.FindByID(container.ServerID)
 		if err != nil {
 			logger.Warn("STATE_SYNC: Container found but server not in DB", map[string]interface{}{
 				"container": container.ContainerID[:12],
