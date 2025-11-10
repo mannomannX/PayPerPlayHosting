@@ -111,7 +111,9 @@ func main() {
 
 	// Initialize Billing Service for cost analytics
 	billingService := service.NewBillingService(db, serverRepo)
-	logger.Info("Billing service initialized", nil)
+	billingService.Start() // Subscribe to Event-Bus for automatic billing tracking
+	defer billingService.Stop()
+	logger.Info("Billing service initialized and subscribed to Event-Bus", nil)
 
 	pluginService := service.NewPluginService(serverRepo, cfg)
 	fileManagerService := service.NewFileManagerService(serverRepo, cfg)
@@ -126,11 +128,8 @@ func main() {
 	mcService.SetWebSocketHub(wsHub)
 	recoveryService.SetWebSocketHub(wsHub)
 
-	// Link Billing Service to MinecraftService for cost tracking
-	mcService.SetBillingService(billingService)
-
-	// Link Billing Service to LifecycleService for phase change tracking
-	lifecycleService.SetBillingService(billingService)
+	// Note: BillingService now automatically tracks events via Event-Bus subscription
+	// No need to manually link it to services
 
 	// Link Recovery Service to Monitoring Service for crash detection
 	monitoringService.SetRecoveryService(recoveryService)

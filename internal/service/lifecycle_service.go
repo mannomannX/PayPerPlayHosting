@@ -3,6 +3,7 @@ package service
 import (
 	"time"
 
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -11,10 +12,9 @@ import (
 
 // LifecycleService manages the 3-phase server lifecycle
 type LifecycleService struct {
-	db             *gorm.DB
-	serverRepo     *repository.ServerRepository
-	billingService *BillingService
-	stopChan       chan struct{}
+	db         *gorm.DB
+	serverRepo *repository.ServerRepository
+	stopChan   chan struct{}
 }
 
 // NewLifecycleService creates a new lifecycle service
@@ -24,11 +24,6 @@ func NewLifecycleService(db *gorm.DB, serverRepo *repository.ServerRepository) *
 		serverRepo: serverRepo,
 		stopChan:   make(chan struct{}),
 	}
-}
-
-// SetBillingService sets the billing service (called after initialization to avoid circular deps)
-func (s *LifecycleService) SetBillingService(billingService *BillingService) {
-	s.billingService = billingService
 }
 
 // Start begins the lifecycle management workers
@@ -113,18 +108,8 @@ func (s *LifecycleService) processSleepTransitions() {
 			continue
 		}
 
-		// Record billing event for phase change
-		if s.billingService != nil {
-			// Update server object with new phase for billing
-			server.Status = models.StatusSleeping
-			server.LifecyclePhase = models.PhaseSleep
-			if err := s.billingService.RecordPhaseChange(&server, oldPhase, models.PhaseSleep); err != nil {
-				logger.Warn("Failed to record phase change billing event", map[string]interface{}{
-					"server_id": server.ID,
-					"error":     err.Error(),
-				})
-			}
-		}
+		// Publish phase change event for billing tracking
+		events.PublishBillingPhaseChanged(server.ID, string(oldPhase), string(models.PhaseSleep))
 
 		transitioned++
 		logger.Info("Server transitioned to sleep", map[string]interface{}{

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -27,8 +28,103 @@ func NewBillingService(db *gorm.DB, serverRepo *repository.ServerRepository) *Bi
 	}
 }
 
+// Start subscribes to Event-Bus for automatic billing tracking
+func (s *BillingService) Start() {
+	bus := events.GetEventBus()
+
+	// Subscribe to server lifecycle events
+	bus.Subscribe(events.EventServerStarted, s.handleServerStarted)
+	bus.Subscribe(events.EventServerStopped, s.handleServerStopped)
+	bus.Subscribe(events.EventBillingPhaseChanged, s.handlePhaseChanged)
+
+	logger.Info("BillingService subscribed to Event-Bus", nil)
+}
+
+// Stop unsubscribes from Event-Bus (cleanup)
+func (s *BillingService) Stop() {
+	// Event-Bus doesn't support unsubscribe yet, but we log it
+	logger.Info("BillingService stopped", nil)
+}
+
+// handleServerStarted handles server.started events from Event-Bus
+func (s *BillingService) handleServerStarted(event events.Event) {
+	// Fetch server details
+	server, err := s.serverRepo.FindByID(event.ServerID)
+	if err != nil {
+		logger.Error("Failed to fetch server for billing", err, map[string]interface{}{
+			"server_id": event.ServerID,
+		})
+		return
+	}
+
+	// Record billing event and create usage session
+	if err := s.recordServerStartedInternal(server); err != nil {
+		logger.Error("Failed to record server start for billing", err, map[string]interface{}{
+			"server_id": server.ID,
+		})
+	}
+}
+
+// handleServerStopped handles server.stopped events from Event-Bus
+func (s *BillingService) handleServerStopped(event events.Event) {
+	// Fetch server details
+	server, err := s.serverRepo.FindByID(event.ServerID)
+	if err != nil {
+		logger.Error("Failed to fetch server for billing", err, map[string]interface{}{
+			"server_id": event.ServerID,
+		})
+		return
+	}
+
+	// Record billing event and close usage session
+	if err := s.recordServerStoppedInternal(server); err != nil {
+		logger.Error("Failed to record server stop for billing", err, map[string]interface{}{
+			"server_id": server.ID,
+		})
+	}
+}
+
+// handlePhaseChanged handles billing.phase_changed events from Event-Bus
+func (s *BillingService) handlePhaseChanged(event events.Event) {
+	// Fetch server details
+	server, err := s.serverRepo.FindByID(event.ServerID)
+	if err != nil {
+		logger.Error("Failed to fetch server for billing", err, map[string]interface{}{
+			"server_id": event.ServerID,
+		})
+		return
+	}
+
+	// Extract phase change data
+	oldPhaseStr, ok1 := event.Data["old_phase"].(string)
+	newPhaseStr, ok2 := event.Data["new_phase"].(string)
+
+	if !ok1 || !ok2 {
+		logger.Warn("Invalid phase change event data", map[string]interface{}{
+			"event": event,
+		})
+		return
+	}
+
+	oldPhase := models.LifecyclePhase(oldPhaseStr)
+	newPhase := models.LifecyclePhase(newPhaseStr)
+
+	if err := s.RecordPhaseChange(server, oldPhase, newPhase); err != nil {
+		logger.Error("Failed to record phase change", err, map[string]interface{}{
+			"server_id": server.ID,
+		})
+	}
+}
+
 // RecordServerStarted records a server start event and begins a new usage session
+// DEPRECATED: This method is kept for backwards compatibility
+// Billing events are now automatically created via Event-Bus subscription
 func (s *BillingService) RecordServerStarted(server *models.MinecraftServer) error {
+	return s.recordServerStartedInternal(server)
+}
+
+// recordServerStartedInternal is the internal implementation called by Event-Bus
+func (s *BillingService) recordServerStartedInternal(server *models.MinecraftServer) error {
 	now := time.Now()
 
 	// Create billing event
@@ -79,7 +175,14 @@ func (s *BillingService) RecordServerStarted(server *models.MinecraftServer) err
 }
 
 // RecordServerStopped records a server stop event and closes the usage session
+// DEPRECATED: This method is kept for backwards compatibility
+// Billing events are now automatically created via Event-Bus subscription
 func (s *BillingService) RecordServerStopped(server *models.MinecraftServer) error {
+	return s.recordServerStoppedInternal(server)
+}
+
+// recordServerStoppedInternal is the internal implementation called by Event-Bus
+func (s *BillingService) recordServerStoppedInternal(server *models.MinecraftServer) error {
 	now := time.Now()
 
 	// Create billing event

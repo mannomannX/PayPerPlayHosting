@@ -21,7 +21,6 @@ type MinecraftService struct {
 	cfg             *config.Config
 	velocityService VelocityServiceInterface // Interface to avoid circular dependency
 	wsHub           WebSocketHubInterface    // Interface for WebSocket broadcasting
-	billingService  *BillingService          // Optional billing service
 }
 
 // WebSocketHubInterface defines the methods needed from WebSocket Hub
@@ -56,11 +55,6 @@ func (s *MinecraftService) SetVelocityService(velocityService VelocityServiceInt
 // SetWebSocketHub sets the WebSocket hub for real-time updates
 func (s *MinecraftService) SetWebSocketHub(wsHub WebSocketHubInterface) {
 	s.wsHub = wsHub
-}
-
-// SetBillingService sets the billing service for cost tracking
-func (s *MinecraftService) SetBillingService(billingService *BillingService) {
-	s.billingService = billingService
 }
 
 // CreateServer creates a new Minecraft server
@@ -275,22 +269,6 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return err
 	}
 
-	// Create usage log
-	usageLog := &models.UsageLog{
-		ServerID:  server.ID,
-		StartedAt: time.Now(),
-	}
-	if err := s.repo.CreateUsageLog(usageLog); err != nil {
-		log.Printf("Warning: failed to create usage log: %v", err)
-	}
-
-	// Record billing event
-	if s.billingService != nil {
-		if err := s.billingService.RecordServerStarted(server); err != nil {
-			log.Printf("Warning: failed to record billing event: %v", err)
-		}
-	}
-
 	// Broadcast WebSocket event
 	if s.wsHub != nil {
 		s.wsHub.Broadcast("server_started", map[string]interface{}{
@@ -340,41 +318,14 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		return err
 	}
 
-	// Record billing event
-	if s.billingService != nil {
-		if err := s.billingService.RecordServerStopped(server); err != nil {
-			log.Printf("Warning: failed to record billing event: %v", err)
-		}
-	}
-
-	// Update usage log
-	usageLog, err := s.repo.GetActiveUsageLog(server.ID)
-	if err == nil && usageLog != nil {
-		now := time.Now()
-		usageLog.StoppedAt = &now
-		duration := now.Sub(usageLog.StartedAt)
-		usageLog.DurationSeconds = int(duration.Seconds())
-		usageLog.CostEUR = s.calculateCost(server.RAMMb, duration.Seconds())
-		usageLog.ShutdownReason = reason
-
-		if err := s.repo.UpdateUsageLog(usageLog); err != nil {
-			log.Printf("Warning: failed to update usage log: %v", err)
-		}
-	}
-
 	// Broadcast WebSocket event
 	if s.wsHub != nil {
-		eventData := map[string]interface{}{
+		s.wsHub.Broadcast("server_stopped", map[string]interface{}{
 			"server_id": server.ID,
 			"name":      server.Name,
 			"status":    server.Status,
 			"reason":    reason,
-		}
-		if usageLog != nil {
-			eventData["cost"] = usageLog.CostEUR
-			eventData["duration_seconds"] = usageLog.DurationSeconds
-		}
-		s.wsHub.Broadcast("server_stopped", eventData)
+		})
 	}
 
 	// Publish event
