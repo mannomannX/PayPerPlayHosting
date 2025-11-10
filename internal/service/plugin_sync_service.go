@@ -148,16 +148,10 @@ func (s *PluginSyncService) syncModrinthPlugin(projectID string) error {
 		LastSynced:    time.Now(),
 	}
 
-	fmt.Printf("DEBUG syncModrinthPlugin: About to upsert plugin Slug=%s, ExternalID=%s, ProjectID (param)=%s\n",
-		plugin.Slug, plugin.ExternalID, projectID)
-
 	// Upsert plugin
 	if err := s.pluginRepo.UpsertPlugin(plugin); err != nil {
 		return fmt.Errorf("failed to upsert plugin: %w", err)
 	}
-
-	fmt.Printf("DEBUG syncModrinthPlugin: After upsert, plugin.ID=%s, plugin.ExternalID=%s\n",
-		plugin.ID, plugin.ExternalID)
 
 	// Fetch and sync versions
 	modVersions, err := s.modrinthClient.GetProjectVersions(projectID)

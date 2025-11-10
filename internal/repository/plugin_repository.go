@@ -40,14 +40,8 @@ func (r *PluginRepository) FindPluginBySlug(slug string) (*models.Plugin, error)
 
 // FindPluginByExternalID finds a plugin by external source ID
 func (r *PluginRepository) FindPluginByExternalID(source models.PluginSource, externalID string) (*models.Plugin, error) {
-	fmt.Printf("DEBUG FindPluginByExternalID: Searching for Source=%s, ExternalID=%s\n", source, externalID)
 	var plugin models.Plugin
 	err := r.db.First(&plugin, "source = ? AND external_id = ?", source, externalID).Error
-	if err == nil {
-		fmt.Printf("DEBUG FindPluginByExternalID: Found plugin ID=%s\n", plugin.ID)
-	} else {
-		fmt.Printf("DEBUG FindPluginByExternalID: NOT FOUND, error=%v\n", err)
-	}
 	return &plugin, err
 }
 
@@ -214,13 +208,7 @@ func (r *PluginRepository) UpsertPlugin(plugin *models.Plugin) error {
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			// Create new plugin
-			if err := r.CreatePlugin(plugin); err != nil {
-				return err
-			}
-			// Debug: Log what was created
-			fmt.Printf("DEBUG UpsertPlugin: Created new plugin ID=%s, ExternalID=%s, Source=%s\n",
-				plugin.ID, plugin.ExternalID, plugin.Source)
-			return nil
+			return r.CreatePlugin(plugin)
 		}
 		return err
 	}
