@@ -465,6 +465,46 @@ func (d *DockerService) GetContainerLogs(containerID string, tail string) (strin
 	return string(content), nil
 }
 
+// ListRunningMinecraftContainers returns all currently running mc-* containers
+// Used by Conductor to sync state after restarts
+func (d *DockerService) ListRunningMinecraftContainers() ([]struct {
+	ContainerID string
+	ServerID    string
+}, error) {
+	ctx := context.Background()
+
+	// List all containers with name prefix "mc-"
+	containers, err := d.client.ContainerList(ctx, container.ListOptions{
+		All: false, // Only running containers
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var result []struct {
+		ContainerID string
+		ServerID    string
+	}
+
+	for _, c := range containers {
+		// Check if container name starts with "mc-"
+		if len(c.Names) > 0 && strings.HasPrefix(c.Names[0], "/mc-") {
+			// Extract server ID from container name (format: mc-{serverID})
+			serverID := strings.TrimPrefix(c.Names[0], "/mc-")
+
+			result = append(result, struct {
+				ContainerID string
+				ServerID    string
+			}{
+				ContainerID: c.ID,
+				ServerID:    serverID,
+			})
+		}
+	}
+
+	return result, nil
+}
+
 // FindAvailablePort finds an available port in the configured range
 func (d *DockerService) FindAvailablePort(usedPorts []int) (int, error) {
 	usedPortsMap := make(map[int]bool)

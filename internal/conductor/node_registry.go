@@ -3,6 +3,8 @@ package conductor
 import (
 	"sync"
 	"time"
+
+	"github.com/payperplay/hosting/pkg/logger"
 )
 
 // NodeRegistry manages the fleet of nodes
@@ -112,6 +114,81 @@ func (r *NodeRegistry) RemoveNode(nodeID string) {
 // UnregisterNode is an alias for RemoveNode (used by VMProvisioner)
 func (r *NodeRegistry) UnregisterNode(nodeID string) {
 	r.RemoveNode(nodeID)
+}
+
+// AtomicAllocateRAM atomically reserves RAM on the local node
+// Returns true if allocation succeeded, false if insufficient capacity
+// THIS IS CRITICAL FOR PREVENTING RACE CONDITIONS!
+func (r *NodeRegistry) AtomicAllocateRAM(ramMB int) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Find local node (currently only one node: "local-node")
+	node, exists := r.nodes["local-node"]
+	if !exists {
+		logger.Error("AtomicAllocateRAM: local-node not found", nil, nil)
+		return false
+	}
+
+	// Check if we have capacity (accounting for system reserve)
+	usableRAM := node.UsableRAMMB()
+	availableRAM := usableRAM - node.AllocatedRAMMB
+
+	logger.Debug("AtomicAllocateRAM", map[string]interface{}{
+		"requested_ram_mb":  ramMB,
+		"total_ram_mb":      node.TotalRAMMB,
+		"system_reserve_mb": node.SystemReservedRAMMB,
+		"usable_ram_mb":     usableRAM,
+		"allocated_ram_mb":  node.AllocatedRAMMB,
+		"available_ram_mb":  availableRAM,
+		"container_count":   node.ContainerCount,
+	})
+
+	if availableRAM < ramMB {
+		// Insufficient capacity
+		logger.Info("AtomicAllocateRAM: Insufficient capacity", map[string]interface{}{
+			"requested_ram_mb": ramMB,
+			"available_ram_mb": availableRAM,
+			"result":           "REJECTED",
+		})
+		return false
+	}
+
+	// Atomically allocate the RAM
+	node.AllocatedRAMMB += ramMB
+	node.ContainerCount++
+
+	logger.Info("AtomicAllocateRAM: Success", map[string]interface{}{
+		"requested_ram_mb":      ramMB,
+		"new_allocated_ram_mb":  node.AllocatedRAMMB,
+		"new_available_ram_mb":  usableRAM - node.AllocatedRAMMB,
+		"new_container_count":   node.ContainerCount,
+		"result":                "ALLOCATED",
+	})
+
+	return true
+}
+
+// ReleaseRAM atomically releases RAM from the local node
+func (r *NodeRegistry) ReleaseRAM(ramMB int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	node, exists := r.nodes["local-node"]
+	if !exists {
+		return
+	}
+
+	// Release the RAM
+	node.AllocatedRAMMB -= ramMB
+	if node.AllocatedRAMMB < 0 {
+		node.AllocatedRAMMB = 0 // Safety check
+	}
+
+	node.ContainerCount--
+	if node.ContainerCount < 0 {
+		node.ContainerCount = 0 // Safety check
+	}
 }
 
 // GetFleetStats returns aggregate statistics for the entire fleet

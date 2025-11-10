@@ -146,3 +146,9 @@ func (MinecraftServer) TableName() string {
 func (UsageLog) TableName() string {
 	return "usage_logs"
 }
+
+// GetRAMMb returns the allocated RAM in MB for this server
+// Used by Conductor for state synchronization after restarts
+func (s *MinecraftServer) GetRAMMb() int {
+	return s.RAMMb
+}

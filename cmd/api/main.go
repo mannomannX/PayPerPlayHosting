@@ -233,6 +233,11 @@ func main() {
 	defer cond.Stop()
 	logger.Info("Conductor Core started", nil)
 
+	// CRITICAL: Sync running containers with Conductor state (prevents OOM after restarts)
+	logger.Info("Syncing running containers with Conductor state...", nil)
+	cond.SyncRunningContainers(dockerService, serverRepo)
+	logger.Info("Container state sync completed", nil)
+
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)
 	oauthHandler := api.NewOAuthHandler(oauthService)

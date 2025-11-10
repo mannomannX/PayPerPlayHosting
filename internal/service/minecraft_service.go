@@ -39,7 +39,16 @@ type VelocityServiceInterface interface {
 // ConductorInterface defines the methods needed from Conductor for capacity management
 type ConductorInterface interface {
 	// CheckCapacity checks if there's enough capacity to start a server
+	// DEPRECATED: Use AtomicAllocateRAM() instead to prevent race conditions
 	CheckCapacity(requiredRAMMB int) (bool, int) // returns (hasCapacity, availableRAMMB)
+
+	// AtomicAllocateRAM atomically reserves RAM for a server
+	// Returns true if allocation succeeded, false if insufficient capacity
+	// THIS IS THE SAFE METHOD - prevents race conditions!
+	AtomicAllocateRAM(ramMB int) bool
+
+	// ReleaseRAM atomically releases RAM when a server stops
+	ReleaseRAM(ramMB int)
 
 	// EnqueueServer adds a server to the start queue if capacity is insufficient
 	EnqueueServer(serverID, serverName string, requiredRAMMB int, userID string)
@@ -49,6 +58,9 @@ type ConductorInterface interface {
 
 	// RemoveFromQueue removes a server from the start queue
 	RemoveFromQueue(serverID string)
+
+	// ProcessStartQueue attempts to start servers from the queue when capacity is available
+	ProcessStartQueue()
 }
 
 func NewMinecraftService(
@@ -195,30 +207,34 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return fmt.Errorf("server already running")
 	}
 
-	// PRE-START RESOURCE GUARD: Check if we have capacity to start this server
+	// PRE-START RESOURCE GUARD: Atomically allocate RAM (prevents race conditions)
+	// This is a CRITICAL FIX to prevent multiple parallel requests from overloading the system
+	ramAllocated := false
 	if s.conductor != nil {
-		hasCapacity, availableRAM := s.conductor.CheckCapacity(server.RAMMb)
+		// Check if already queued
+		if s.conductor.IsServerQueued(server.ID) {
+			return fmt.Errorf("server is already queued for start (waiting for capacity)")
+		}
 
-		if !hasCapacity {
-			// Check if already queued
-			if s.conductor.IsServerQueued(server.ID) {
-				return fmt.Errorf("server is already queued for start (position: waiting for %d MB, available: %d MB)", server.RAMMb, availableRAM)
-			}
-
-			// Not enough capacity - add to queue instead of starting
+		// ATOMIC RAM ALLOCATION: Lock, check, and allocate in ONE operation
+		// This prevents race conditions where multiple threads check capacity simultaneously
+		if !s.conductor.AtomicAllocateRAM(server.RAMMb) {
+			// Allocation failed - insufficient capacity
+			// Add to queue instead of starting
 			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
 
-			log.Printf("RESOURCE_GUARD: Insufficient capacity for server %s (%d MB required, %d MB available) - Added to queue",
-				server.ID, server.RAMMb, availableRAM)
+			log.Printf("RESOURCE_GUARD: Insufficient capacity for server %s (%d MB required) - Added to queue",
+				server.ID, server.RAMMb)
 
-			return fmt.Errorf("insufficient capacity to start server (%d MB required, %d MB available) - server queued for start, will auto-start when capacity available", server.RAMMb, availableRAM)
+			return fmt.Errorf("insufficient capacity to start server (%d MB required) - server queued for start, will auto-start when capacity available", server.RAMMb)
 		}
+
+		// RAM successfully allocated!
+		ramAllocated = true
+		log.Printf("RESOURCE_GUARD: RAM allocated atomically for server %s (%d MB)", server.ID, server.RAMMb)
 
 		// Remove from queue if it was queued (in case of manual retry)
 		s.conductor.RemoveFromQueue(server.ID)
-
-		log.Printf("RESOURCE_GUARD: Capacity check passed for server %s (%d MB required, %d MB available)",
-			server.ID, server.RAMMb, availableRAM)
 	}
 
 	// Wake from sleep if necessary
@@ -278,11 +294,21 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			server.MOTD,
 		)
 		if err != nil {
+			// ROLLBACK: Release RAM if container creation failed
+			if ramAllocated && s.conductor != nil {
+				s.conductor.ReleaseRAM(server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM for server %s after container creation failure", server.RAMMb, server.ID)
+			}
 			return fmt.Errorf("failed to create container: %w", err)
 		}
 
 		server.ContainerID = containerID
 		if err := s.repo.Update(server); err != nil {
+			// ROLLBACK: Release RAM if database update failed
+			if ramAllocated && s.conductor != nil {
+				s.conductor.ReleaseRAM(server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM for server %s after database update failure", server.RAMMb, server.ID)
+			}
 			return err
 		}
 	}
@@ -290,12 +316,22 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	// Start container
 	server.Status = models.StatusStarting
 	if err := s.repo.Update(server); err != nil {
+		// ROLLBACK: Release RAM if database update failed
+		if ramAllocated && s.conductor != nil {
+			s.conductor.ReleaseRAM(server.RAMMb)
+			log.Printf("ROLLBACK: Released %d MB RAM for server %s after status update failure", server.RAMMb, server.ID)
+		}
 		return err
 	}
 
 	if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
 		server.Status = models.StatusError
 		s.repo.Update(server)
+		// ROLLBACK: Release RAM if container start failed
+		if ramAllocated && s.conductor != nil {
+			s.conductor.ReleaseRAM(server.RAMMb)
+			log.Printf("ROLLBACK: Released %d MB RAM for server %s after container start failure", server.RAMMb, server.ID)
+		}
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
@@ -363,6 +399,15 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 	server.LastStoppedAt = &now
 	if err := s.repo.Update(server); err != nil {
 		return err
+	}
+
+	// Release RAM when server stops (critical for capacity management)
+	if s.conductor != nil {
+		s.conductor.ReleaseRAM(server.RAMMb)
+		log.Printf("RESOURCE_RELEASE: Released %d MB RAM for server %s", server.RAMMb, server.ID)
+
+		// Trigger queue processing - maybe now we have capacity for queued servers
+		go s.conductor.ProcessStartQueue()
 	}
 
 	// Broadcast WebSocket event

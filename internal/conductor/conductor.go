@@ -70,6 +70,114 @@ func (c *Conductor) Start() {
 	logger.Info("Conductor Core started successfully", nil)
 }
 
+// SyncRunningContainers synchronizes Conductor's RAM tracking with Docker reality
+// CRITICAL: This prevents OOM crashes after restarts by detecting existing containers
+// Called on startup to recover state after crashes/restarts/deployments
+//
+// This must be called from main.go after services are initialized
+func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo interface{}) {
+	logger.Info("STATE_SYNC: Detecting running Minecraft containers...", nil)
+
+	// Type-safe interfaces (avoiding circular dependencies)
+	type ContainerLister interface {
+		ListRunningMinecraftContainers() ([]struct {
+			ContainerID string
+			ServerID    string
+		}, error)
+	}
+
+	type ServerRepository interface {
+		GetByID(serverID string) (interface{}, error)
+	}
+
+	// Type assertions
+	dockerService, ok := dockerSvc.(ContainerLister)
+	if !ok {
+		logger.Error("STATE_SYNC: Invalid docker service type", nil, nil)
+		return
+	}
+
+	repo, ok := serverRepo.(ServerRepository)
+	if !ok {
+		logger.Error("STATE_SYNC: Invalid repository type", nil, nil)
+		return
+	}
+
+	// Query Docker for all running mc-* containers
+	containers, err := dockerService.ListRunningMinecraftContainers()
+	if err != nil {
+		logger.Error("STATE_SYNC: Failed to list containers", err, nil)
+		return
+	}
+
+	if len(containers) == 0 {
+		logger.Info("STATE_SYNC: No running containers (clean state)", nil)
+		return
+	}
+
+	logger.Info("STATE_SYNC: Found containers, syncing RAM allocations...", map[string]interface{}{
+		"count": len(containers),
+	})
+
+	syncedCount := 0
+	totalRAM := 0
+
+	for _, container := range containers {
+		// Look up server in database
+		serverInterface, err := repo.GetByID(container.ServerID)
+		if err != nil {
+			logger.Warn("STATE_SYNC: Container found but server not in DB", map[string]interface{}{
+				"container": container.ContainerID[:12],
+				"server_id": container.ServerID[:8],
+			})
+			continue
+		}
+
+		// Extract RAM from server object (use type assertion for RAMMb field)
+		type Server interface {
+			GetRAMMb() int
+		}
+
+		// Try direct field access first (for models.MinecraftServer)
+		type DirectServer struct {
+			RAMMb int
+		}
+
+		var ramMB int
+		if srv, ok := serverInterface.(Server); ok {
+			ramMB = srv.GetRAMMb()
+		} else {
+			// Fallback: use reflection-free approach
+			logger.Warn("STATE_SYNC: Cannot get RAM from server", map[string]interface{}{
+				"server_id": container.ServerID[:8],
+			})
+			continue
+		}
+
+		// Force allocate RAM (bypass checks - container IS running!)
+		c.NodeRegistry.mu.Lock()
+		if node, exists := c.NodeRegistry.nodes["local-node"]; exists {
+			node.AllocatedRAMMB += ramMB
+			node.ContainerCount++
+		}
+		c.NodeRegistry.mu.Unlock()
+
+		totalRAM += ramMB
+		syncedCount++
+
+		logger.Info("STATE_SYNC: Container synced", map[string]interface{}{
+			"container": container.ContainerID[:12],
+			"server":    container.ServerID[:8],
+			"ram_mb":    ramMB,
+		})
+	}
+
+	logger.Info("STATE_SYNC: Completed", map[string]interface{}{
+		"synced":       syncedCount,
+		"total_ram_mb": totalRAM,
+	})
+}
+
 // Stop stops the conductor and all its subsystems
 func (c *Conductor) Stop() {
 	logger.Info("Stopping Conductor Core", nil)
@@ -123,10 +231,23 @@ func (c *Conductor) bootstrapLocalNode() {
 
 // CheckCapacity checks if there's enough capacity to start a server with the given RAM requirement
 // Returns (hasCapacity bool, availableRAMMB int)
+// DEPRECATED: Use AtomicAllocateRAM() instead to prevent race conditions
 func (c *Conductor) CheckCapacity(requiredRAMMB int) (bool, int) {
 	fleetStats := c.NodeRegistry.GetFleetStats()
 	hasCapacity := fleetStats.AvailableRAMMB >= requiredRAMMB
 	return hasCapacity, fleetStats.AvailableRAMMB
+}
+
+// AtomicAllocateRAM atomically reserves RAM for a server
+// Returns true if allocation succeeded, false if insufficient capacity
+// THIS IS THE SAFE METHOD - prevents race conditions!
+func (c *Conductor) AtomicAllocateRAM(ramMB int) bool {
+	return c.NodeRegistry.AtomicAllocateRAM(ramMB)
+}
+
+// ReleaseRAM atomically releases RAM when a server stops
+func (c *Conductor) ReleaseRAM(ramMB int) {
+	c.NodeRegistry.ReleaseRAM(ramMB)
 }
 
 // EnqueueServer adds a server to the start queue
