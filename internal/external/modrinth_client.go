@@ -43,16 +43,16 @@ type ModrinthSearchResponse struct {
 
 // ModrinthProject represents a plugin/mod project on Modrinth
 type ModrinthProject struct {
-	ProjectID      string   `json:"project_id"`
-	Slug           string   `json:"slug"`
-	Title          string   `json:"title"`
-	Description    string   `json:"description"`
-	Categories     []string `json:"categories"`
-	DisplayCategory string  `json:"display_categories"`
-	Author         string   `json:"author"`
-	IconURL        string   `json:"icon_url"`
-	Downloads      int      `json:"downloads"`
-	ProjectType    string   `json:"project_type"` // "mod", "plugin", "modpack"
+	ProjectID         string   `json:"project_id"`
+	Slug              string   `json:"slug"`
+	Title             string   `json:"title"`
+	Description       string   `json:"description"`
+	Categories        []string `json:"categories"`
+	DisplayCategories []string `json:"display_categories"`
+	Author            string   `json:"author"`
+	IconURL           string   `json:"icon_url"`
+	Downloads         int      `json:"downloads"`
+	ProjectType       string   `json:"project_type"` // "mod", "plugin", "modpack"
 
 	// Additional fields available when querying single project
 	Body           string   `json:"body,omitempty"`
