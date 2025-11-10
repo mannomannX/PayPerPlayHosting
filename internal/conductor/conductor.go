@@ -385,6 +385,9 @@ func (c *Conductor) AtomicAllocateRAM(ramMB int) bool {
 // ReleaseRAM atomically releases RAM when a server stops
 func (c *Conductor) ReleaseRAM(ramMB int) {
 	c.NodeRegistry.ReleaseRAM(ramMB)
+
+	// Trigger queue processing - now that RAM is freed, queued servers might be able to start
+	go c.ProcessStartQueue()
 }
 
 // EnqueueServer adds a server to the start queue
