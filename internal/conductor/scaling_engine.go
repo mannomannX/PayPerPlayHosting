@@ -17,6 +17,7 @@ type ScalingEngine struct {
 	cloudProvider cloud.CloudProvider
 	vmProvisioner *VMProvisioner
 	nodeRegistry  *NodeRegistry
+	startQueue    *StartQueue // Queue for servers waiting for capacity
 	enabled       bool
 	checkInterval time.Duration
 	stopChan      chan struct{}
@@ -27,6 +28,7 @@ func NewScalingEngine(
 	cloudProvider cloud.CloudProvider,
 	vmProvisioner *VMProvisioner,
 	nodeRegistry *NodeRegistry,
+	startQueue *StartQueue,
 	enabled bool,
 ) *ScalingEngine {
 	engine := &ScalingEngine{
@@ -34,6 +36,7 @@ func NewScalingEngine(
 		cloudProvider: cloudProvider,
 		vmProvisioner: vmProvisioner,
 		nodeRegistry:  nodeRegistry,
+		startQueue:    startQueue,
 		enabled:       enabled,
 		checkInterval: 2 * time.Minute, // Check every 2 minutes
 		stopChan:      make(chan struct{}),
@@ -281,6 +284,10 @@ func (e *ScalingEngine) scaleUp(rec ScaleRecommendation) error {
 		events.PublishScalingEvent("scale_up", "success", node.ID)
 	}
 
+	// After successful scale-up, process the start queue
+	// This will attempt to start any queued servers now that we have capacity
+	e.processStartQueueAfterScaleUp()
+
 	return nil
 }
 
@@ -403,6 +410,34 @@ func (e *ScalingEngine) GetStatus() ScalingEngineStatus {
 		CloudNodes:      len(ctx.CloudNodes),
 		TotalNodes:      len(ctx.DedicatedNodes) + len(ctx.CloudNodes),
 	}
+}
+
+// processStartQueueAfterScaleUp checks the start queue and attempts to start queued servers
+// This is called after a successful scale-up to immediately utilize new capacity
+func (e *ScalingEngine) processStartQueueAfterScaleUp() {
+	if e.startQueue.Size() == 0 {
+		logger.Info("No servers in queue after scale-up", nil)
+		return
+	}
+
+	logger.Info("Processing start queue after scale-up", map[string]interface{}{
+		"queue_size":     e.startQueue.Size(),
+		"total_required": e.startQueue.GetTotalRequiredRAM(),
+	})
+
+	// Get current fleet stats
+	fleetStats := e.nodeRegistry.GetFleetStats()
+
+	logger.Info("New capacity available after scale-up", map[string]interface{}{
+		"available_ram_mb": fleetStats.AvailableRAMMB,
+		"usable_ram_mb":    fleetStats.UsableRAMMB,
+		"allocated_ram_mb": fleetStats.AllocatedRAMMB,
+		"queue_size":       e.startQueue.Size(),
+	})
+
+	// Note: The actual server starts will be handled by the Conductor.ProcessStartQueue()
+	// which is called periodically and has access to MinecraftService.
+	// This method just logs that capacity is available for debugging.
 }
 
 // ScalingEngineStatus represents the current state of the scaling engine

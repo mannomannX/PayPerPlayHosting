@@ -14,6 +14,7 @@ type Conductor struct {
 	ContainerRegistry *ContainerRegistry
 	HealthChecker     *HealthChecker
 	ScalingEngine     *ScalingEngine // B5 - Auto-Scaling
+	StartQueue        *StartQueue    // Queue for servers waiting for capacity
 }
 
 // NewConductor creates a new conductor instance
@@ -27,6 +28,7 @@ func NewConductor(healthCheckInterval time.Duration) *Conductor {
 		ContainerRegistry: containerRegistry,
 		HealthChecker:     healthChecker,
 		ScalingEngine:     nil, // Initialized later with cloud provider
+		StartQueue:        NewStartQueue(),
 	}
 }
 
@@ -39,7 +41,7 @@ func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyN
 	}
 
 	vmProvisioner := NewVMProvisioner(cloudProvider, c.NodeRegistry, sshKeyName)
-	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, enabled)
+	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, c.StartQueue, enabled)
 
 	logger.Info("Scaling engine initialized", map[string]interface{}{
 		"ssh_key": sshKeyName,
@@ -119,6 +121,109 @@ func (c *Conductor) bootstrapLocalNode() {
 	})
 }
 
+// CheckCapacity checks if there's enough capacity to start a server with the given RAM requirement
+// Returns (hasCapacity bool, availableRAMMB int)
+func (c *Conductor) CheckCapacity(requiredRAMMB int) (bool, int) {
+	fleetStats := c.NodeRegistry.GetFleetStats()
+	hasCapacity := fleetStats.AvailableRAMMB >= requiredRAMMB
+	return hasCapacity, fleetStats.AvailableRAMMB
+}
+
+// EnqueueServer adds a server to the start queue
+func (c *Conductor) EnqueueServer(serverID, serverName string, requiredRAMMB int, userID string) {
+	queuedServer := &QueuedServer{
+		ServerID:      serverID,
+		ServerName:    serverName,
+		RequiredRAMMB: requiredRAMMB,
+		QueuedAt:      time.Now(),
+		UserID:        userID,
+	}
+	c.StartQueue.Enqueue(queuedServer)
+
+	logger.Info("Server enqueued, waiting for capacity", map[string]interface{}{
+		"server_id":      serverID,
+		"server_name":    serverName,
+		"required_ram":   requiredRAMMB,
+		"queue_position": c.StartQueue.GetPosition(serverID),
+	})
+
+	// Trigger queue processing (will check if scaling needed)
+	go c.ProcessStartQueue()
+}
+
+// IsServerQueued checks if a server is currently in the start queue
+func (c *Conductor) IsServerQueued(serverID string) bool {
+	return c.StartQueue.GetPosition(serverID) > 0
+}
+
+// RemoveFromQueue removes a server from the start queue
+func (c *Conductor) RemoveFromQueue(serverID string) {
+	if c.StartQueue.Remove(serverID) {
+		logger.Info("Server removed from start queue", map[string]interface{}{
+			"server_id": serverID,
+		})
+	}
+}
+
+// ProcessStartQueue attempts to start servers from the queue when capacity is available
+// This should be called:
+// 1. After a server is stopped (frees capacity)
+// 2. After a new node comes online
+// 3. Periodically by a background worker
+func (c *Conductor) ProcessStartQueue() {
+	if c.StartQueue.Size() == 0 {
+		return // Nothing to process
+	}
+
+	logger.Info("Processing start queue", map[string]interface{}{
+		"queue_size": c.StartQueue.Size(),
+	})
+
+	// Process queue until we run out of capacity or servers
+	for {
+		queuedServer := c.StartQueue.Peek()
+		if queuedServer == nil {
+			break // Queue empty
+		}
+
+		// Check if we have capacity for this server
+		fleetStats := c.NodeRegistry.GetFleetStats()
+		if fleetStats.AvailableRAMMB < queuedServer.RequiredRAMMB {
+			logger.Info("Insufficient capacity for queued server", map[string]interface{}{
+				"server_id":      queuedServer.ServerID,
+				"required_ram":   queuedServer.RequiredRAMMB,
+				"available_ram":  fleetStats.AvailableRAMMB,
+				"queue_position": 1,
+			})
+
+			// Trigger scaling if enabled
+			if c.ScalingEngine != nil && c.ScalingEngine.IsEnabled() {
+				logger.Info("Queued servers waiting for capacity, scaling will be triggered in next cycle", map[string]interface{}{
+					"queue_size":     c.StartQueue.Size(),
+					"total_required": c.StartQueue.GetTotalRequiredRAM(),
+				})
+				// ScalingEngine will check and scale if needed in its next cycle (every 2 minutes)
+			}
+
+			break // Stop processing, wait for more capacity
+		}
+
+		// We have capacity - dequeue and signal that server can start
+		server := c.StartQueue.Dequeue()
+
+		logger.Info("Capacity available for queued server", map[string]interface{}{
+			"server_id":     server.ServerID,
+			"server_name":   server.ServerName,
+			"required_ram":  server.RequiredRAMMB,
+			"available_ram": fleetStats.AvailableRAMMB,
+			"wait_time":     time.Since(server.QueuedAt).String(),
+		})
+
+		// Note: The actual server start will be triggered by the MinecraftService
+		// after checking the queue status. We don't start it here to avoid tight coupling.
+	}
+}
+
 // GetStatus returns the current conductor status
 func (c *Conductor) GetStatus() ConductorStatus {
 	fleetStats := c.NodeRegistry.GetFleetStats()
@@ -130,6 +235,8 @@ func (c *Conductor) GetStatus() ConductorStatus {
 		Nodes:           nodes,
 		Containers:      containers,
 		TotalContainers: len(containers),
+		QueuedServers:   c.StartQueue.GetAll(),
+		QueueSize:       c.StartQueue.Size(),
 	}
 
 	// Add scaling engine status if available
@@ -148,4 +255,6 @@ type ConductorStatus struct {
 	Containers      []*ContainerInfo     `json:"containers"`
 	TotalContainers int                  `json:"total_containers"`
 	ScalingEngine   *ScalingEngineStatus `json:"scaling_engine,omitempty"`
+	QueuedServers   []*QueuedServer      `json:"queued_servers,omitempty"`
+	QueueSize       int                  `json:"queue_size"`
 }

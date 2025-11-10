@@ -21,6 +21,7 @@ type MinecraftService struct {
 	cfg             *config.Config
 	velocityService VelocityServiceInterface // Interface to avoid circular dependency
 	wsHub           WebSocketHubInterface    // Interface for WebSocket broadcasting
+	conductor       ConductorInterface        // Interface for capacity management
 }
 
 // WebSocketHubInterface defines the methods needed from WebSocket Hub
@@ -33,6 +34,21 @@ type VelocityServiceInterface interface {
 	RegisterServer(server *models.MinecraftServer) error
 	UnregisterServer(serverID string) error
 	IsRunning() bool
+}
+
+// ConductorInterface defines the methods needed from Conductor for capacity management
+type ConductorInterface interface {
+	// CheckCapacity checks if there's enough capacity to start a server
+	CheckCapacity(requiredRAMMB int) (bool, int) // returns (hasCapacity, availableRAMMB)
+
+	// EnqueueServer adds a server to the start queue if capacity is insufficient
+	EnqueueServer(serverID, serverName string, requiredRAMMB int, userID string)
+
+	// IsServerQueued checks if a server is in the start queue
+	IsServerQueued(serverID string) bool
+
+	// RemoveFromQueue removes a server from the start queue
+	RemoveFromQueue(serverID string)
 }
 
 func NewMinecraftService(
@@ -55,6 +71,11 @@ func (s *MinecraftService) SetVelocityService(velocityService VelocityServiceInt
 // SetWebSocketHub sets the WebSocket hub for real-time updates
 func (s *MinecraftService) SetWebSocketHub(wsHub WebSocketHubInterface) {
 	s.wsHub = wsHub
+}
+
+// SetConductor sets the Conductor for capacity management
+func (s *MinecraftService) SetConductor(conductor ConductorInterface) {
+	s.conductor = conductor
 }
 
 // CreateServer creates a new Minecraft server
@@ -172,6 +193,32 @@ func (s *MinecraftService) StartServer(serverID string) error {
 
 	if server.Status == models.StatusRunning {
 		return fmt.Errorf("server already running")
+	}
+
+	// PRE-START RESOURCE GUARD: Check if we have capacity to start this server
+	if s.conductor != nil {
+		hasCapacity, availableRAM := s.conductor.CheckCapacity(server.RAMMb)
+
+		if !hasCapacity {
+			// Check if already queued
+			if s.conductor.IsServerQueued(server.ID) {
+				return fmt.Errorf("server is already queued for start (position: waiting for %d MB, available: %d MB)", server.RAMMb, availableRAM)
+			}
+
+			// Not enough capacity - add to queue instead of starting
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+
+			log.Printf("RESOURCE_GUARD: Insufficient capacity for server %s (%d MB required, %d MB available) - Added to queue",
+				server.ID, server.RAMMb, availableRAM)
+
+			return fmt.Errorf("insufficient capacity to start server (%d MB required, %d MB available) - server queued for start, will auto-start when capacity available", server.RAMMb, availableRAM)
+		}
+
+		// Remove from queue if it was queued (in case of manual retry)
+		s.conductor.RemoveFromQueue(server.ID)
+
+		log.Printf("RESOURCE_GUARD: Capacity check passed for server %s (%d MB required, %d MB available)",
+			server.ID, server.RAMMb, availableRAM)
 	}
 
 	// Wake from sleep if necessary

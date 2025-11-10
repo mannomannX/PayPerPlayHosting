@@ -225,6 +225,10 @@ func main() {
 		logger.Warn("Hetzner Cloud token not configured, scaling disabled", nil)
 	}
 
+	// Link Conductor to MinecraftService for capacity management
+	mcService.SetConductor(cond)
+	logger.Info("Conductor linked to MinecraftService for resource guard", nil)
+
 	cond.Start()
 	defer cond.Stop()
 	logger.Info("Conductor Core started", nil)
