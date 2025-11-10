@@ -70,9 +70,9 @@ func (p *Plugin) BeforeCreate(tx *gorm.DB) error {
 
 // PluginVersion represents a specific version of a plugin
 type PluginVersion struct {
-	ID       string `gorm:"primaryKey;size:64"`
-	PluginID string `gorm:"not null;index;size:64"`
-	Plugin   *Plugin
+	ID       string  `gorm:"primaryKey;size:64"`
+	PluginID string  `gorm:"not null;index;size:64"`
+	Plugin   *Plugin `gorm:"constraint:OnDelete:CASCADE"`
 
 	// Version info
 	Version string `gorm:"not null;size:50"` // "7.2.15" (Semantic Versioning)
@@ -122,8 +122,8 @@ type InstalledPlugin struct {
 	PluginID  string `gorm:"not null;index;size:64"`
 	VersionID string `gorm:"not null;index;size:64"`
 
-	Plugin  *Plugin
-	Version *PluginVersion
+	Plugin  *Plugin        `gorm:"constraint:OnDelete:CASCADE"`
+	Version *PluginVersion `gorm:"constraint:OnDelete:CASCADE"`
 
 	// State
 	Enabled    bool `gorm:"default:true"`
