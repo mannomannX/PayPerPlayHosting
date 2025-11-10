@@ -30,6 +30,7 @@ func SetupRouter(
 	prometheusHandler *PrometheusHandler,
 	conductorHandler *ConductorHandler,
 	billingHandler *BillingHandler,
+	bulkHandler *BulkHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -237,6 +238,15 @@ func SetupRouter(
 			servers.POST("/:id/backup-schedule", backupScheduleHandler.CreateSchedule)
 			servers.PUT("/:id/backup-schedule", backupScheduleHandler.UpdateSchedule)
 			servers.DELETE("/:id/backup-schedule", backupScheduleHandler.DeleteSchedule)
+
+			// Bulk Operations (multi-server management)
+			bulk := servers.Group("/bulk")
+			{
+				bulk.POST("/start", bulkHandler.BulkStartServers)
+				bulk.POST("/stop", bulkHandler.BulkStopServers)
+				bulk.POST("/delete", bulkHandler.BulkDeleteServers)
+				bulk.POST("/backup", bulkHandler.BulkBackupServers)
+			}
 		}
 
 		// Admin endpoints
