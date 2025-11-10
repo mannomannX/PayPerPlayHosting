@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/config"
@@ -126,6 +127,9 @@ func (s *RecoveryService) attemptRecovery(server *models.MinecraftServer) {
 		logger.Info("Server recovered successfully", map[string]interface{}{
 			"server_id": server.ID,
 		})
+
+		// Publish event
+		events.PublishServerRestarted(server.ID, fmt.Sprintf("Auto-recovery from %s", crashCause))
 
 		// Broadcast recovery success via WebSocket
 		if s.wsHub != nil {
@@ -527,6 +531,13 @@ func (s *RecoveryService) CheckAndRecoverCrashedServers() error {
 				"exit_code":   inspect.State.ExitCode,
 				"exit_reason": inspect.State.Error,
 			})
+
+			// Publish event
+			errorMessage := inspect.State.Error
+			if errorMessage == "" {
+				errorMessage = "Container exited unexpectedly"
+			}
+			events.PublishServerCrashed(server.ID, inspect.State.ExitCode, errorMessage)
 
 			// Broadcast crash detection via WebSocket
 			if s.wsHub != nil {

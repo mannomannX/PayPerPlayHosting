@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/rcon"
 	"github.com/payperplay/hosting/internal/repository"
@@ -75,6 +76,9 @@ func (b *BackupService) CreateBackup(serverID string) (string, error) {
 
 	sizeGB := float64(stat.Size()) / 1024 / 1024 / 1024
 
+	// Publish event
+	events.PublishBackupCreated(serverID, backupFilename, stat.Size())
+
 	log.Printf("Backup created: %s (%.2f GB)", backupFilename, sizeGB)
 
 	return backupPath, nil
@@ -112,6 +116,9 @@ func (b *BackupService) RestoreBackup(serverID string, backupPath string) error 
 
 	// Remove temporary backup
 	os.RemoveAll(tempBackup)
+
+	// Publish event
+	events.PublishBackupRestored(serverID, filepath.Base(backupPath))
 
 	log.Printf("Backup restored successfully for server %s", serverID)
 

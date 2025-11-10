@@ -11,6 +11,7 @@ import (
 	"github.com/payperplay/hosting/internal/api"
 	"github.com/payperplay/hosting/internal/conductor"
 	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/middleware"
 	"github.com/payperplay/hosting/internal/monitoring"
 	"github.com/payperplay/hosting/internal/repository"
@@ -42,6 +43,12 @@ func main() {
 	}
 	logger.Info("Database initialized", nil)
 
+	// Initialize Event-Bus with database storage
+	db := repository.GetDB()
+	eventStorage := events.NewDatabaseEventStorage(db)
+	events.SetEventStorage(eventStorage)
+	logger.Info("Event-Bus initialized with database storage", nil)
+
 	// Initialize Docker service
 	dockerService, err := docker.NewDockerService(cfg)
 	if err != nil {
@@ -51,7 +58,6 @@ func main() {
 	logger.Info("Docker service initialized", nil)
 
 	// Initialize repositories
-	db := repository.GetDB()
 	serverRepo := repository.NewServerRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	configChangeRepo := repository.NewConfigChangeRepository(db)

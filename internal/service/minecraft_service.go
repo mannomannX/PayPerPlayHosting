@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/config"
@@ -161,6 +162,9 @@ func (s *MinecraftService) CreateServer(
 		}
 	}
 
+	// Publish event
+	events.PublishServerCreated(server.ID, server.OwnerID, string(server.ServerType))
+
 	log.Printf("Created server %s (%s) on port %d", serverID, name, port)
 	return server, nil
 }
@@ -297,6 +301,9 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		})
 	}
 
+	// Publish event
+	events.PublishServerStarted(server.ID, server.OwnerID)
+
 	log.Printf("Started server %s", serverID)
 	return nil
 }
@@ -370,6 +377,9 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		s.wsHub.Broadcast("server_stopped", eventData)
 	}
 
+	// Publish event
+	events.PublishServerStopped(server.ID, reason)
+
 	log.Printf("Stopped server %s (reason: %s)", serverID, reason)
 	return nil
 }
@@ -423,6 +433,9 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 		log.Printf("ERROR: failed to delete server from database: %v", err)
 		return fmt.Errorf("failed to delete server: %w", err)
 	}
+
+	// Publish event
+	events.PublishServerDeleted(server.ID, server.OwnerID)
 
 	log.Printf("Successfully deleted server %s", serverID)
 	return nil
