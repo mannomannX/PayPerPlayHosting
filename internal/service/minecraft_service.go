@@ -54,6 +54,10 @@ type ConductorInterface interface {
 	// ReleaseStartSlot removes a "starting" reservation if start fails
 	ReleaseStartSlot(serverID string)
 
+	// UpdateContainerStatus updates the status of a container in the registry
+	// Used to transition from "starting" to "running" after server is ready
+	UpdateContainerStatus(serverID, status string)
+
 	// AtomicAllocateRAM atomically reserves RAM for a server
 	// Returns true if allocation succeeded, false if insufficient capacity
 	// THIS IS THE SAFE METHOD - prevents race conditions!
@@ -415,6 +419,15 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	server.LifecyclePhase = models.PhaseActive // Mark as active when running
 	if err := s.repo.Update(server); err != nil {
 		return err
+	}
+
+	// CPU-GUARD: Update ContainerRegistry status from "starting" to "running"
+	// This releases the CPU-Guard and allows queued servers to start
+	if s.conductor != nil {
+		s.conductor.UpdateContainerStatus(server.ID, "running")
+
+		// Trigger queue processing - now that this server is running, queued servers can start
+		go s.conductor.ProcessStartQueue()
 	}
 
 	// Broadcast WebSocket event

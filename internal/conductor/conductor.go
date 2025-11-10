@@ -347,6 +347,26 @@ func (c *Conductor) ReleaseStartSlot(serverID string) {
 	})
 }
 
+// UpdateContainerStatus updates the status of a container in the registry
+// Used to transition from "starting" to "running" after server is ready
+// This releases the CPU-Guard and allows queued servers to start
+func (c *Conductor) UpdateContainerStatus(serverID, status string) {
+	c.ContainerRegistry.mu.Lock()
+	defer c.ContainerRegistry.mu.Unlock()
+
+	if container, exists := c.ContainerRegistry.containers[serverID]; exists {
+		oldStatus := container.Status
+		container.Status = status
+		container.LastSeenAt = time.Now()
+
+		logger.Info("CPU-GUARD: Container status updated", map[string]interface{}{
+			"server_id":  serverID,
+			"old_status": oldStatus,
+			"new_status": status,
+		})
+	}
+}
+
 // AtomicAllocateRAM atomically reserves RAM for a server
 // Returns true if allocation succeeded, false if insufficient capacity
 // THIS IS THE SAFE METHOD - prevents race conditions!
