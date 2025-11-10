@@ -53,6 +53,15 @@ type Config struct {
 	InfluxDBToken  string
 	InfluxDBOrg    string
 	InfluxDBBucket string
+
+	// B5 Auto-Scaling (Hetzner Cloud)
+	HetznerCloudToken       string
+	HetznerSSHKeyName       string
+	ScalingEnabled          bool
+	ScalingCheckInterval    string
+	ScalingScaleUpThreshold float64
+	ScalingScaleDownThreshold float64
+	ScalingMaxCloudNodes    int
 }
 
 var AppConfig *Config
@@ -92,6 +101,15 @@ func Load() *Config {
 		InfluxDBToken:      getEnv("INFLUXDB_TOKEN", ""),
 		InfluxDBOrg:        getEnv("INFLUXDB_ORG", "payperplay"),
 		InfluxDBBucket:     getEnv("INFLUXDB_BUCKET", "events"),
+
+		// B5 Auto-Scaling
+		HetznerCloudToken:       getEnv("HETZNER_CLOUD_TOKEN", ""),
+		HetznerSSHKeyName:       getEnv("HETZNER_SSH_KEY_NAME", "payperplay-main"),
+		ScalingEnabled:          getEnvBool("SCALING_ENABLED", false),
+		ScalingCheckInterval:    getEnv("SCALING_CHECK_INTERVAL", "2m"),
+		ScalingScaleUpThreshold: getEnvFloat("SCALING_SCALE_UP_THRESHOLD", 85.0),
+		ScalingScaleDownThreshold: getEnvFloat("SCALING_SCALE_DOWN_THRESHOLD", 30.0),
+		ScalingMaxCloudNodes:    getEnvInt("SCALING_MAX_CLOUD_NODES", 10),
 	}
 
 	AppConfig = config

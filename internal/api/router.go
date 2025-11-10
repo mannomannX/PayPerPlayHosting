@@ -32,6 +32,7 @@ func SetupRouter(
 	billingHandler *BillingHandler,
 	bulkHandler *BulkHandler,
 	marketplaceHandler *MarketplaceHandler,
+	scalingHandler *ScalingHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -298,6 +299,15 @@ func SetupRouter(
 		// Admin marketplace management
 		admin.POST("/marketplace/sync", marketplaceHandler.SyncMarketplace)
 		admin.POST("/marketplace/plugins/:slug/sync", marketplaceHandler.SyncPlugin)
+
+		// Scaling API (B5 Auto-Scaling) - Admin only
+		scaling := api.Group("/scaling")
+		{
+			scaling.GET("/status", scalingHandler.GetScalingStatus)
+			scaling.POST("/enable", scalingHandler.EnableScaling)
+			scaling.POST("/disable", scalingHandler.DisableScaling)
+			scaling.GET("/history", scalingHandler.GetScalingHistory)
+		}
 	}
 
 	// Internal API (for Velocity plugin - NO AUTH required, network isolation)

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/payperplay/hosting/internal/api"
+	"github.com/payperplay/hosting/internal/cloud"
 	"github.com/payperplay/hosting/internal/conductor"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
@@ -211,9 +212,22 @@ func main() {
 
 	// Initialize Conductor Core for fleet orchestration
 	cond := conductor.NewConductor(60 * time.Second) // Health check every 60 seconds
+
+	// Initialize Scaling Engine (B5) if Hetzner Cloud token is configured
+	if cfg.HetznerCloudToken != "" {
+		hetznerProvider := cloud.NewHetznerProvider(cfg.HetznerCloudToken)
+		cond.InitializeScaling(hetznerProvider, cfg.HetznerSSHKeyName)
+		logger.Info("Scaling engine initialized", map[string]interface{}{
+			"ssh_key": cfg.HetznerSSHKeyName,
+			"enabled": cfg.ScalingEnabled,
+		})
+	} else {
+		logger.Warn("Hetzner Cloud token not configured, scaling disabled", nil)
+	}
+
 	cond.Start()
 	defer cond.Stop()
-	logger.Info("Conductor Core initialized", nil)
+	logger.Info("Conductor Core started", nil)
 
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)
@@ -287,8 +301,11 @@ func main() {
 	// Bulk operations handler for multi-server management
 	bulkHandler := api.NewBulkHandler(mcService, backupService)
 
+	// Scaling handler for auto-scaling (B5)
+	scalingHandler := api.NewScalingHandler(cond)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, cfg)
 
 	// Graceful shutdown
 	go func() {
