@@ -6,6 +6,7 @@ import (
 
 	"github.com/payperplay/hosting/internal/cloud"
 	"github.com/payperplay/hosting/internal/events"
+	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -91,6 +92,7 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	time.Sleep(2 * time.Minute) // Cloud-Init typically takes 1-2 minutes
 
 	// Create Node object
+	cfg := config.AppConfig
 	node := &Node{
 		ID:               server.ID,
 		Hostname:         server.Name,
@@ -112,15 +114,20 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		HourlyCostEUR: server.HourlyCostEUR,
 	}
 
+	// Calculate intelligent system reserve for cloud node (3-tier strategy)
+	node.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
+
 	// Register node in NodeRegistry
 	p.nodeRegistry.RegisterNode(node)
 
-	logger.Info("Node provisioned successfully", map[string]interface{}{
-		"node_id":   node.ID,
-		"ip":        node.IPAddress,
-		"ram_mb":    node.TotalRAMMB,
-		"cpu_cores": node.TotalCPUCores,
-		"cost_eur":  node.HourlyCostEUR,
+	logger.Info("Cloud node provisioned with intelligent system reserve", map[string]interface{}{
+		"node_id":            node.ID,
+		"ip":                 node.IPAddress,
+		"total_ram_mb":       node.TotalRAMMB,
+		"system_reserved_mb": node.SystemReservedRAMMB,
+		"usable_ram_mb":      node.UsableRAMMB(),
+		"cpu_cores":          node.TotalCPUCores,
+		"cost_eur_hr":        node.HourlyCostEUR,
 	})
 
 	// Publish event

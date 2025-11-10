@@ -60,18 +60,21 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	// Calculate current capacity utilization
-	if ctx.FleetStats.TotalRAMMB == 0 {
+	// Calculate current capacity utilization (based on USABLE RAM, not total)
+	// This respects system reserve and only considers RAM available for containers
+	if ctx.FleetStats.UsableRAMMB == 0 {
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
+	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
 
 	logger.Debug("ReactivePolicy: Capacity check", map[string]interface{}{
-		"capacity_percent":    capacityPercent,
-		"scale_up_threshold":  p.ScaleUpThreshold,
-		"allocated_ram_mb":    ctx.FleetStats.AllocatedRAMMB,
-		"total_ram_mb":        ctx.FleetStats.TotalRAMMB,
+		"capacity_percent":      capacityPercent,
+		"scale_up_threshold":    p.ScaleUpThreshold,
+		"allocated_ram_mb":      ctx.FleetStats.AllocatedRAMMB,
+		"usable_ram_mb":         ctx.FleetStats.UsableRAMMB,
+		"system_reserved_mb":    ctx.FleetStats.SystemReservedRAMMB,
+		"total_ram_mb":          ctx.FleetStats.TotalRAMMB,
 	})
 
 	// Check if we need to scale up
@@ -115,16 +118,18 @@ func (p *ReactivePolicy) ShouldScaleDown(ctx ScalingContext) (bool, ScaleRecomme
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	// Calculate current capacity utilization
-	if ctx.FleetStats.TotalRAMMB == 0 {
+	// Calculate current capacity utilization (based on USABLE RAM, not total)
+	if ctx.FleetStats.UsableRAMMB == 0 {
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
+	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
 
 	logger.Debug("ReactivePolicy: Scale down check", map[string]interface{}{
 		"capacity_percent":      capacityPercent,
 		"scale_down_threshold":  p.ScaleDownThreshold,
+		"usable_ram_mb":         ctx.FleetStats.UsableRAMMB,
+		"allocated_ram_mb":      ctx.FleetStats.AllocatedRAMMB,
 		"cloud_nodes":           len(ctx.CloudNodes),
 	})
 

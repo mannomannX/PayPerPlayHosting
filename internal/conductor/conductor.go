@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/payperplay/hosting/internal/cloud"
+	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -86,6 +87,8 @@ func (c *Conductor) Stop() {
 func (c *Conductor) bootstrapLocalNode() {
 	// TODO: Auto-detect system resources using Docker API or /proc/meminfo
 	// For now, using a conservative estimate based on actual system capacity
+	cfg := config.AppConfig
+
 	localNode := &Node{
 		ID:               "local-node",
 		Hostname:         "localhost",
@@ -101,12 +104,18 @@ func (c *Conductor) bootstrapLocalNode() {
 		SSHUser:          "root",
 	}
 
+	// Calculate intelligent system reserve (3-tier strategy)
+	localNode.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
+
 	c.NodeRegistry.RegisterNode(localNode)
 
-	logger.Info("Local node registered", map[string]interface{}{
-		"node_id":       localNode.ID,
-		"total_ram_mb":  localNode.TotalRAMMB,
-		"total_cpu":     localNode.TotalCPUCores,
+	logger.Info("Local node registered with intelligent system reserve", map[string]interface{}{
+		"node_id":              localNode.ID,
+		"total_ram_mb":         localNode.TotalRAMMB,
+		"system_reserved_mb":   localNode.SystemReservedRAMMB,
+		"usable_ram_mb":        localNode.UsableRAMMB(),
+		"total_cpu":            localNode.TotalCPUCores,
+		"reservation_strategy": "3-tier intelligent",
 	})
 }
 

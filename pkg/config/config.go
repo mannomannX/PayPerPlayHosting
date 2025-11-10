@@ -55,13 +55,18 @@ type Config struct {
 	InfluxDBBucket string
 
 	// B5 Auto-Scaling (Hetzner Cloud)
-	HetznerCloudToken       string
-	HetznerSSHKeyName       string
-	ScalingEnabled          bool
-	ScalingCheckInterval    string
-	ScalingScaleUpThreshold float64
+	HetznerCloudToken         string
+	HetznerSSHKeyName         string
+	ScalingEnabled            bool
+	ScalingCheckInterval      string
+	ScalingScaleUpThreshold   float64
 	ScalingScaleDownThreshold float64
-	ScalingMaxCloudNodes    int
+	ScalingMaxCloudNodes      int
+
+	// System Resource Reservation (prevents OOM for system processes)
+	SystemReservedRAMMB      int     // Base RAM reserved for system (API, Postgres, Docker, OS)
+	SystemReservedCPUCores   float64 // CPU cores reserved for system
+	SystemReservedRAMPercent float64 // For cloud nodes: percentage of RAM to reserve (minimum)
 }
 
 var AppConfig *Config
@@ -103,13 +108,18 @@ func Load() *Config {
 		InfluxDBBucket:     getEnv("INFLUXDB_BUCKET", "events"),
 
 		// B5 Auto-Scaling
-		HetznerCloudToken:       getEnv("HETZNER_CLOUD_TOKEN", ""),
-		HetznerSSHKeyName:       getEnv("HETZNER_SSH_KEY_NAME", "payperplay-main"),
-		ScalingEnabled:          getEnvBool("SCALING_ENABLED", false),
-		ScalingCheckInterval:    getEnv("SCALING_CHECK_INTERVAL", "2m"),
-		ScalingScaleUpThreshold: getEnvFloat("SCALING_SCALE_UP_THRESHOLD", 85.0),
+		HetznerCloudToken:         getEnv("HETZNER_CLOUD_TOKEN", ""),
+		HetznerSSHKeyName:         getEnv("HETZNER_SSH_KEY_NAME", "payperplay-main"),
+		ScalingEnabled:            getEnvBool("SCALING_ENABLED", false),
+		ScalingCheckInterval:      getEnv("SCALING_CHECK_INTERVAL", "2m"),
+		ScalingScaleUpThreshold:   getEnvFloat("SCALING_SCALE_UP_THRESHOLD", 85.0),
 		ScalingScaleDownThreshold: getEnvFloat("SCALING_SCALE_DOWN_THRESHOLD", 30.0),
-		ScalingMaxCloudNodes:    getEnvInt("SCALING_MAX_CLOUD_NODES", 10),
+		ScalingMaxCloudNodes:      getEnvInt("SCALING_MAX_CLOUD_NODES", 10),
+
+		// System Resource Reservation (3-tier intelligent reservation)
+		SystemReservedRAMMB:      getEnvInt("SYSTEM_RESERVED_RAM_MB", 1000),       // 1GB base reserve
+		SystemReservedCPUCores:   getEnvFloat("SYSTEM_RESERVED_CPU_CORES", 0.5),   // 0.5 cores for system
+		SystemReservedRAMPercent: getEnvFloat("SYSTEM_RESERVED_RAM_PERCENT", 15.0), // 15% for cloud nodes
 	}
 
 	AppConfig = config

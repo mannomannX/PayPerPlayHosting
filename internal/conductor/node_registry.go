@@ -124,6 +124,7 @@ func (r *NodeRegistry) GetFleetStats() FleetStats {
 	for _, node := range r.nodes {
 		stats.TotalNodes++
 		stats.TotalRAMMB += node.TotalRAMMB
+		stats.SystemReservedRAMMB += node.SystemReservedRAMMB
 		stats.TotalCPUCores += node.TotalCPUCores
 		stats.AllocatedRAMMB += node.AllocatedRAMMB
 		stats.TotalContainers += node.ContainerCount
@@ -141,8 +142,18 @@ func (r *NodeRegistry) GetFleetStats() FleetStats {
 		}
 	}
 
-	if stats.TotalRAMMB > 0 {
-		stats.RAMUtilizationPercent = (float64(stats.AllocatedRAMMB) / float64(stats.TotalRAMMB)) * 100.0
+	// Calculate usable RAM (Total - System Reserved)
+	stats.UsableRAMMB = stats.TotalRAMMB - stats.SystemReservedRAMMB
+
+	// Calculate available RAM (Usable - Allocated)
+	stats.AvailableRAMMB = stats.UsableRAMMB - stats.AllocatedRAMMB
+	if stats.AvailableRAMMB < 0 {
+		stats.AvailableRAMMB = 0
+	}
+
+	// Calculate utilization based on USABLE RAM (not total)
+	if stats.UsableRAMMB > 0 {
+		stats.RAMUtilizationPercent = (float64(stats.AllocatedRAMMB) / float64(stats.UsableRAMMB)) * 100.0
 	}
 
 	return stats
@@ -155,9 +166,12 @@ type FleetStats struct {
 	UnhealthyNodes        int     `json:"unhealthy_nodes"`
 	DedicatedNodes        int     `json:"dedicated_nodes"`
 	CloudNodes            int     `json:"cloud_nodes"`
-	TotalRAMMB            int     `json:"total_ram_mb"`
-	AllocatedRAMMB        int     `json:"allocated_ram_mb"`
-	RAMUtilizationPercent float64 `json:"ram_utilization_percent"`
+	TotalRAMMB            int     `json:"total_ram_mb"`             // Total physical RAM across all nodes
+	SystemReservedRAMMB   int     `json:"system_reserved_ram_mb"`   // RAM reserved for system processes
+	UsableRAMMB           int     `json:"usable_ram_mb"`            // Total - SystemReserved (capacity for containers)
+	AllocatedRAMMB        int     `json:"allocated_ram_mb"`         // RAM currently allocated to containers
+	AvailableRAMMB        int     `json:"available_ram_mb"`         // Usable - Allocated (free for new containers)
+	RAMUtilizationPercent float64 `json:"ram_utilization_percent"`  // Allocated / Usable * 100
 	TotalCPUCores         int     `json:"total_cpu_cores"`
 	TotalContainers       int     `json:"total_containers"`
 }
