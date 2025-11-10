@@ -27,13 +27,14 @@ func NewScalingEngine(
 	cloudProvider cloud.CloudProvider,
 	vmProvisioner *VMProvisioner,
 	nodeRegistry *NodeRegistry,
+	enabled bool,
 ) *ScalingEngine {
 	engine := &ScalingEngine{
 		policies:      []ScalingPolicy{},
 		cloudProvider: cloudProvider,
 		vmProvisioner: vmProvisioner,
 		nodeRegistry:  nodeRegistry,
-		enabled:       true,
+		enabled:       enabled,
 		checkInterval: 2 * time.Minute, // Check every 2 minutes
 		stopChan:      make(chan struct{}),
 	}

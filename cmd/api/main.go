@@ -216,7 +216,7 @@ func main() {
 	// Initialize Scaling Engine (B5) if Hetzner Cloud token is configured
 	if cfg.HetznerCloudToken != "" {
 		hetznerProvider := cloud.NewHetznerProvider(cfg.HetznerCloudToken)
-		cond.InitializeScaling(hetznerProvider, cfg.HetznerSSHKeyName)
+		cond.InitializeScaling(hetznerProvider, cfg.HetznerSSHKeyName, cfg.ScalingEnabled)
 		logger.Info("Scaling engine initialized", map[string]interface{}{
 			"ssh_key": cfg.HetznerSSHKeyName,
 			"enabled": cfg.ScalingEnabled,

@@ -31,17 +31,18 @@ func NewConductor(healthCheckInterval time.Duration) *Conductor {
 
 // InitializeScaling initializes the scaling engine with a cloud provider
 // This is called after conductor creation once cloud credentials are available
-func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyName string) {
+func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyName string, enabled bool) {
 	if c.ScalingEngine != nil {
 		logger.Warn("Scaling engine already initialized", nil)
 		return
 	}
 
 	vmProvisioner := NewVMProvisioner(cloudProvider, c.NodeRegistry, sshKeyName)
-	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry)
+	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, enabled)
 
 	logger.Info("Scaling engine initialized", map[string]interface{}{
 		"ssh_key": sshKeyName,
+		"enabled": enabled,
 	})
 }
 
