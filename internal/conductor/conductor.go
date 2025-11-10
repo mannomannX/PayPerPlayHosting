@@ -84,13 +84,15 @@ func (c *Conductor) Stop() {
 
 // bootstrapLocalNode registers the local Docker host as a node
 func (c *Conductor) bootstrapLocalNode() {
+	// TODO: Auto-detect system resources using Docker API or /proc/meminfo
+	// For now, using a conservative estimate based on actual system capacity
 	localNode := &Node{
 		ID:               "local-node",
 		Hostname:         "localhost",
 		IPAddress:        "127.0.0.1",
 		Type:             "dedicated",
-		TotalRAMMB:       65536, // 64GB - adjust based on actual server
-		TotalCPUCores:    16,    // Adjust based on actual server
+		TotalRAMMB:       3500, // ~3.5GB - conservative estimate for 3.7GB system
+		TotalCPUCores:    2,    // Adjust based on actual server
 		Status:           NodeStatusUnknown,
 		LastHealthCheck:  time.Now(),
 		ContainerCount:   0,
