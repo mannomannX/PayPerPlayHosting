@@ -447,6 +447,208 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	return nil
 }
 
+// StartServerFromQueue starts a server that was dequeued from the start queue
+// This method BYPASSES queue checks since capacity was already verified during dequeue
+// However, it STILL maintains CPU-Guard and atomic RAM allocation for race condition protection
+func (s *MinecraftService) StartServerFromQueue(serverID string) error {
+	server, err := s.repo.FindByID(serverID)
+	if err != nil {
+		return fmt.Errorf("server not found: %w", err)
+	}
+
+	if server.Status == models.StatusRunning {
+		return fmt.Errorf("server already running")
+	}
+
+	// QUEUE-BYPASS: Skip capacity and queue checks - we know capacity was available when dequeued
+	// However, we STILL need CPU-Guard slot reservation and RAM allocation for thread safety!
+
+	ramAllocated := false
+	startSlotReserved := false
+	if s.conductor != nil {
+		// ATOMIC START SLOT RESERVATION: Prevent multiple parallel starts
+		if !s.conductor.AtomicReserveStartSlot(server.ID, server.Name, server.RAMMb) {
+			// Another server is starting - this shouldn't happen but handle it
+			log.Printf("CPU_GUARD: Start slot taken for queued server %s - re-queuing", server.ID)
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+			return fmt.Errorf("start slot unavailable - server re-queued")
+		}
+		startSlotReserved = true
+
+		// ATOMIC RAM ALLOCATION: Even though capacity was checked during dequeue,
+		// we still need to atomically allocate to prevent race conditions
+		if !s.conductor.AtomicAllocateRAM(server.RAMMb) {
+			// Allocation failed - insufficient capacity (capacity changed since dequeue)
+			s.conductor.ReleaseStartSlot(server.ID)
+			startSlotReserved = false
+
+			// Re-queue for retry
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+			log.Printf("QUEUE_START: RAM allocation failed for queued server %s (%d MB) - re-queued", server.ID, server.RAMMb)
+
+			return fmt.Errorf("insufficient capacity (changed since dequeue) - server re-queued")
+		}
+
+		ramAllocated = true
+		log.Printf("QUEUE_START: Starting queued server %s (%d MB RAM allocated)", server.ID, server.RAMMb)
+	}
+
+	// From here, the logic is IDENTICAL to StartServer (lines 285-447)
+
+	// Wake from sleep if necessary
+	if server.LifecyclePhase == models.PhaseSleep || server.Status == models.StatusSleeping {
+		log.Printf("Waking server %s from sleep phase", serverID)
+		server.LifecyclePhase = models.PhaseActive
+		server.Status = models.StatusStopped
+		err := s.repo.Update(server)
+		if err != nil {
+			return fmt.Errorf("failed to wake from sleep: %w", err)
+		}
+	}
+
+	// CRITICAL: Remove any existing container with the same name before creating a new one
+	containerName := fmt.Sprintf("mc-%s", server.ID)
+	log.Printf("Checking for existing container %s before start", containerName)
+	if err := s.dockerService.RemoveContainerByName(containerName); err != nil {
+		log.Printf("Warning: failed to remove old container %s: %v", containerName, err)
+	}
+
+	// Create container
+	if server.ContainerID == "" || server.ContainerID != "" {
+		containerID, err := s.dockerService.CreateContainer(
+			server.ID,
+			string(server.ServerType),
+			server.MinecraftVersion,
+			server.RAMMb,
+			server.Port,
+			server.MaxPlayers,
+			server.Gamemode,
+			server.Difficulty,
+			server.PVP,
+			server.EnableCommandBlock,
+			server.LevelSeed,
+			server.ViewDistance,
+			server.SimulationDistance,
+			server.AllowNether,
+			server.AllowEnd,
+			server.GenerateStructures,
+			server.WorldType,
+			server.BonusChest,
+			server.MaxWorldSize,
+			server.SpawnProtection,
+			server.SpawnAnimals,
+			server.SpawnMonsters,
+			server.SpawnNPCs,
+			server.MaxTickTime,
+			server.NetworkCompressionThreshold,
+			server.MOTD,
+		)
+		if err != nil {
+			// ROLLBACK
+			if s.conductor != nil {
+				if ramAllocated {
+					s.conductor.ReleaseRAM(server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after container creation failure", server.RAMMb, server.ID)
+				}
+				if startSlotReserved {
+					s.conductor.ReleaseStartSlot(server.ID)
+					log.Printf("ROLLBACK: Released start slot for queued server %s after container creation failure", server.ID)
+				}
+			}
+			return fmt.Errorf("failed to create container: %w", err)
+		}
+
+		server.ContainerID = containerID
+		if err := s.repo.Update(server); err != nil {
+			// ROLLBACK
+			if s.conductor != nil {
+				if ramAllocated {
+					s.conductor.ReleaseRAM(server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after database update failure", server.RAMMb, server.ID)
+				}
+				if startSlotReserved {
+					s.conductor.ReleaseStartSlot(server.ID)
+					log.Printf("ROLLBACK: Released start slot for queued server %s after database update failure", server.ID)
+				}
+			}
+			return err
+		}
+	}
+
+	// Start container
+	server.Status = models.StatusStarting
+	if err := s.repo.Update(server); err != nil {
+		// ROLLBACK
+		if s.conductor != nil {
+			if ramAllocated {
+				s.conductor.ReleaseRAM(server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after status update failure", server.RAMMb, server.ID)
+			}
+			if startSlotReserved {
+				s.conductor.ReleaseStartSlot(server.ID)
+				log.Printf("ROLLBACK: Released start slot for queued server %s after status update failure", server.ID)
+			}
+		}
+		return err
+	}
+
+	if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
+		server.Status = models.StatusError
+		s.repo.Update(server)
+		// ROLLBACK
+		if s.conductor != nil {
+			if ramAllocated {
+				s.conductor.ReleaseRAM(server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after container start failure", server.RAMMb, server.ID)
+			}
+			if startSlotReserved {
+				s.conductor.ReleaseStartSlot(server.ID)
+				log.Printf("ROLLBACK: Released start slot for queued server %s after container start failure", server.ID)
+			}
+		}
+		return fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Wait for Minecraft server to be ready
+	log.Printf("Waiting for Minecraft server %s to be ready...", server.ID)
+	if err := s.dockerService.WaitForServerReady(server.ContainerID, 60); err != nil {
+		log.Printf("Warning: Minecraft server %s may not be fully ready: %v", server.ID, err)
+	}
+
+	// Update status
+	now := time.Now()
+	server.Status = models.StatusRunning
+	server.LastStartedAt = &now
+	server.LifecyclePhase = models.PhaseActive
+	if err := s.repo.Update(server); err != nil {
+		return err
+	}
+
+	// CPU-GUARD: Update ContainerRegistry status from "starting" to "running"
+	if s.conductor != nil {
+		s.conductor.UpdateContainerStatus(server.ID, "running")
+
+		// Trigger queue processing - queued servers can now start
+		go s.conductor.ProcessStartQueue()
+	}
+
+	// Broadcast WebSocket event
+	if s.wsHub != nil {
+		s.wsHub.Broadcast("server_started", map[string]interface{}{
+			"server_id": server.ID,
+			"name":      server.Name,
+			"status":    server.Status,
+			"port":      server.Port,
+		})
+	}
+
+	// Publish event
+	events.PublishServerStarted(server.ID, server.OwnerID)
+
+	log.Printf("QUEUE_START: Successfully started queued server %s", serverID)
+	return nil
+}
+
 // StopServer stops a Minecraft server
 func (s *MinecraftService) StopServer(serverID string, reason string) error {
 	server, err := s.repo.FindByID(serverID)

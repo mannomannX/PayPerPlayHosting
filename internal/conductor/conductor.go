@@ -10,6 +10,13 @@ import (
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
+// ServerStarter interface allows Conductor to start servers without direct coupling to MinecraftService
+// Future: Can be implemented by LocalStarter, RemoteNodeStarter (B5), etc.
+type ServerStarter interface {
+	// StartServerFromQueue starts a server that was dequeued (bypasses queue checks)
+	StartServerFromQueue(serverID string) error
+}
+
 // Conductor is the central fleet orchestrator
 type Conductor struct {
 	NodeRegistry      *NodeRegistry
@@ -18,6 +25,7 @@ type Conductor struct {
 	ScalingEngine     *ScalingEngine // B5 - Auto-Scaling
 	StartQueue        *StartQueue    // Queue for servers waiting for capacity
 	StartedAt         time.Time      // When Conductor started (for startup delay)
+	serverStarter     ServerStarter  // Interface to start servers (injected)
 }
 
 // NewConductor creates a new conductor instance
@@ -406,6 +414,11 @@ func (c *Conductor) IsServerQueued(serverID string) bool {
 	return c.StartQueue.GetPosition(serverID) > 0
 }
 
+// SetServerStarter injects the ServerStarter implementation (typically MinecraftService)
+func (c *Conductor) SetServerStarter(starter ServerStarter) {
+	c.serverStarter = starter
+}
+
 // RemoveFromQueue removes a server from the start queue
 func (c *Conductor) RemoveFromQueue(serverID string) {
 	if c.StartQueue.Remove(serverID) {
@@ -469,8 +482,26 @@ func (c *Conductor) ProcessStartQueue() {
 			"wait_time":     time.Since(server.QueuedAt).String(),
 		})
 
-		// Note: The actual server start will be triggered by the MinecraftService
-		// after checking the queue status. We don't start it here to avoid tight coupling.
+		// Start the server asynchronously
+		if c.serverStarter != nil {
+			go func(serverID string) {
+				logger.Info("Starting queued server", map[string]interface{}{
+					"server_id": serverID,
+				})
+
+				if err := c.serverStarter.StartServerFromQueue(serverID); err != nil {
+					logger.Error("Failed to start queued server", err, map[string]interface{}{
+						"server_id": serverID,
+					})
+					// Re-queue the server for retry
+					c.StartQueue.Enqueue(server)
+				}
+			}(server.ServerID)
+		} else {
+			logger.Warn("ServerStarter not configured, cannot start queued server", map[string]interface{}{
+				"server_id": server.ServerID,
+			})
+		}
 	}
 }
 

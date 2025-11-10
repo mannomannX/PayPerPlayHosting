@@ -229,6 +229,10 @@ func main() {
 	mcService.SetConductor(cond)
 	logger.Info("Conductor linked to MinecraftService for resource guard", nil)
 
+	// Link MinecraftService to Conductor as ServerStarter for queue processing
+	cond.SetServerStarter(mcService)
+	logger.Info("MinecraftService linked to Conductor as ServerStarter for queue processing", nil)
+
 	cond.Start()
 	defer cond.Stop()
 	logger.Info("Conductor Core started", nil)
