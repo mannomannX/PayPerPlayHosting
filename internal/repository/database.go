@@ -58,6 +58,8 @@ func InitDB(cfg *config.Config) error {
 		&models.ServerBackupSchedule{},
 		&models.BillingEvent{},
 		&models.UsageSession{},
+		&models.TrustedDevice{},
+		&models.SecurityEvent{},
 	)
 	if err != nil {
 		return err
