@@ -62,8 +62,8 @@ func InitDB(cfg *config.Config) error {
 		&models.SecurityEvent{},
 		&models.OAuthAccount{},
 		&models.OAuthState{},
-		&models.SystemEvent{},
 		// Temporarily commented out to test
+		// &models.SystemEvent{},
 		// &models.Plugin{},
 		// &models.PluginVersion{},
 		// &models.InstalledPlugin{},
