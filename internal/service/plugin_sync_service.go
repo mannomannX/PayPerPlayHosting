@@ -142,7 +142,7 @@ func (s *PluginSyncService) syncModrinthPlugin(projectID string) error {
 		Category:      s.mapModrinthCategory(modProject.Categories),
 		IconURL:       modProject.IconURL,
 		Source:        models.SourceModrinth,
-		ExternalID:    modProject.ProjectID,
+		ExternalID:    projectID, // Use the projectID parameter, not modProject.ProjectID
 		DownloadCount: modProject.Downloads,
 		Rating:        0, // Modrinth doesn't provide ratings in this endpoint
 		LastSynced:    time.Now(),
