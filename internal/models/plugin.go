@@ -86,7 +86,7 @@ type PluginVersion struct {
 
 	// Download info (cached from external source)
 	DownloadURL string `gorm:"size:500"`
-	FileHash    string `gorm:"size:64"` // SHA256 for integrity
+	FileHash    string `gorm:"size:128"` // SHA512 hash (128 hex characters)
 	FileSize    int64
 
 	// Metadata
