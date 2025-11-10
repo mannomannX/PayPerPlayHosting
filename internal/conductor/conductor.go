@@ -1,6 +1,7 @@
 package conductor
 
 import (
+	"fmt"
 	"reflect"
 	"time"
 
@@ -16,6 +17,7 @@ type Conductor struct {
 	HealthChecker     *HealthChecker
 	ScalingEngine     *ScalingEngine // B5 - Auto-Scaling
 	StartQueue        *StartQueue    // Queue for servers waiting for capacity
+	StartedAt         time.Time      // When Conductor started (for startup delay)
 }
 
 // NewConductor creates a new conductor instance
@@ -30,6 +32,7 @@ func NewConductor(healthCheckInterval time.Duration) *Conductor {
 		HealthChecker:     healthChecker,
 		ScalingEngine:     nil, // Initialized later with cloud provider
 		StartQueue:        NewStartQueue(),
+		StartedAt:         time.Now(), // Track startup time for delay
 	}
 }
 
@@ -268,6 +271,33 @@ func (c *Conductor) CheckCapacity(requiredRAMMB int) (bool, int) {
 	fleetStats := c.NodeRegistry.GetFleetStats()
 	hasCapacity := fleetStats.AvailableRAMMB >= requiredRAMMB
 	return hasCapacity, fleetStats.AvailableRAMMB
+}
+
+// CanStartServer checks if a server can start now (STARTUP-DELAY + CPU + RAM guard)
+// Returns (canStart bool, reason string)
+// STARTUP-DELAY: Prevents server starts for 5 minutes after API startup (allows CPU to settle)
+// CPU-GUARD: Prevents parallel server starts to avoid CPU overload
+func (c *Conductor) CanStartServer(ramMB int) (bool, string) {
+	// STARTUP-DELAY: Check if API has been running for at least 5 minutes
+	uptime := time.Since(c.StartedAt)
+	if uptime < 5*time.Minute {
+		remaining := 5*time.Minute - uptime
+		return false, fmt.Sprintf("API startup delay active (%d seconds remaining)", int(remaining.Seconds()))
+	}
+
+	// CPU-GUARD: Check if another server is already starting
+	startingCount := c.ContainerRegistry.GetStartingCount()
+	if startingCount > 0 {
+		return false, "another server is currently starting (CPU protection)"
+	}
+
+	// RAM-GUARD: Check if we have enough RAM capacity
+	fleetStats := c.NodeRegistry.GetFleetStats()
+	if fleetStats.AvailableRAMMB < ramMB {
+		return false, "insufficient RAM capacity"
+	}
+
+	return true, ""
 }
 
 // AtomicAllocateRAM atomically reserves RAM for a server

@@ -108,3 +108,18 @@ func (r *ContainerRegistry) GetNodeAllocation(nodeID string) (containerCount int
 	}
 	return
 }
+
+// GetStartingCount returns the number of containers currently in "starting" status
+// CPU-GUARD: Used to limit parallel server starts to prevent CPU overload
+func (r *ContainerRegistry) GetStartingCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for _, container := range r.containers {
+		if container.Status == "starting" {
+			count++
+		}
+	}
+	return count
+}

@@ -207,7 +207,7 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return fmt.Errorf("server already running")
 	}
 
-	// PRE-START RESOURCE GUARD: Atomically allocate RAM (prevents race conditions)
+	// PRE-START RESOURCE GUARD: CPU + RAM protection
 	// This is a CRITICAL FIX to prevent multiple parallel requests from overloading the system
 	ramAllocated := false
 	if s.conductor != nil {
@@ -216,6 +216,18 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			return fmt.Errorf("server is already queued for start (waiting for capacity)")
 		}
 
+		// CPU-GUARD: Check if we can start a server now (CPU + RAM checks)
+		canStart, reason := s.conductor.CanStartServer(server.RAMMb)
+		if !canStart {
+			// Cannot start now - add to queue
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+
+			log.Printf("CPU_GUARD: Cannot start server %s (%s) - Added to queue", server.ID, reason)
+
+			return fmt.Errorf("cannot start server (%s) - server queued for start, will auto-start when capacity available", reason)
+		}
+
+		// CPU/RAM checks passed - now atomically allocate RAM
 		// ATOMIC RAM ALLOCATION: Lock, check, and allocate in ONE operation
 		// This prevents race conditions where multiple threads check capacity simultaneously
 		if !s.conductor.AtomicAllocateRAM(server.RAMMb) {
