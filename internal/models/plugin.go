@@ -34,7 +34,6 @@ const (
 
 // Plugin represents a plugin available in the marketplace
 type Plugin struct {
-	gorm.Model
 	ID          string         `gorm:"primaryKey;size:64"`
 	Name        string         `gorm:"not null;size:255;index"`
 	Slug        string         `gorm:"not null;uniqueIndex;size:255"` // "worldedit"
@@ -52,6 +51,11 @@ type Plugin struct {
 	Rating        float64 `gorm:"default:0"`
 	LastSynced    time.Time
 
+	// Timestamps
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
+
 	// Relations
 	Versions []PluginVersion `gorm:"foreignKey:PluginID"`
 }
@@ -66,7 +70,6 @@ func (p *Plugin) BeforeCreate(tx *gorm.DB) error {
 
 // PluginVersion represents a specific version of a plugin
 type PluginVersion struct {
-	gorm.Model
 	ID       string `gorm:"primaryKey;size:64"`
 	PluginID string `gorm:"not null;index;size:64"`
 	Plugin   *Plugin
@@ -90,6 +93,11 @@ type PluginVersion struct {
 	Changelog   string `gorm:"type:text"`
 	ReleaseDate time.Time
 	IsStable    bool `gorm:"default:true"` // vs. beta/alpha
+
+	// Timestamps
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 // BeforeCreate hook to generate UUID
@@ -109,7 +117,6 @@ type Dependency struct {
 
 // InstalledPlugin represents a plugin installed on a specific server
 type InstalledPlugin struct {
-	gorm.Model
 	ID        string `gorm:"primaryKey;size:64"`
 	ServerID  string `gorm:"not null;index;size:64"`
 	PluginID  string `gorm:"not null;index;size:64"`
@@ -123,8 +130,11 @@ type InstalledPlugin struct {
 	AutoUpdate bool `gorm:"default:false"` // Auto-update to new compatible versions
 
 	// Timestamps
-	InstalledAt time.Time `gorm:"not null"`
+	InstalledAt time.Time      `gorm:"not null"`
 	LastUpdated time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	DeletedAt   gorm.DeletedAt `gorm:"index"`
 }
 
 // BeforeCreate hook to generate UUID and set timestamp
