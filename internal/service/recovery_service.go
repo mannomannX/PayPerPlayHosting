@@ -111,6 +111,9 @@ func (s *RecoveryService) attemptRecovery(server *models.MinecraftServer) {
 	// Apply appropriate recovery strategy
 	var recovered bool
 	switch crashCause {
+	case "system_oom":
+		// CRITICAL: System has insufficient memory - restart will NOT help
+		recovered = s.recoverFromSystemOOM(server)
 	case "version_mismatch":
 		recovered = s.recoverFromVersionMismatch(server)
 	case "config_corruption":
@@ -176,7 +179,16 @@ func (s *RecoveryService) analyzeCrashLogs(logs string) string {
 		return "config_corruption"
 	}
 
-	// Check for OOM (Out of Memory)
+	// Check for System OOM (insufficient memory - cannot allocate)
+	// This is FATAL and restart won't help
+	if strings.Contains(logsLower, "insufficient memory") ||
+		strings.Contains(logsLower, "cannot allocate memory") ||
+		strings.Contains(logsLower, "failed to map") ||
+		strings.Contains(logsLower, "error='not enough space'") {
+		return "system_oom"
+	}
+
+	// Check for Java OOM (heap exhausted - restart might help)
 	if strings.Contains(logsLower, "out of memory") ||
 		strings.Contains(logsLower, "java.lang.outofmemoryerror") {
 		return "oom"
@@ -341,8 +353,38 @@ func (s *RecoveryService) recoverFromVersionMismatch(server *models.MinecraftSer
 }
 
 // recoverFromOOM recovers a server from OOM
+// recoverFromSystemOOM handles system-level out of memory errors
+// These are FATAL - the host system has insufficient RAM and restart will NOT help
+func (s *RecoveryService) recoverFromSystemOOM(server *models.MinecraftServer) bool {
+	logger.Error("CRITICAL: System has insufficient memory to run server", fmt.Errorf("system oom"), map[string]interface{}{
+		"server_id":      server.ID,
+		"requested_ram":  server.RAMMb,
+		"error_type":     "SYSTEM_OOM",
+		"recovery_action": "NONE - Host system needs more RAM or fewer servers",
+	})
+
+	// DO NOT restart - this will cause an infinite loop
+	// Set server to error state permanently
+	server.Status = models.StatusError
+	s.serverRepo.Update(server)
+
+	// Publish critical event
+	events.PublishServerStopped(server.ID, "CRITICAL: System has insufficient memory. Cannot restart.")
+
+	// Alert via WebSocket
+	if s.wsHub != nil {
+		s.wsHub.Broadcast("server_critical_error", map[string]interface{}{
+			"server_id": server.ID,
+			"error":     "System has insufficient memory to run this server",
+			"action":    "Server stopped to prevent system instability",
+		})
+	}
+
+	return false // Recovery FAILED - server stays in error state
+}
+
 func (s *RecoveryService) recoverFromOOM(server *models.MinecraftServer) bool {
-	logger.Warn("Server crashed due to OOM - consider increasing RAM", map[string]interface{}{
+	logger.Warn("Server crashed due to Java OOM - consider increasing RAM", map[string]interface{}{
 		"server_id":   server.ID,
 		"current_ram": server.RAMMb,
 	})
