@@ -16,7 +16,7 @@ type SystemEvent struct {
 	Source    string         `gorm:"size:100" json:"source"`
 	ServerID  string         `gorm:"index;size:255" json:"server_id,omitempty"`
 	UserID    string         `gorm:"index;size:255" json:"user_id,omitempty"`
-	Data      datatypes.JSON `json:"data"`
+	Data      datatypes.JSON `gorm:"type:json" json:"data"`
 }
 
 // TableName overrides the table name
