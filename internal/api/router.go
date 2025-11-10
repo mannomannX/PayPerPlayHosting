@@ -31,6 +31,7 @@ func SetupRouter(
 	conductorHandler *ConductorHandler,
 	billingHandler *BillingHandler,
 	bulkHandler *BulkHandler,
+	marketplaceHandler *MarketplaceHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -239,6 +240,16 @@ func SetupRouter(
 			servers.PUT("/:id/backup-schedule", backupScheduleHandler.UpdateSchedule)
 			servers.DELETE("/:id/backup-schedule", backupScheduleHandler.DeleteSchedule)
 
+			// Plugin Marketplace (new marketplace system)
+			servers.GET("/:id/marketplace/plugins", marketplaceHandler.ListInstalledPlugins)
+			servers.POST("/:id/marketplace/plugins", marketplaceHandler.InstallPlugin)
+			servers.DELETE("/:id/marketplace/plugins/:plugin_id", marketplaceHandler.UninstallPlugin)
+			servers.GET("/:id/marketplace/updates", marketplaceHandler.CheckForUpdates)
+			servers.PUT("/:id/marketplace/plugins/:plugin_id", marketplaceHandler.UpdatePlugin)
+			servers.POST("/:id/marketplace/auto-update", marketplaceHandler.AutoUpdatePlugins)
+			servers.POST("/:id/marketplace/plugins/:plugin_id/toggle", marketplaceHandler.TogglePlugin)
+			servers.POST("/:id/marketplace/plugins/:plugin_id/auto-update", marketplaceHandler.ToggleAutoUpdate)
+
 			// Bulk Operations (multi-server management)
 			bulk := servers.Group("/bulk")
 			{
@@ -275,6 +286,18 @@ func SetupRouter(
 		{
 			billing.GET("/costs", billingHandler.GetOwnerCosts)
 		}
+
+		// Plugin Marketplace (browsing and discovery)
+		marketplace := api.Group("/marketplace")
+		{
+			marketplace.GET("/plugins", marketplaceHandler.ListMarketplacePlugins)
+			marketplace.GET("/search", marketplaceHandler.SearchMarketplace)
+			marketplace.GET("/plugins/:slug", marketplaceHandler.GetPluginDetails)
+		}
+
+		// Admin marketplace management
+		admin.POST("/marketplace/sync", marketplaceHandler.SyncMarketplace)
+		admin.POST("/marketplace/plugins/:slug/sync", marketplaceHandler.SyncPlugin)
 	}
 
 	// Internal API (for Velocity plugin - NO AUTH required, network isolation)

@@ -47,6 +47,12 @@ type Config struct {
 	Rate4GB  float64
 	Rate8GB  float64
 	Rate16GB float64
+
+	// InfluxDB (Time-Series Event Storage)
+	InfluxDBURL    string
+	InfluxDBToken  string
+	InfluxDBOrg    string
+	InfluxDBBucket string
 }
 
 var AppConfig *Config
@@ -82,6 +88,10 @@ func Load() *Config {
 		Rate4GB:            getEnvFloat("RATE_4GB", 0.20),
 		Rate8GB:            getEnvFloat("RATE_8GB", 0.40),
 		Rate16GB:           getEnvFloat("RATE_16GB", 0.80),
+		InfluxDBURL:        getEnv("INFLUXDB_URL", ""),
+		InfluxDBToken:      getEnv("INFLUXDB_TOKEN", ""),
+		InfluxDBOrg:        getEnv("INFLUXDB_ORG", "payperplay"),
+		InfluxDBBucket:     getEnv("INFLUXDB_BUCKET", "events"),
 	}
 
 	AppConfig = config

@@ -16,6 +16,7 @@ import (
 	"github.com/payperplay/hosting/internal/monitoring"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/internal/service"
+	"github.com/payperplay/hosting/internal/storage"
 	"github.com/payperplay/hosting/internal/velocity"
 	"github.com/payperplay/hosting/internal/websocket"
 	"github.com/payperplay/hosting/pkg/config"
@@ -43,11 +44,40 @@ func main() {
 	}
 	logger.Info("Database initialized", nil)
 
-	// Initialize Event-Bus with database storage
+	// Initialize Event-Bus with multi-storage (PostgreSQL + InfluxDB)
 	db := repository.GetDB()
-	eventStorage := events.NewDatabaseEventStorage(db)
+	dbStorage := events.NewDatabaseEventStorage(db)
+
+	// Try to initialize InfluxDB if configured
+	var eventStorage events.EventStorage = dbStorage
+	if cfg.InfluxDBURL != "" && cfg.InfluxDBToken != "" {
+		influxConfig := storage.InfluxDBConfig{
+			URL:    cfg.InfluxDBURL,
+			Token:  cfg.InfluxDBToken,
+			Org:    cfg.InfluxDBOrg,
+			Bucket: cfg.InfluxDBBucket,
+		}
+
+		influxClient, err := storage.NewInfluxDBClient(influxConfig)
+		if err != nil {
+			logger.Warn("Failed to initialize InfluxDB, falling back to database-only storage", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			defer influxClient.Close()
+			influxStorage := events.NewInfluxDBEventStorage(influxClient)
+			eventStorage = events.NewMultiEventStorage(dbStorage, influxStorage)
+			logger.Info("Event-Bus initialized with dual storage (PostgreSQL + InfluxDB)", map[string]interface{}{
+				"influxdb_url": cfg.InfluxDBURL,
+				"org":          cfg.InfluxDBOrg,
+				"bucket":       cfg.InfluxDBBucket,
+			})
+		}
+	} else {
+		logger.Info("Event-Bus initialized with database storage only", nil)
+	}
+
 	events.SetEventStorage(eventStorage)
-	logger.Info("Event-Bus initialized with database storage", nil)
 
 	// Initialize Docker service
 	dockerService, err := docker.NewDockerService(cfg)
@@ -62,6 +92,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	configChangeRepo := repository.NewConfigChangeRepository(db)
 	fileRepo := repository.NewFileRepository(db)
+	pluginRepo := repository.NewPluginRepository(db)
 
 	// Initialize Email Service (using mock sender for now)
 	// 🚧 TODO: Replace MockEmailSender with ResendEmailSender when ready for production
@@ -114,6 +145,15 @@ func main() {
 	billingService.Start() // Subscribe to Event-Bus for automatic billing tracking
 	defer billingService.Stop()
 	logger.Info("Billing service initialized and subscribed to Event-Bus", nil)
+
+	// Initialize Plugin Marketplace Services
+	pluginSyncService := service.NewPluginSyncService(pluginRepo)
+	pluginSyncService.Start() // Start background sync worker (every 6 hours)
+	defer pluginSyncService.Stop()
+	logger.Info("Plugin sync service started (auto-sync from Modrinth every 6h)", nil)
+
+	pluginManagerService := service.NewPluginManagerService(pluginRepo, serverRepo, cfg)
+	logger.Info("Plugin manager service initialized", nil)
 
 	pluginService := service.NewPluginService(serverRepo, cfg)
 	fileManagerService := service.NewFileManagerService(serverRepo, cfg)
@@ -241,11 +281,14 @@ func main() {
 	// Billing handler for cost analytics
 	billingHandler := api.NewBillingHandler(billingService)
 
+	// Marketplace handler for plugin marketplace
+	marketplaceHandler := api.NewMarketplaceHandler(pluginManagerService, pluginSyncService)
+
 	// Bulk operations handler for multi-server management
 	bulkHandler := api.NewBulkHandler(mcService, backupService)
 
 	// Setup router
-	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, cfg)
 
 	// Graceful shutdown
 	go func() {
