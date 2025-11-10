@@ -1,6 +1,7 @@
 package conductor
 
 import (
+	"reflect"
 	"time"
 
 	"github.com/payperplay/hosting/internal/cloud"
@@ -78,81 +79,101 @@ func (c *Conductor) Start() {
 func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo interface{}) {
 	logger.Info("STATE_SYNC: Detecting running Minecraft containers...", nil)
 
-	// Type-safe interfaces (avoiding circular dependencies)
-	type ContainerLister interface {
-		ListRunningMinecraftContainers() ([]struct {
-			ContainerID string
-			ServerID    string
-		}, error)
-	}
-
-	type ServerRepository interface {
-		FindByID(serverID string) (interface{}, error)
-	}
-
-	// Type assertions
-	dockerService, ok := dockerSvc.(ContainerLister)
-	if !ok {
-		logger.Error("STATE_SYNC: Invalid docker service type", nil, nil)
+	// Use reflection to call ListRunningMinecraftContainers on dockerSvc
+	dockerVal := reflect.ValueOf(dockerSvc)
+	listMethod := dockerVal.MethodByName("ListRunningMinecraftContainers")
+	if !listMethod.IsValid() {
+		logger.Error("STATE_SYNC: Docker service missing ListRunningMinecraftContainers method", nil, nil)
 		return
 	}
 
-	repo, ok := serverRepo.(ServerRepository)
-	if !ok {
-		logger.Error("STATE_SYNC: Invalid repository type", nil, nil)
+	// Call the method
+	results := listMethod.Call(nil)
+	if len(results) != 2 {
+		logger.Error("STATE_SYNC: Unexpected return from ListRunningMinecraftContainers", nil, nil)
 		return
 	}
 
-	// Query Docker for all running mc-* containers
-	containers, err := dockerService.ListRunningMinecraftContainers()
-	if err != nil {
+	// Check for error (second return value)
+	if !results[1].IsNil() {
+		err := results[1].Interface().(error)
 		logger.Error("STATE_SYNC: Failed to list containers", err, nil)
 		return
 	}
 
-	if len(containers) == 0 {
+	// Get containers slice
+	containersVal := results[0]
+	if containersVal.Len() == 0 {
 		logger.Info("STATE_SYNC: No running containers (clean state)", nil)
 		return
 	}
 
 	logger.Info("STATE_SYNC: Found containers, syncing RAM allocations...", map[string]interface{}{
-		"count": len(containers),
+		"count": containersVal.Len(),
 	})
 
 	syncedCount := 0
 	totalRAM := 0
 
-	for _, container := range containers {
-		// Look up server in database
-		serverInterface, err := repo.FindByID(container.ServerID)
-		if err != nil {
+	// Iterate over containers
+	for i := 0; i < containersVal.Len(); i++ {
+		container := containersVal.Index(i)
+		containerID := container.FieldByName("ContainerID").String()
+		serverID := container.FieldByName("ServerID").String()
+
+		// Use reflection to call FindByID on serverRepo
+		repoVal := reflect.ValueOf(serverRepo)
+		findMethod := repoVal.MethodByName("FindByID")
+		if !findMethod.IsValid() {
+			logger.Error("STATE_SYNC: Repository missing FindByID method", nil, nil)
+			continue
+		}
+
+		// Call FindByID(serverID)
+		findResults := findMethod.Call([]reflect.Value{reflect.ValueOf(serverID)})
+		if len(findResults) != 2 {
+			logger.Warn("STATE_SYNC: Unexpected return from FindByID", map[string]interface{}{
+				"server_id": serverID[:8],
+			})
+			continue
+		}
+
+		// Check for error
+		if !findResults[1].IsNil() {
 			logger.Warn("STATE_SYNC: Container found but server not in DB", map[string]interface{}{
-				"container": container.ContainerID[:12],
-				"server_id": container.ServerID[:8],
+				"container": containerID[:12],
+				"server_id": serverID[:8],
 			})
 			continue
 		}
 
-		// Extract RAM from server object (use type assertion for RAMMb field)
-		type Server interface {
-			GetRAMMb() int
-		}
-
-		// Try direct field access first (for models.MinecraftServer)
-		type DirectServer struct {
-			RAMMb int
-		}
-
-		var ramMB int
-		if srv, ok := serverInterface.(Server); ok {
-			ramMB = srv.GetRAMMb()
-		} else {
-			// Fallback: use reflection-free approach
-			logger.Warn("STATE_SYNC: Cannot get RAM from server", map[string]interface{}{
-				"server_id": container.ServerID[:8],
+		// Get server object
+		serverVal := findResults[0]
+		if serverVal.IsNil() {
+			logger.Warn("STATE_SYNC: Server is nil", map[string]interface{}{
+				"server_id": serverID[:8],
 			})
 			continue
 		}
+
+		// Call GetRAMMb() method on server
+		getRamMethod := serverVal.MethodByName("GetRAMMb")
+		if !getRamMethod.IsValid() {
+			logger.Warn("STATE_SYNC: Server missing GetRAMMb method", map[string]interface{}{
+				"server_id": serverID[:8],
+			})
+			continue
+		}
+
+		ramResults := getRamMethod.Call(nil)
+		if len(ramResults) != 1 {
+			logger.Warn("STATE_SYNC: Unexpected return from GetRAMMb", map[string]interface{}{
+				"server_id": serverID[:8],
+			})
+			continue
+		}
+
+		ramMB := int(ramResults[0].Int())
 
 		// Force allocate RAM (bypass checks - container IS running!)
 		c.NodeRegistry.mu.Lock()
@@ -166,8 +187,8 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 		syncedCount++
 
 		logger.Info("STATE_SYNC: Container synced", map[string]interface{}{
-			"container": container.ContainerID[:12],
-			"server":    container.ServerID[:8],
+			"container": containerID[:12],
+			"server":    serverID[:8],
 			"ram_mb":    ramMB,
 		})
 	}
