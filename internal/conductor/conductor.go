@@ -183,6 +183,17 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 		}
 		c.NodeRegistry.mu.Unlock()
 
+		// CRITICAL: Also register in ContainerRegistry to prevent HealthChecker from resetting RAM!
+		// HealthChecker calls GetNodeAllocation() which reads from ContainerRegistry
+		containerInfo := &ContainerInfo{
+			ContainerID: containerID,
+			ServerID:    serverID,
+			NodeID:      "local-node",
+			RAMMB:       ramMB,
+			Status:      "running",
+		}
+		c.ContainerRegistry.RegisterContainer(containerInfo)
+
 		totalRAM += ramMB
 		syncedCount++
 
