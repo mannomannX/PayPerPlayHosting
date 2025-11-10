@@ -47,16 +47,16 @@ func InitDB(cfg *config.Config) error {
 		return fmt.Errorf("unsupported database type: %s (only 'postgres' is supported)", cfg.DatabaseType)
 	}
 
-	// Auto-migrate models - Binary Search: First half only
+	// Auto-migrate models - Binary Search: First 4 models
 	err = dbProvider.Migrate(
 		&models.User{},
 		&models.MinecraftServer{},
 		&models.UsageLog{},
 		&models.ConfigChange{},
-		&models.ServerFile{},
-		&models.ServerWebhook{},
-		&models.ServerBackupSchedule{},
-		// Second half commented out for testing
+		// Testing - rest commented out
+		// &models.ServerFile{},
+		// &models.ServerWebhook{},
+		// &models.ServerBackupSchedule{},
 		// &models.BillingEvent{},
 		// &models.UsageSession{},
 		// &models.TrustedDevice{},
