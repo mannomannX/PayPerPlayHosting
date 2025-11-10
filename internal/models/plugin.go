@@ -78,11 +78,11 @@ type PluginVersion struct {
 	Version string `gorm:"not null;size:50"` // "7.2.15" (Semantic Versioning)
 
 	// Auto-detected Compatibility (stored as JSON arrays)
-	MinecraftVersions datatypes.JSON `gorm:"type:json"` // ["1.20", "1.20.1", "1.20.2"]
-	ServerTypes       datatypes.JSON `gorm:"type:json"` // ["paper", "spigot", "purpur"]
+	MinecraftVersions datatypes.JSON `gorm:"type:jsonb"` // ["1.20", "1.20.1", "1.20.2"]
+	ServerTypes       datatypes.JSON `gorm:"type:jsonb"` // ["paper", "spigot", "purpur"]
 
 	// Dependencies (stored as JSON)
-	Dependencies datatypes.JSON `gorm:"type:json"` // Array of Dependency objects
+	Dependencies datatypes.JSON `gorm:"type:jsonb"` // Array of Dependency objects
 
 	// Download info (cached from external source)
 	DownloadURL string `gorm:"size:500"`
