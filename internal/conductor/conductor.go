@@ -275,13 +275,13 @@ func (c *Conductor) CheckCapacity(requiredRAMMB int) (bool, int) {
 
 // CanStartServer checks if a server can start now (STARTUP-DELAY + CPU + RAM guard)
 // Returns (canStart bool, reason string)
-// STARTUP-DELAY: Prevents server starts for 5 minutes after API startup (allows CPU to settle)
+// STARTUP-DELAY: Prevents server starts for 2 minutes after API startup (allows CPU to settle)
 // CPU-GUARD: Prevents parallel server starts to avoid CPU overload
 func (c *Conductor) CanStartServer(ramMB int) (bool, string) {
-	// STARTUP-DELAY: Check if API has been running for at least 5 minutes
+	// STARTUP-DELAY: Check if API has been running for at least 2 minutes
 	uptime := time.Since(c.StartedAt)
-	if uptime < 5*time.Minute {
-		remaining := 5*time.Minute - uptime
+	if uptime < 2*time.Minute {
+		remaining := 2*time.Minute - uptime
 		return false, fmt.Sprintf("API startup delay active (%d seconds remaining)", int(remaining.Seconds()))
 	}
 
