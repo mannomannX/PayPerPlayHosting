@@ -39,10 +39,10 @@ type User struct {
 	LockedUntil         *time.Time `json:"-"`
 	LastPasswordChange  *time.Time `json:"-"`
 
-	// Relationships
-	Servers        []MinecraftServer `gorm:"foreignKey:OwnerID" json:"servers,omitempty"`
-	TrustedDevices []TrustedDevice   `gorm:"foreignKey:UserID" json:"-"`
-	SecurityEvents []SecurityEvent   `gorm:"foreignKey:UserID" json:"-"`
+	// Relationships - Temporarily commented out for testing
+	// Servers        []MinecraftServer `gorm:"foreignKey:OwnerID" json:"servers,omitempty"`
+	// TrustedDevices []TrustedDevice   `gorm:"foreignKey:UserID" json:"-"`
+	// SecurityEvents []SecurityEvent   `gorm:"foreignKey:UserID" json:"-"`
 }
 
 // BeforeCreate hook to generate UUID
