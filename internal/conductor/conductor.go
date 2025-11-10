@@ -26,6 +26,7 @@ type Conductor struct {
 	StartQueue        *StartQueue    // Queue for servers waiting for capacity
 	StartedAt         time.Time      // When Conductor started (for startup delay)
 	serverStarter     ServerStarter  // Interface to start servers (injected)
+	stopChan          chan struct{}  // For graceful shutdown of background workers
 }
 
 // NewConductor creates a new conductor instance
@@ -41,6 +42,7 @@ func NewConductor(healthCheckInterval time.Duration) *Conductor {
 		ScalingEngine:     nil, // Initialized later with cloud provider
 		StartQueue:        NewStartQueue(),
 		StartedAt:         time.Now(), // Track startup time for delay
+		stopChan:          make(chan struct{}),
 	}
 }
 
@@ -78,6 +80,14 @@ func (c *Conductor) Start() {
 	} else {
 		logger.Warn("Scaling engine not initialized, skipping", nil)
 	}
+
+	// Start startup delay timer (triggers queue after 2 minutes)
+	go c.startupDelayWorker()
+	logger.Info("Startup delay timer started (2-minute countdown)", nil)
+
+	// Start periodic queue processor (checks every 30 seconds as failsafe)
+	go c.periodicQueueWorker()
+	logger.Info("Periodic queue worker started (30-second intervals)", nil)
 
 	logger.Info("Conductor Core started successfully", nil)
 }
@@ -224,6 +234,9 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 // Stop stops the conductor and all its subsystems
 func (c *Conductor) Stop() {
 	logger.Info("Stopping Conductor Core", nil)
+
+	// Stop background workers
+	close(c.stopChan)
 
 	// Stop scaling engine
 	if c.ScalingEngine != nil {
@@ -541,4 +554,58 @@ type ConductorStatus struct {
 	ScalingEngine   *ScalingEngineStatus `json:"scaling_engine,omitempty"`
 	QueuedServers   []*QueuedServer      `json:"queued_servers,omitempty"`
 	QueueSize       int                  `json:"queue_size"`
+}
+
+// startupDelayWorker triggers queue processing after the 2-minute startup delay expires
+// This handles the edge case where servers are queued due to startup delay, but no other
+// trigger fires when the delay period ends.
+func (c *Conductor) startupDelayWorker() {
+	// Calculate remaining time until delay expires
+	elapsed := time.Since(c.StartedAt)
+	delayDuration := 2 * time.Minute
+
+	var timer *time.Timer
+	if elapsed >= delayDuration {
+		// Delay already expired - trigger immediately
+		timer = time.NewTimer(0)
+	} else {
+		// Wait for remaining time
+		remaining := delayDuration - elapsed
+		timer = time.NewTimer(remaining)
+	}
+	defer timer.Stop()
+
+	select {
+	case <-timer.C:
+		logger.Info("QUEUE-TRIGGER: Startup delay expired, processing queued servers", map[string]interface{}{
+			"elapsed_seconds": int(time.Since(c.StartedAt).Seconds()),
+		})
+		c.ProcessStartQueue()
+	case <-c.stopChan:
+		logger.Info("Startup delay worker stopped", nil)
+		return
+	}
+}
+
+// periodicQueueWorker checks the queue every 30 seconds as a failsafe
+// This ensures queued servers eventually get processed even if other triggers fail
+func (c *Conductor) periodicQueueWorker() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Only log if queue has items (avoid spam)
+			if c.StartQueue.Size() > 0 {
+				logger.Info("QUEUE-TRIGGER: Periodic check processing queue", map[string]interface{}{
+					"queue_size": c.StartQueue.Size(),
+				})
+			}
+			c.ProcessStartQueue()
+		case <-c.stopChan:
+			logger.Info("Periodic queue worker stopped", nil)
+			return
+		}
+	}
 }
