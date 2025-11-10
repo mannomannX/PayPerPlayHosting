@@ -39,7 +39,8 @@
       "Bash(python:*)",
       "Bash(findstr:*)",
       "Bash(GOOS=linux GOARCH=amd64 go build:*)",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(go list:*)"
     ],
     "deny": [],
     "ask": []
