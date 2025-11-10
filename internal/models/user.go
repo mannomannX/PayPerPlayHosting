@@ -15,7 +15,7 @@ type User struct {
 	Email     string    `gorm:"uniqueIndex;size:255;not null" json:"email"`
 	Password  string    `gorm:"size:255;not null" json:"-"` // Never expose in JSON
 	Username  string    `gorm:"size:100" json:"username"`
-	Balance   float64   `gorm:"type:numeric(10,2);default:0" json:"balance"`
+	Balance   float64   `gorm:"type:numeric(10,2)" json:"balance"`
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	IsAdmin   bool      `gorm:"default:false" json:"is_admin"`
 	CreatedAt time.Time `json:"created_at"`
