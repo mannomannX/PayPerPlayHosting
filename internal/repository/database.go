@@ -60,6 +60,8 @@ func InitDB(cfg *config.Config) error {
 		&models.UsageSession{},
 		&models.TrustedDevice{},
 		&models.SecurityEvent{},
+		&models.OAuthAccount{},
+		&models.OAuthState{},
 	)
 	if err != nil {
 		return err

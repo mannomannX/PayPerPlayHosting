@@ -69,6 +69,9 @@ func main() {
 
 	// Initialize services
 	authService := service.NewAuthService(userRepo, cfg, emailService, securityService)
+	oauthService := service.NewOAuthService(db, userRepo, cfg, securityService, emailService)
+	logger.Info("OAuth service initialized", nil)
+
 	mcService := service.NewMinecraftService(serverRepo, dockerService, cfg)
 	monitoringService := service.NewMonitoringService(mcService, serverRepo, cfg)
 
@@ -169,6 +172,7 @@ func main() {
 
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)
+	oauthHandler := api.NewOAuthHandler(oauthService)
 	handler := api.NewHandler(mcService)
 	monitoringHandler := api.NewMonitoringHandler(monitoringService)
 	backupHandler := api.NewBackupHandler(backupService)
@@ -233,7 +237,7 @@ func main() {
 	billingHandler := api.NewBillingHandler(billingService)
 
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

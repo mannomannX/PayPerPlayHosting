@@ -9,6 +9,7 @@ import (
 
 func SetupRouter(
 	authHandler *AuthHandler,
+	oauthHandler *OAuthHandler,
 	handler *Handler,
 	monitoringHandler *MonitoringHandler,
 	backupHandler *BackupHandler,
@@ -100,6 +101,14 @@ func SetupRouter(
 		// Password reset (no auth required)
 		auth.POST("/request-reset", authHandler.RequestPasswordReset)
 		auth.POST("/reset-password", authHandler.ResetPassword)
+
+		// OAuth endpoints (no auth required)
+		auth.GET("/oauth/discord", oauthHandler.DiscordLogin)
+		auth.GET("/oauth/discord/callback", oauthHandler.DiscordCallback)
+		auth.GET("/oauth/google", oauthHandler.GoogleLogin)
+		auth.GET("/oauth/google/callback", oauthHandler.GoogleCallback)
+		auth.GET("/oauth/github", oauthHandler.GitHubLogin)
+		auth.GET("/oauth/github/callback", oauthHandler.GitHubCallback)
 
 		// Protected auth routes (require authentication)
 		auth.GET("/profile", middleware.AuthMiddleware(), authHandler.GetProfile)

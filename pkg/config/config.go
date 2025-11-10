@@ -25,6 +25,15 @@ type Config struct {
 
 	// Authentication
 	JWTSecret string
+	BaseURL   string // Base URL for OAuth callbacks (e.g., https://yourdomain.com)
+
+	// OAuth Providers
+	DiscordClientID     string
+	DiscordClientSecret string
+	GoogleClientID      string
+	GoogleClientSecret  string
+	GitHubClientID      string
+	GitHubClientSecret  string
 
 	// Minecraft
 	ServersBasePath     string // Container path for server data
@@ -57,6 +66,13 @@ func Load() *Config {
 		DatabaseType:       getEnv("DATABASE_TYPE", "sqlite"),
 		DatabaseURL:        getEnv("DATABASE_URL", ""),
 		JWTSecret:           getEnv("JWT_SECRET", "change-me-in-production-please-use-a-random-string"),
+		BaseURL:            getEnv("BASE_URL", "http://localhost:8000"),
+		DiscordClientID:     getEnv("DISCORD_CLIENT_ID", ""),
+		DiscordClientSecret: getEnv("DISCORD_CLIENT_SECRET", ""),
+		GoogleClientID:      getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:  getEnv("GOOGLE_CLIENT_SECRET", ""),
+		GitHubClientID:      getEnv("GITHUB_CLIENT_ID", ""),
+		GitHubClientSecret:  getEnv("GITHUB_CLIENT_SECRET", ""),
 		ServersBasePath:     getEnv("SERVERS_BASE_PATH", "./minecraft/servers"),
 		HostServersBasePath: getEnv("HOST_SERVERS_BASE_PATH", ""), // If empty, use ServersBasePath
 		DefaultIdleTimeout:  getEnvInt("DEFAULT_IDLE_TIMEOUT", 300),
