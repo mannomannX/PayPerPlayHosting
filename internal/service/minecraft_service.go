@@ -46,6 +46,14 @@ type ConductorInterface interface {
 	// Returns (canStart bool, reason string)
 	CanStartServer(ramMB int) (bool, string)
 
+	// AtomicReserveStartSlot atomically reserves a "starting" slot for CPU-Guard
+	// Returns true if slot reserved, false if another server is already starting
+	// CRITICAL: This must be called BEFORE Docker starts to prevent race conditions
+	AtomicReserveStartSlot(serverID, serverName string, ramMB int) bool
+
+	// ReleaseStartSlot removes a "starting" reservation if start fails
+	ReleaseStartSlot(serverID string)
+
 	// AtomicAllocateRAM atomically reserves RAM for a server
 	// Returns true if allocation succeeded, false if insufficient capacity
 	// THIS IS THE SAFE METHOD - prevents race conditions!
@@ -214,6 +222,7 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	// PRE-START RESOURCE GUARD: CPU + RAM protection
 	// This is a CRITICAL FIX to prevent multiple parallel requests from overloading the system
 	ramAllocated := false
+	startSlotReserved := false
 	if s.conductor != nil {
 		// Check if already queued
 		if s.conductor.IsServerQueued(server.ID) {
@@ -231,11 +240,27 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			return fmt.Errorf("cannot start server (%s) - server queued for start, will auto-start when capacity available", reason)
 		}
 
+		// ATOMIC START SLOT RESERVATION: Immediately reserve the "starting" slot
+		// This MUST happen BEFORE Docker starts to prevent race conditions!
+		if !s.conductor.AtomicReserveStartSlot(server.ID, server.Name, server.RAMMb) {
+			// Another server is already starting (race condition detected)
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+
+			log.Printf("CPU_GUARD: Start slot already taken for server %s - Added to queue", server.ID)
+
+			return fmt.Errorf("another server is currently starting (CPU protection) - server queued for start, will auto-start when capacity available")
+		}
+		startSlotReserved = true
+
 		// CPU/RAM checks passed - now atomically allocate RAM
 		// ATOMIC RAM ALLOCATION: Lock, check, and allocate in ONE operation
 		// This prevents race conditions where multiple threads check capacity simultaneously
 		if !s.conductor.AtomicAllocateRAM(server.RAMMb) {
 			// Allocation failed - insufficient capacity
+			// ROLLBACK: Release start slot
+			s.conductor.ReleaseStartSlot(server.ID)
+			startSlotReserved = false
+
 			// Add to queue instead of starting
 			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
 
@@ -310,20 +335,32 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			server.MOTD,
 		)
 		if err != nil {
-			// ROLLBACK: Release RAM if container creation failed
-			if ramAllocated && s.conductor != nil {
-				s.conductor.ReleaseRAM(server.RAMMb)
-				log.Printf("ROLLBACK: Released %d MB RAM for server %s after container creation failure", server.RAMMb, server.ID)
+			// ROLLBACK: Release RAM and start slot if container creation failed
+			if s.conductor != nil {
+				if ramAllocated {
+					s.conductor.ReleaseRAM(server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM for server %s after container creation failure", server.RAMMb, server.ID)
+				}
+				if startSlotReserved {
+					s.conductor.ReleaseStartSlot(server.ID)
+					log.Printf("ROLLBACK: Released start slot for server %s after container creation failure", server.ID)
+				}
 			}
 			return fmt.Errorf("failed to create container: %w", err)
 		}
 
 		server.ContainerID = containerID
 		if err := s.repo.Update(server); err != nil {
-			// ROLLBACK: Release RAM if database update failed
-			if ramAllocated && s.conductor != nil {
-				s.conductor.ReleaseRAM(server.RAMMb)
-				log.Printf("ROLLBACK: Released %d MB RAM for server %s after database update failure", server.RAMMb, server.ID)
+			// ROLLBACK: Release RAM and start slot if database update failed
+			if s.conductor != nil {
+				if ramAllocated {
+					s.conductor.ReleaseRAM(server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM for server %s after database update failure", server.RAMMb, server.ID)
+				}
+				if startSlotReserved {
+					s.conductor.ReleaseStartSlot(server.ID)
+					log.Printf("ROLLBACK: Released start slot for server %s after database update failure", server.ID)
+				}
 			}
 			return err
 		}
@@ -332,10 +369,16 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	// Start container
 	server.Status = models.StatusStarting
 	if err := s.repo.Update(server); err != nil {
-		// ROLLBACK: Release RAM if database update failed
-		if ramAllocated && s.conductor != nil {
-			s.conductor.ReleaseRAM(server.RAMMb)
-			log.Printf("ROLLBACK: Released %d MB RAM for server %s after status update failure", server.RAMMb, server.ID)
+		// ROLLBACK: Release RAM and start slot if database update failed
+		if s.conductor != nil {
+			if ramAllocated {
+				s.conductor.ReleaseRAM(server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM for server %s after status update failure", server.RAMMb, server.ID)
+			}
+			if startSlotReserved {
+				s.conductor.ReleaseStartSlot(server.ID)
+				log.Printf("ROLLBACK: Released start slot for server %s after status update failure", server.ID)
+			}
 		}
 		return err
 	}
@@ -343,10 +386,16 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
 		server.Status = models.StatusError
 		s.repo.Update(server)
-		// ROLLBACK: Release RAM if container start failed
-		if ramAllocated && s.conductor != nil {
-			s.conductor.ReleaseRAM(server.RAMMb)
-			log.Printf("ROLLBACK: Released %d MB RAM for server %s after container start failure", server.RAMMb, server.ID)
+		// ROLLBACK: Release RAM and start slot if container start failed
+		if s.conductor != nil {
+			if ramAllocated {
+				s.conductor.ReleaseRAM(server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM for server %s after container start failure", server.RAMMb, server.ID)
+			}
+			if startSlotReserved {
+				s.conductor.ReleaseStartSlot(server.ID)
+				log.Printf("ROLLBACK: Released start slot for server %s after container start failure", server.ID)
+			}
 		}
 		return fmt.Errorf("failed to start container: %w", err)
 	}

@@ -300,6 +300,53 @@ func (c *Conductor) CanStartServer(ramMB int) (bool, string) {
 	return true, ""
 }
 
+// AtomicReserveStartSlot atomically reserves a "starting" slot for CPU-Guard
+// Returns true if slot reserved, false if another server is already starting
+// CRITICAL: This must be called BEFORE Docker starts to prevent race conditions
+func (c *Conductor) AtomicReserveStartSlot(serverID, serverName string, ramMB int) bool {
+	c.ContainerRegistry.mu.Lock()
+	defer c.ContainerRegistry.mu.Unlock()
+
+	// Check if another server is already starting
+	startingCount := 0
+	for _, container := range c.ContainerRegistry.containers {
+		if container.Status == "starting" {
+			startingCount++
+		}
+	}
+
+	if startingCount > 0 {
+		return false // Another server is starting, reject
+	}
+
+	// Reserve the slot immediately by registering with "starting" status
+	reservation := &ContainerInfo{
+		ServerID:   serverID,
+		ServerName: serverName,
+		NodeID:     "local-node",
+		RAMMb:      ramMB,
+		Status:     "starting",
+	}
+	reservation.LastSeenAt = time.Now()
+	c.ContainerRegistry.containers[serverID] = reservation
+
+	logger.Info("CPU-GUARD: Start slot reserved atomically", map[string]interface{}{
+		"server_id":   serverID,
+		"server_name": serverName,
+		"ram_mb":      ramMB,
+	})
+
+	return true
+}
+
+// ReleaseStartSlot removes a "starting" reservation if start fails
+func (c *Conductor) ReleaseStartSlot(serverID string) {
+	c.ContainerRegistry.RemoveContainer(serverID)
+	logger.Info("CPU-GUARD: Start slot released", map[string]interface{}{
+		"server_id": serverID,
+	})
+}
+
 // AtomicAllocateRAM atomically reserves RAM for a server
 // Returns true if allocation succeeded, false if insufficient capacity
 // THIS IS THE SAFE METHOD - prevents race conditions!
