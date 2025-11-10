@@ -47,27 +47,25 @@ func InitDB(cfg *config.Config) error {
 		return fmt.Errorf("unsupported database type: %s (only 'postgres' is supported)", cfg.DatabaseType)
 	}
 
-	// Auto-migrate models - Binary Search: Only User
+	// Auto-migrate models
 	err = dbProvider.Migrate(
 		&models.User{},
-		// &models.MinecraftServer{},
-		// Testing
-		// &models.UsageLog{},
-		// &models.ConfigChange{},
-		// Testing - rest commented out
-		// &models.ServerFile{},
-		// &models.ServerWebhook{},
-		// &models.ServerBackupSchedule{},
-		// &models.BillingEvent{},
-		// &models.UsageSession{},
-		// &models.TrustedDevice{},
-		// &models.SecurityEvent{},
-		// &models.OAuthAccount{},
-		// &models.OAuthState{},
-		// &models.SystemEvent{},
-		// &models.Plugin{},
-		// &models.PluginVersion{},
-		// &models.InstalledPlugin{},
+		&models.MinecraftServer{},
+		&models.UsageLog{},
+		&models.ConfigChange{},
+		&models.ServerFile{},
+		&models.ServerWebhook{},
+		&models.ServerBackupSchedule{},
+		&models.BillingEvent{},
+		&models.UsageSession{},
+		&models.TrustedDevice{},
+		&models.SecurityEvent{},
+		&models.OAuthAccount{},
+		&models.OAuthState{},
+		&models.SystemEvent{},
+		&models.Plugin{},
+		&models.PluginVersion{},
+		&models.InstalledPlugin{},
 	)
 	if err != nil {
 		return err
