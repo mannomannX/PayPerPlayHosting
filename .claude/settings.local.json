@@ -37,7 +37,8 @@
       "Bash(curl:*)",
       "Bash(scp:*)",
       "Bash(python:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(GOOS=linux GOARCH=amd64 go build:*)"
     ],
     "deny": [],
     "ask": []

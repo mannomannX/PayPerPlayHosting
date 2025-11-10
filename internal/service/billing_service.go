@@ -1,0 +1,301 @@
+package service
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
+	"github.com/payperplay/hosting/pkg/logger"
+	"gorm.io/gorm"
+)
+
+// BillingService manages cost calculation and billing events
+type BillingService struct {
+	db         *gorm.DB
+	serverRepo *repository.ServerRepository
+	pricing    models.PricingConfig
+}
+
+// NewBillingService creates a new billing service
+func NewBillingService(db *gorm.DB, serverRepo *repository.ServerRepository) *BillingService {
+	return &BillingService{
+		db:         db,
+		serverRepo: serverRepo,
+		pricing:    models.DefaultPricingConfig(),
+	}
+}
+
+// RecordServerStarted records a server start event and begins a new usage session
+func (s *BillingService) RecordServerStarted(server *models.MinecraftServer) error {
+	now := time.Now()
+
+	// Create billing event
+	event := &models.BillingEvent{
+		ID:               uuid.New().String(),
+		ServerID:         server.ID,
+		ServerName:       server.Name,
+		OwnerID:          server.OwnerID,
+		EventType:        models.EventServerStarted,
+		Timestamp:        now,
+		RAMMb:            server.RAMMb,
+		StorageGB:        0, // TODO: Calculate actual storage usage
+		LifecyclePhase:   models.PhaseActive,
+		PreviousPhase:    server.LifecyclePhase,
+		MinecraftVersion: server.MinecraftVersion,
+		HourlyRateEUR:    s.pricing.ActiveRateEURPerGBHour,
+	}
+
+	if err := s.db.Create(event).Error; err != nil {
+		return fmt.Errorf("failed to create billing event: %w", err)
+	}
+
+	// Create new usage session
+	session := &models.UsageSession{
+		ID:               uuid.New().String(),
+		ServerID:         server.ID,
+		ServerName:       server.Name,
+		OwnerID:          server.OwnerID,
+		StartedAt:        now,
+		RAMMb:            server.RAMMb,
+		StorageGB:        0,
+		MinecraftVersion: server.MinecraftVersion,
+		HourlyRateEUR:    s.pricing.ActiveRateEURPerGBHour,
+	}
+
+	if err := s.db.Create(session).Error; err != nil {
+		return fmt.Errorf("failed to create usage session: %w", err)
+	}
+
+	logger.Debug("Billing: Server started", map[string]interface{}{
+		"server_id":   server.ID,
+		"server_name": server.Name,
+		"ram_mb":      server.RAMMb,
+		"hourly_rate": s.pricing.ActiveRateEURPerGBHour,
+	})
+
+	return nil
+}
+
+// RecordServerStopped records a server stop event and closes the usage session
+func (s *BillingService) RecordServerStopped(server *models.MinecraftServer) error {
+	now := time.Now()
+
+	// Create billing event
+	event := &models.BillingEvent{
+		ID:               uuid.New().String(),
+		ServerID:         server.ID,
+		ServerName:       server.Name,
+		OwnerID:          server.OwnerID,
+		EventType:        models.EventServerStopped,
+		Timestamp:        now,
+		RAMMb:            server.RAMMb,
+		StorageGB:        0,
+		LifecyclePhase:   models.PhaseSleep, // Transitions to sleep
+		PreviousPhase:    models.PhaseActive,
+		MinecraftVersion: server.MinecraftVersion,
+		HourlyRateEUR:    s.pricing.ActiveRateEURPerGBHour,
+	}
+
+	if err := s.db.Create(event).Error; err != nil {
+		return fmt.Errorf("failed to create billing event: %w", err)
+	}
+
+	// Find and close the open usage session
+	var session models.UsageSession
+	err := s.db.Where("server_id = ? AND stopped_at IS NULL", server.ID).
+		Order("started_at DESC").
+		First(&session).Error
+
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			logger.Warn("No open session found for server stop", map[string]interface{}{
+				"server_id": server.ID,
+			})
+			return nil
+		}
+		return fmt.Errorf("failed to find open session: %w", err)
+	}
+
+	// Calculate session duration and cost
+	session.StoppedAt = &now
+	durationSeconds := int(now.Sub(session.StartedAt).Seconds())
+	session.DurationSeconds = durationSeconds
+
+	// Cost = (RAM in GB) * (hours) * (hourly rate)
+	ramGB := float64(session.RAMMb) / 1024.0
+	hours := float64(durationSeconds) / 3600.0
+	session.CostEUR = ramGB * hours * session.HourlyRateEUR
+
+	if err := s.db.Save(&session).Error; err != nil {
+		return fmt.Errorf("failed to update session: %w", err)
+	}
+
+	logger.Info("Billing: Server stopped", map[string]interface{}{
+		"server_id":        server.ID,
+		"server_name":      server.Name,
+		"duration_seconds": durationSeconds,
+		"cost_eur":         session.CostEUR,
+	})
+
+	return nil
+}
+
+// RecordPhaseChange records a lifecycle phase transition
+func (s *BillingService) RecordPhaseChange(server *models.MinecraftServer, oldPhase, newPhase models.LifecyclePhase) error {
+	event := &models.BillingEvent{
+		ID:               uuid.New().String(),
+		ServerID:         server.ID,
+		ServerName:       server.Name,
+		OwnerID:          server.OwnerID,
+		EventType:        models.EventPhaseChanged,
+		Timestamp:        time.Now(),
+		RAMMb:            server.RAMMb,
+		StorageGB:        0,
+		LifecyclePhase:   newPhase,
+		PreviousPhase:    oldPhase,
+		MinecraftVersion: server.MinecraftVersion,
+		HourlyRateEUR:    s.pricing.ActiveRateEURPerGBHour,
+		DailyRateEUR:     s.pricing.SleepRateEURPerGBDay,
+	}
+
+	if err := s.db.Create(event).Error; err != nil {
+		return fmt.Errorf("failed to create phase change event: %w", err)
+	}
+
+	logger.Info("Billing: Phase changed", map[string]interface{}{
+		"server_id": server.ID,
+		"old_phase": oldPhase,
+		"new_phase": newPhase,
+	})
+
+	return nil
+}
+
+// GetServerCosts calculates the cost summary for a server for the current month
+func (s *BillingService) GetServerCosts(serverID string) (*models.CostSummary, error) {
+	server, err := s.serverRepo.FindByID(serverID)
+	if err != nil {
+		return nil, fmt.Errorf("server not found: %w", err)
+	}
+
+	// Get start of current month
+	now := time.Now()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+
+	summary := &models.CostSummary{
+		ServerID:   server.ID,
+		ServerName: server.Name,
+		OwnerID:    server.OwnerID,
+		RAMMb:      server.RAMMb,
+		StorageGB:  0, // TODO: Calculate actual storage
+	}
+
+	// Calculate active phase costs (completed sessions this month)
+	var sessions []models.UsageSession
+	err = s.db.Where("server_id = ? AND started_at >= ? AND stopped_at IS NOT NULL", serverID, monthStart).
+		Find(&sessions).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch sessions: %w", err)
+	}
+
+	for _, session := range sessions {
+		summary.ActiveCostEUR += session.CostEUR
+		summary.ActiveSeconds += session.DurationSeconds
+	}
+
+	// Add current running session cost (if server is running)
+	if server.Status == models.StatusRunning && server.LastStartedAt != nil {
+		if server.LastStartedAt.After(monthStart) {
+			durationSeconds := int(now.Sub(*server.LastStartedAt).Seconds())
+			ramGB := float64(server.RAMMb) / 1024.0
+			hours := float64(durationSeconds) / 3600.0
+			currentCost := ramGB * hours * s.pricing.ActiveRateEURPerGBHour
+
+			summary.CurrentSessionStartedAt = server.LastStartedAt
+			summary.CurrentSessionCostEUR = currentCost
+			summary.ActiveCostEUR += currentCost
+			summary.ActiveSeconds += durationSeconds
+		}
+	}
+
+	// Calculate sleep phase costs (stopped but not archived)
+	// Cost = Storage (GB) × Days × Daily Rate
+	if server.LifecyclePhase == models.PhaseSleep && server.LastStoppedAt != nil {
+		sleepStart := server.LastStoppedAt
+		if sleepStart.Before(monthStart) {
+			sleepStart = &monthStart
+		}
+
+		sleepDays := now.Sub(*sleepStart).Hours() / 24.0
+		summary.SleepCostEUR = summary.StorageGB * sleepDays * s.pricing.SleepRateEURPerGBDay
+		summary.SleepSeconds = int(now.Sub(*sleepStart).Seconds())
+	}
+
+	// Archive phase is always free
+	summary.ArchiveCostEUR = 0.00
+
+	// Total cost
+	summary.TotalCostEUR = summary.ActiveCostEUR + summary.SleepCostEUR + summary.ArchiveCostEUR
+
+	// Forecast next month (simple: current month * 30/days_elapsed)
+	daysElapsed := now.Sub(monthStart).Hours() / 24.0
+	if daysElapsed > 0 {
+		summary.ForecastNextMonthEUR = (summary.TotalCostEUR / daysElapsed) * 30.0
+	}
+
+	return summary, nil
+}
+
+// GetOwnerCosts calculates total costs for all servers of an owner
+func (s *BillingService) GetOwnerCosts(ownerID string) (float64, error) {
+	var totalCost float64
+	var serverIDs []string
+
+	err := s.db.Model(&models.MinecraftServer{}).Where("owner_id = ?", ownerID).Pluck("id", &serverIDs).Error
+	if err != nil {
+		return 0, fmt.Errorf("failed to fetch servers: %w", err)
+	}
+
+	for _, serverID := range serverIDs {
+		summary, err := s.GetServerCosts(serverID)
+		if err != nil {
+			logger.Error("Failed to get server costs", err, map[string]interface{}{
+				"server_id": serverID,
+			})
+			continue
+		}
+		totalCost += summary.TotalCostEUR
+	}
+
+	return totalCost, nil
+}
+
+// GetBillingEvents returns all billing events for a server
+func (s *BillingService) GetBillingEvents(serverID string) ([]models.BillingEvent, error) {
+	var events []models.BillingEvent
+	err := s.db.Where("server_id = ?", serverID).
+		Order("timestamp DESC").
+		Find(&events).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch billing events: %w", err)
+	}
+
+	return events, nil
+}
+
+// GetUsageSessions returns all usage sessions for a server
+func (s *BillingService) GetUsageSessions(serverID string) ([]models.UsageSession, error) {
+	var sessions []models.UsageSession
+	err := s.db.Where("server_id = ?", serverID).
+		Order("started_at DESC").
+		Find(&sessions).Error
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch usage sessions: %w", err)
+	}
+
+	return sessions, nil
+}

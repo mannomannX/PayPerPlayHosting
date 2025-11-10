@@ -28,6 +28,7 @@ func SetupRouter(
 	backupScheduleHandler *BackupScheduleHandler,
 	prometheusHandler *PrometheusHandler,
 	conductorHandler *ConductorHandler,
+	billingHandler *BillingHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -83,16 +84,28 @@ func SetupRouter(
 	router.GET("/ws", wsHandler.HandleWebSocket)
 	router.GET("/api/ws/stats", wsHandler.GetStats)
 
-	// Auth endpoints (no auth required)
+	// Auth endpoints (no auth required, but with strict rate limiting)
 	auth := router.Group("/api/auth")
+	auth.Use(middleware.RateLimitMiddleware(middleware.AuthRateLimiter))  // Strict auth rate limiting
 	{
 		auth.POST("/register", authHandler.Register)
 		auth.POST("/login", authHandler.Login)
 		auth.POST("/refresh", authHandler.RefreshToken)
 		auth.POST("/logout", authHandler.Logout)
 
-		// Protected auth routes
+		// Email verification (no auth required)
+		auth.POST("/verify-email", authHandler.VerifyEmail)
+		auth.POST("/resend-verification", authHandler.ResendVerificationEmail)
+
+		// Password reset (no auth required)
+		auth.POST("/request-reset", authHandler.RequestPasswordReset)
+		auth.POST("/reset-password", authHandler.ResetPassword)
+
+		// Protected auth routes (require authentication)
 		auth.GET("/profile", middleware.AuthMiddleware(), authHandler.GetProfile)
+		auth.PUT("/profile", middleware.AuthMiddleware(), authHandler.UpdateProfile)
+		auth.POST("/change-password", middleware.AuthMiddleware(), authHandler.ChangePassword)
+		auth.DELETE("/account", middleware.AuthMiddleware(), authHandler.DeleteAccount)
 	}
 
 	// API routes (with auth and API-specific rate limiting)
@@ -198,6 +211,11 @@ func SetupRouter(
 			servers.POST("/:id/worlds/:name/reset", worldHandler.ResetWorld)
 			servers.DELETE("/:id/worlds/:name", worldHandler.DeleteWorld)
 
+			// Cost Analytics & Billing
+			servers.GET("/:id/costs", billingHandler.GetServerCosts)
+			servers.GET("/:id/billing/events", billingHandler.GetBillingEvents)
+			servers.GET("/:id/billing/sessions", billingHandler.GetUsageSessions)
+
 			// Discord Webhooks
 			servers.GET("/:id/webhook", webhookHandler.GetWebhook)
 			servers.POST("/:id/webhook", webhookHandler.CreateWebhook)
@@ -231,6 +249,12 @@ func SetupRouter(
 		{
 			metrics.GET("/files", metricsHandler.GetFileMetrics)
 			metrics.POST("/files/reset", metricsHandler.ResetFileMetrics) // Admin only
+		}
+
+		// Billing (owner-level costs)
+		billing := api.Group("/billing")
+		{
+			billing.GET("/costs", billingHandler.GetOwnerCosts)
 		}
 	}
 

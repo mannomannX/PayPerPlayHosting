@@ -20,6 +20,7 @@ type MinecraftService struct {
 	cfg             *config.Config
 	velocityService VelocityServiceInterface // Interface to avoid circular dependency
 	wsHub           WebSocketHubInterface    // Interface for WebSocket broadcasting
+	billingService  *BillingService          // Optional billing service
 }
 
 // WebSocketHubInterface defines the methods needed from WebSocket Hub
@@ -54,6 +55,11 @@ func (s *MinecraftService) SetVelocityService(velocityService VelocityServiceInt
 // SetWebSocketHub sets the WebSocket hub for real-time updates
 func (s *MinecraftService) SetWebSocketHub(wsHub WebSocketHubInterface) {
 	s.wsHub = wsHub
+}
+
+// SetBillingService sets the billing service for cost tracking
+func (s *MinecraftService) SetBillingService(billingService *BillingService) {
+	s.billingService = billingService
 }
 
 // CreateServer creates a new Minecraft server
@@ -260,6 +266,7 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	now := time.Now()
 	server.Status = models.StatusRunning
 	server.LastStartedAt = &now
+	server.LifecyclePhase = models.PhaseActive // Mark as active when running
 	if err := s.repo.Update(server); err != nil {
 		return err
 	}
@@ -271,6 +278,13 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	}
 	if err := s.repo.CreateUsageLog(usageLog); err != nil {
 		log.Printf("Warning: failed to create usage log: %v", err)
+	}
+
+	// Record billing event
+	if s.billingService != nil {
+		if err := s.billingService.RecordServerStarted(server); err != nil {
+			log.Printf("Warning: failed to record billing event: %v", err)
+		}
 	}
 
 	// Broadcast WebSocket event
@@ -317,6 +331,13 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 	server.LastStoppedAt = &now
 	if err := s.repo.Update(server); err != nil {
 		return err
+	}
+
+	// Record billing event
+	if s.billingService != nil {
+		if err := s.billingService.RecordServerStopped(server); err != nil {
+			log.Printf("Warning: failed to record billing event: %v", err)
+		}
 	}
 
 	// Update usage log

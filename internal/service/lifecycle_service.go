@@ -11,9 +11,10 @@ import (
 
 // LifecycleService manages the 3-phase server lifecycle
 type LifecycleService struct {
-	db         *gorm.DB
-	serverRepo *repository.ServerRepository
-	stopChan   chan struct{}
+	db             *gorm.DB
+	serverRepo     *repository.ServerRepository
+	billingService *BillingService
+	stopChan       chan struct{}
 }
 
 // NewLifecycleService creates a new lifecycle service
@@ -23,6 +24,11 @@ func NewLifecycleService(db *gorm.DB, serverRepo *repository.ServerRepository) *
 		serverRepo: serverRepo,
 		stopChan:   make(chan struct{}),
 	}
+}
+
+// SetBillingService sets the billing service (called after initialization to avoid circular deps)
+func (s *LifecycleService) SetBillingService(billingService *BillingService) {
+	s.billingService = billingService
 }
 
 // Start begins the lifecycle management workers
@@ -90,6 +96,8 @@ func (s *LifecycleService) processSleepTransitions() {
 
 	transitioned := 0
 	for _, server := range servers {
+		oldPhase := server.LifecyclePhase
+
 		// Update status and lifecycle phase
 		updates := map[string]interface{}{
 			"status":          models.StatusSleeping,
@@ -103,6 +111,19 @@ func (s *LifecycleService) processSleepTransitions() {
 				"server_name": server.Name,
 			})
 			continue
+		}
+
+		// Record billing event for phase change
+		if s.billingService != nil {
+			// Update server object with new phase for billing
+			server.Status = models.StatusSleeping
+			server.LifecyclePhase = models.PhaseSleep
+			if err := s.billingService.RecordPhaseChange(&server, oldPhase, models.PhaseSleep); err != nil {
+				logger.Warn("Failed to record phase change billing event", map[string]interface{}{
+					"server_id": server.ID,
+					"error":     err.Error(),
+				})
+			}
 		}
 
 		transitioned++

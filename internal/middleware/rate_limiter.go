@@ -120,6 +120,9 @@ var (
 	// API rate limiter: 120 requests per minute (2 per second for normal API operations)
 	APIRateLimiter = NewRateLimiter(500*time.Millisecond, 120)
 
+	// Auth rate limiter: 5 requests per 15 seconds (strict for login/register to prevent brute force)
+	AuthRateLimiter = NewRateLimiter(3*time.Second, 5)
+
 	// File upload operations: 30 requests per minute (icons, resource packs, etc.)
 	FileUploadRateLimiter = NewRateLimiter(2*time.Second, 30)
 

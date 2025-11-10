@@ -57,8 +57,18 @@ func main() {
 	configChangeRepo := repository.NewConfigChangeRepository(db)
 	fileRepo := repository.NewFileRepository(db)
 
+	// Initialize Email Service (using mock sender for now)
+	// 🚧 TODO: Replace MockEmailSender with ResendEmailSender when ready for production
+	mockEmailSender := service.NewMockEmailSender(db)
+	emailService := service.NewEmailService(mockEmailSender, db)
+	logger.Info("Email service initialized (🚧 MOCK MODE)", nil)
+
+	// Initialize Security Service for device trust and security events
+	securityService := service.NewSecurityService(db, emailService)
+	logger.Info("Security service initialized", nil)
+
 	// Initialize services
-	authService := service.NewAuthService(userRepo, cfg)
+	authService := service.NewAuthService(userRepo, cfg, emailService, securityService)
 	mcService := service.NewMinecraftService(serverRepo, dockerService, cfg)
 	monitoringService := service.NewMonitoringService(mcService, serverRepo, cfg)
 
@@ -90,6 +100,10 @@ func main() {
 	defer lifecycleService.Stop()
 	logger.Info("Lifecycle service started", nil)
 
+	// Initialize Billing Service for cost analytics
+	billingService := service.NewBillingService(db, serverRepo)
+	logger.Info("Billing service initialized", nil)
+
 	pluginService := service.NewPluginService(serverRepo, cfg)
 	fileManagerService := service.NewFileManagerService(serverRepo, cfg)
 	fileService := service.NewFileService(fileRepo, serverRepo, cfg.ServersBasePath)
@@ -102,6 +116,12 @@ func main() {
 	// Link WebSocket Hub to services for real-time updates
 	mcService.SetWebSocketHub(wsHub)
 	recoveryService.SetWebSocketHub(wsHub)
+
+	// Link Billing Service to MinecraftService for cost tracking
+	mcService.SetBillingService(billingService)
+
+	// Link Billing Service to LifecycleService for phase change tracking
+	lifecycleService.SetBillingService(billingService)
 
 	// Link Recovery Service to Monitoring Service for crash detection
 	monitoringService.SetRecoveryService(recoveryService)
@@ -209,8 +229,11 @@ func main() {
 	// Conductor handler for fleet orchestration
 	conductorHandler := api.NewConductorHandler(cond)
 
+	// Billing handler for cost analytics
+	billingHandler := api.NewBillingHandler(billingService)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, cfg)
+	router := api.SetupRouter(authHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

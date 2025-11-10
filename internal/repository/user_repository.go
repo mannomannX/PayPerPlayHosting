@@ -93,3 +93,23 @@ func (r *UserRepository) DecrementBalance(userID string, amount float64) error {
 	return r.db.Model(&models.User{}).Where("id = ?", userID).
 		Update("balance", gorm.Expr("balance - ?", amount)).Error
 }
+
+// FindByVerificationToken finds a user by email verification token
+func (r *UserRepository) FindByVerificationToken(token string) (*models.User, error) {
+	var user models.User
+	err := r.db.First(&user, "email_verification_token = ?", token).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// FindByResetToken finds a user by password reset token
+func (r *UserRepository) FindByResetToken(token string) (*models.User, error) {
+	var user models.User
+	err := r.db.First(&user, "password_reset_token = ?", token).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
