@@ -18,13 +18,9 @@ var dbProvider DatabaseProvider
 func InitDB(cfg *config.Config) error {
 	var err error
 
-	// Configure GORM logger
+	// Configure GORM logger - TEMPORARY: Always use Info level for debugging
 	gormConfig := &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
-	}
-
-	if cfg.Debug {
-		gormConfig.Logger = logger.Default.LogMode(logger.Info)
+		Logger: logger.Default.LogMode(logger.Info),
 	}
 
 	// Initialize database provider based on config
