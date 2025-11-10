@@ -42,6 +42,10 @@ type ConductorInterface interface {
 	// DEPRECATED: Use AtomicAllocateRAM() instead to prevent race conditions
 	CheckCapacity(requiredRAMMB int) (bool, int) // returns (hasCapacity, availableRAMMB)
 
+	// CanStartServer checks if a server can start now (startup-delay + CPU + RAM guard)
+	// Returns (canStart bool, reason string)
+	CanStartServer(ramMB int) (bool, string)
+
 	// AtomicAllocateRAM atomically reserves RAM for a server
 	// Returns true if allocation succeeded, false if insufficient capacity
 	// THIS IS THE SAFE METHOD - prevents race conditions!
