@@ -189,7 +189,7 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 			ContainerID: containerID,
 			ServerID:    serverID,
 			NodeID:      "local-node",
-			RAMMB:       ramMB,
+			RAMMb:       ramMB,
 			Status:      "running",
 		}
 		c.ContainerRegistry.RegisterContainer(containerInfo)
