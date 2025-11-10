@@ -160,3 +160,53 @@ func PublishScalingTriggered(reason string, nodeCount int, action string) {
 		},
 	})
 }
+
+// PublishScalingEvent publishes a scaling event (scale_up, scale_down, provision_spare)
+func PublishScalingEvent(action, status, details string) {
+	GetEventBus().Publish(Event{
+		Type:   EventScalingTriggered,
+		Source: "scaling_engine",
+		Data: map[string]interface{}{
+			"action":  action,
+			"status":  status,
+			"details": details,
+		},
+	})
+}
+
+// PublishNodeAdded publishes a node added event
+func PublishNodeAdded(nodeID, nodeType string) {
+	GetEventBus().Publish(Event{
+		Type:   EventNodeAdded,
+		Source: "vm_provisioner",
+		Data: map[string]interface{}{
+			"node_id":   nodeID,
+			"node_type": nodeType,
+		},
+	})
+}
+
+// PublishNodeRemoved publishes a node removed event
+func PublishNodeRemoved(nodeID, reason string) {
+	GetEventBus().Publish(Event{
+		Type:   EventNodeRemoved,
+		Source: "vm_provisioner",
+		Data: map[string]interface{}{
+			"node_id": nodeID,
+			"reason":  reason,
+		},
+	})
+}
+
+// PublishNodeHealthChanged publishes a node health change event
+func PublishNodeHealthChanged(nodeID, oldStatus, newStatus string) {
+	GetEventBus().Publish(Event{
+		Type:   EventNodeHealthChanged,
+		Source: "health_checker",
+		Data: map[string]interface{}{
+			"node_id":    nodeID,
+			"old_status": oldStatus,
+			"new_status": newStatus,
+		},
+	})
+}

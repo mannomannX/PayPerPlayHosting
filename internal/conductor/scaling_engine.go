@@ -1,0 +1,417 @@
+package conductor
+
+import (
+	"fmt"
+	"sort"
+	"time"
+
+	"github.com/payperplay/hosting/internal/cloud"
+	"github.com/payperplay/hosting/internal/events"
+	"github.com/payperplay/hosting/pkg/logger"
+)
+
+// ScalingEngine orchestrates all scaling operations
+// It combines multiple policies (reactive, spare-pool, predictive) into unified decisions
+type ScalingEngine struct {
+	policies      []ScalingPolicy
+	cloudProvider cloud.CloudProvider
+	vmProvisioner *VMProvisioner
+	nodeRegistry  *NodeRegistry
+	enabled       bool
+	checkInterval time.Duration
+	stopChan      chan struct{}
+}
+
+// NewScalingEngine creates a new scaling engine
+func NewScalingEngine(
+	cloudProvider cloud.CloudProvider,
+	vmProvisioner *VMProvisioner,
+	nodeRegistry *NodeRegistry,
+) *ScalingEngine {
+	engine := &ScalingEngine{
+		policies:      []ScalingPolicy{},
+		cloudProvider: cloudProvider,
+		vmProvisioner: vmProvisioner,
+		nodeRegistry:  nodeRegistry,
+		enabled:       true,
+		checkInterval: 2 * time.Minute, // Check every 2 minutes
+		stopChan:      make(chan struct{}),
+	}
+
+	// Register default policies
+	engine.RegisterPolicy(NewReactivePolicy())
+	// TODO B6: engine.RegisterPolicy(NewSparePoolPolicy())
+	// TODO B7: engine.RegisterPolicy(NewPredictivePolicy())
+
+	return engine
+}
+
+// RegisterPolicy adds a new scaling policy
+// Policies are automatically sorted by priority (highest first)
+func (e *ScalingEngine) RegisterPolicy(policy ScalingPolicy) {
+	e.policies = append(e.policies, policy)
+
+	// Sort policies by priority (highest first)
+	sort.Slice(e.policies, func(i, j int) bool {
+		return e.policies[i].Priority() > e.policies[j].Priority()
+	})
+
+	logger.Info("Scaling policy registered", map[string]interface{}{
+		"policy":   policy.Name(),
+		"priority": policy.Priority(),
+	})
+}
+
+// Start begins the scaling engine evaluation loop
+func (e *ScalingEngine) Start() {
+	logger.Info("ScalingEngine started", map[string]interface{}{
+		"check_interval": e.checkInterval.String(),
+		"policies_count": len(e.policies),
+		"policies": func() []string {
+			names := make([]string, len(e.policies))
+			for i, p := range e.policies {
+				names[i] = p.Name()
+			}
+			return names
+		}(),
+	})
+
+	go e.runLoop()
+}
+
+// Stop stops the scaling engine
+func (e *ScalingEngine) Stop() {
+	logger.Info("Stopping ScalingEngine", nil)
+	close(e.stopChan)
+}
+
+// Enable enables scaling operations
+func (e *ScalingEngine) Enable() {
+	e.enabled = true
+	logger.Info("ScalingEngine enabled", nil)
+}
+
+// Disable disables scaling operations (for maintenance)
+func (e *ScalingEngine) Disable() {
+	e.enabled = false
+	logger.Info("ScalingEngine disabled", nil)
+}
+
+// IsEnabled returns whether scaling is enabled
+func (e *ScalingEngine) IsEnabled() bool {
+	return e.enabled
+}
+
+// runLoop is the main evaluation loop
+func (e *ScalingEngine) runLoop() {
+	ticker := time.NewTicker(e.checkInterval)
+	defer ticker.Stop()
+
+	// Run immediately on start
+	e.evaluateScaling()
+
+	for {
+		select {
+		case <-ticker.C:
+			e.evaluateScaling()
+		case <-e.stopChan:
+			logger.Info("ScalingEngine loop stopped", nil)
+			return
+		}
+	}
+}
+
+// evaluateScaling checks all policies and executes scaling if needed
+func (e *ScalingEngine) evaluateScaling() {
+	if !e.enabled {
+		logger.Debug("Scaling evaluation skipped (disabled)", nil)
+		return
+	}
+
+	// Build current context
+	ctx := e.buildScalingContext()
+
+	logger.Debug("Evaluating scaling", map[string]interface{}{
+		"total_ram_mb":     ctx.FleetStats.TotalRAMMB,
+		"allocated_ram_mb": ctx.FleetStats.AllocatedRAMMB,
+		"capacity_percent": func() float64 {
+			if ctx.FleetStats.TotalRAMMB == 0 {
+				return 0
+			}
+			return (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
+		}(),
+		"dedicated_nodes": len(ctx.DedicatedNodes),
+		"cloud_nodes":     len(ctx.CloudNodes),
+	})
+
+	// Ask all policies (in priority order) if we should scale UP
+	for _, policy := range e.policies {
+		if shouldScale, recommendation := policy.ShouldScaleUp(ctx); shouldScale {
+			logger.Info("Scale UP decision", map[string]interface{}{
+				"policy":      policy.Name(),
+				"action":      recommendation.Action,
+				"server_type": recommendation.ServerType,
+				"count":       recommendation.Count,
+				"reason":      recommendation.Reason,
+				"urgency":     recommendation.Urgency,
+			})
+
+			if err := e.executeScaling(recommendation); err != nil {
+				logger.Error("Failed to execute scaling", err, map[string]interface{}{
+					"policy":     policy.Name(),
+					"action":     recommendation.Action,
+					"recommendation": recommendation,
+				})
+			}
+
+			return // Only execute ONE action per cycle
+		}
+	}
+
+	// Ask all policies if we should scale DOWN
+	for _, policy := range e.policies {
+		if shouldScale, recommendation := policy.ShouldScaleDown(ctx); shouldScale {
+			logger.Info("Scale DOWN decision", map[string]interface{}{
+				"policy": policy.Name(),
+				"action": recommendation.Action,
+				"count":  recommendation.Count,
+				"reason": recommendation.Reason,
+			})
+
+			if err := e.executeScaling(recommendation); err != nil {
+				logger.Error("Failed to execute scaling", err, map[string]interface{}{
+					"policy": policy.Name(),
+					"action": recommendation.Action,
+				})
+			}
+
+			return // Only execute ONE action per cycle
+		}
+	}
+
+	logger.Debug("No scaling action needed", nil)
+}
+
+// buildScalingContext gathers all data needed for scaling decisions
+func (e *ScalingEngine) buildScalingContext() ScalingContext {
+	stats := e.nodeRegistry.GetFleetStats()
+	nodes := e.nodeRegistry.GetAllNodes()
+
+	var dedicatedNodes, cloudNodes []*Node
+	for _, node := range nodes {
+		if node.Type == "dedicated" {
+			dedicatedNodes = append(dedicatedNodes, node)
+		} else if node.Type == "cloud" {
+			cloudNodes = append(cloudNodes, node)
+		}
+	}
+
+	now := time.Now()
+
+	return ScalingContext{
+		FleetStats:     stats,
+		DedicatedNodes: dedicatedNodes,
+		CloudNodes:     cloudNodes,
+		CurrentTime:    now,
+		IsWeekend:      now.Weekday() == time.Saturday || now.Weekday() == time.Sunday,
+		IsHoliday:      false, // TODO: Holiday calendar
+
+		// TODO: Add historical data from InfluxDB
+		AverageRAMUsageLast1h:  0,
+		AverageRAMUsageLast24h: 0,
+		PeakRAMUsageLast24h:    0,
+
+		// TODO B7: Add forecast data from ML service
+		ForecastedRAMIn1h: 0,
+		ForecastedRAMIn2h: 0,
+	}
+}
+
+// executeScaling performs the actual scaling operation
+func (e *ScalingEngine) executeScaling(rec ScaleRecommendation) error {
+	switch rec.Action {
+	case ScaleActionScaleUp:
+		return e.scaleUp(rec)
+
+	case ScaleActionScaleDown:
+		return e.scaleDown(rec)
+
+	case ScaleActionProvisionSpare:
+		return e.provisionSpare(rec)
+
+	default:
+		return nil
+	}
+}
+
+// scaleUp provisions new cloud nodes
+func (e *ScalingEngine) scaleUp(rec ScaleRecommendation) error {
+	logger.Info("Scaling UP", map[string]interface{}{
+		"server_type": rec.ServerType,
+		"count":       rec.Count,
+		"reason":      rec.Reason,
+		"urgency":     rec.Urgency,
+	})
+
+	for i := 0; i < rec.Count; i++ {
+		// Provision new VM
+		node, err := e.vmProvisioner.ProvisionNode(rec.ServerType)
+		if err != nil {
+			logger.Error("Failed to provision node", err, map[string]interface{}{
+				"server_type": rec.ServerType,
+				"attempt":     i + 1,
+			})
+
+			// Publish scaling event (failed)
+			events.PublishScalingEvent("scale_up", "failed", err.Error())
+
+			return fmt.Errorf("failed to provision node: %w", err)
+		}
+
+		logger.Info("Node provisioned successfully", map[string]interface{}{
+			"node_id":     node.ID,
+			"node_type":   rec.ServerType,
+			"ip":          node.IPAddress,
+			"ram_mb":      node.TotalRAMMB,
+			"cost_eur_hr": node.HourlyCostEUR,
+		})
+
+		// Publish scaling event (success)
+		events.PublishScalingEvent("scale_up", "success", node.ID)
+	}
+
+	return nil
+}
+
+// scaleDown removes idle cloud nodes
+func (e *ScalingEngine) scaleDown(rec ScaleRecommendation) error {
+	logger.Info("Scaling DOWN", map[string]interface{}{
+		"count":  rec.Count,
+		"reason": rec.Reason,
+	})
+
+	// Get all cloud nodes
+	cloudNodes := e.nodeRegistry.GetNodesByType("cloud")
+
+	if len(cloudNodes) == 0 {
+		logger.Warn("No cloud nodes to scale down", nil)
+		return nil
+	}
+
+	// Find the least utilized node
+	nodeToRemove := e.findLeastUtilizedNode(cloudNodes)
+
+	if nodeToRemove == nil {
+		logger.Warn("No suitable node found for scale down", nil)
+		return nil
+	}
+
+	// Check if node has containers
+	if nodeToRemove.ContainerCount > 0 {
+		logger.Warn("Node has active containers, cannot scale down yet", map[string]interface{}{
+			"node_id":         nodeToRemove.ID,
+			"container_count": nodeToRemove.ContainerCount,
+		})
+		// TODO: Implement container draining/migration
+		return fmt.Errorf("node has active containers: %s", nodeToRemove.ID)
+	}
+
+	// Decommission the node
+	if err := e.vmProvisioner.DecommissionNode(nodeToRemove.ID); err != nil {
+		logger.Error("Failed to decommission node", err, map[string]interface{}{
+			"node_id": nodeToRemove.ID,
+		})
+
+		events.PublishScalingEvent("scale_down", "failed", err.Error())
+		return fmt.Errorf("failed to decommission node: %w", err)
+	}
+
+	logger.Info("Node scaled down successfully", map[string]interface{}{
+		"node_id": nodeToRemove.ID,
+	})
+
+	events.PublishScalingEvent("scale_down", "success", nodeToRemove.ID)
+
+	return nil
+}
+
+// provisionSpare provisions a spare node for hot-spare pool (B6)
+func (e *ScalingEngine) provisionSpare(rec ScaleRecommendation) error {
+	logger.Info("Provisioning spare node", map[string]interface{}{
+		"server_type": rec.ServerType,
+		"reason":      rec.Reason,
+	})
+
+	// Use smallest VM type for spares
+	node, err := e.vmProvisioner.ProvisionSpareNode()
+	if err != nil {
+		logger.Error("Failed to provision spare node", err, nil)
+		return fmt.Errorf("failed to provision spare: %w", err)
+	}
+
+	logger.Info("Spare node provisioned", map[string]interface{}{
+		"node_id": node.ID,
+	})
+
+	events.PublishScalingEvent("provision_spare", "success", node.ID)
+
+	return nil
+}
+
+// findLeastUtilizedNode finds the cloud node with lowest utilization
+func (e *ScalingEngine) findLeastUtilizedNode(nodes []*Node) *Node {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	// Sort by container count (least utilized first)
+	var leastUtilized *Node
+	minContainers := int(^uint(0) >> 1) // Max int
+
+	for _, node := range nodes {
+		if node.ContainerCount < minContainers {
+			minContainers = node.ContainerCount
+			leastUtilized = node
+		}
+	}
+
+	return leastUtilized
+}
+
+// GetStatus returns the current scaling engine status
+func (e *ScalingEngine) GetStatus() ScalingEngineStatus {
+	ctx := e.buildScalingContext()
+
+	capacityPercent := 0.0
+	if ctx.FleetStats.TotalRAMMB > 0 {
+		capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
+	}
+
+	policyNames := make([]string, len(e.policies))
+	for i, p := range e.policies {
+		policyNames[i] = p.Name()
+	}
+
+	return ScalingEngineStatus{
+		Enabled:         e.enabled,
+		Policies:        policyNames,
+		TotalRAMMB:      ctx.FleetStats.TotalRAMMB,
+		AllocatedRAMMB:  ctx.FleetStats.AllocatedRAMMB,
+		CapacityPercent: capacityPercent,
+		DedicatedNodes:  len(ctx.DedicatedNodes),
+		CloudNodes:      len(ctx.CloudNodes),
+		TotalNodes:      len(ctx.DedicatedNodes) + len(ctx.CloudNodes),
+	}
+}
+
+// ScalingEngineStatus represents the current state of the scaling engine
+type ScalingEngineStatus struct {
+	Enabled         bool     `json:"enabled"`
+	Policies        []string `json:"policies"`
+	TotalRAMMB      int      `json:"total_ram_mb"`
+	AllocatedRAMMB  int      `json:"allocated_ram_mb"`
+	CapacityPercent float64  `json:"capacity_percent"`
+	DedicatedNodes  int      `json:"dedicated_nodes"`
+	CloudNodes      int      `json:"cloud_nodes"`
+	TotalNodes      int      `json:"total_nodes"`
+}

@@ -65,6 +65,20 @@ func (r *NodeRegistry) GetHealthyNodes() []*Node {
 	return nodes
 }
 
+// GetNodesByType returns all nodes of a specific type (dedicated, cloud, spare)
+func (r *NodeRegistry) GetNodesByType(nodeType string) []*Node {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	nodes := make([]*Node, 0)
+	for _, node := range r.nodes {
+		if node.Type == nodeType {
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
 // UpdateNodeStatus updates the health status of a node
 func (r *NodeRegistry) UpdateNodeStatus(nodeID string, status NodeStatus) {
 	r.mu.Lock()
@@ -93,6 +107,11 @@ func (r *NodeRegistry) RemoveNode(nodeID string) {
 	defer r.mu.Unlock()
 
 	delete(r.nodes, nodeID)
+}
+
+// UnregisterNode is an alias for RemoveNode (used by VMProvisioner)
+func (r *NodeRegistry) UnregisterNode(nodeID string) {
+	r.RemoveNode(nodeID)
 }
 
 // GetFleetStats returns aggregate statistics for the entire fleet

@@ -97,6 +97,53 @@ var (
 		},
 	)
 
+	// Scaling metrics (B5)
+	FleetCapacityPercent = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "payperplay_fleet_capacity_percent",
+			Help: "Fleet capacity utilization in percent (allocated/total RAM)",
+		},
+	)
+
+	FleetTotalNodes = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "payperplay_fleet_nodes_total",
+			Help: "Total number of nodes by type",
+		},
+		[]string{"type"}, // dedicated, cloud
+	)
+
+	FleetCloudNodesActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "payperplay_fleet_cloud_nodes_active",
+			Help: "Number of active cloud nodes (dynamic scaling)",
+		},
+	)
+
+	ScalingEventsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "payperplay_scaling_events_total",
+			Help: "Total number of scaling events",
+		},
+		[]string{"action", "status"}, // action: scale_up/scale_down/provision_spare, status: success/failed
+	)
+
+	ScalingPolicyDecisions = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "payperplay_scaling_policy_decisions_total",
+			Help: "Total number of scaling policy decisions",
+		},
+		[]string{"policy", "action"}, // policy: reactive/spare_pool/predictive, action: scale_up/scale_down/none
+	)
+
+	CloudNodeProvisionTime = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name: "payperplay_cloud_node_provision_seconds",
+			Help: "Time taken to provision a new cloud node",
+			Buckets: prometheus.ExponentialBuckets(30, 2, 8), // 30s, 60s, 120s, 240s, etc.
+		},
+	)
+
 	FleetTotalPlayers = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "payperplay_fleet_total_players",
