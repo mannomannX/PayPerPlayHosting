@@ -63,6 +63,20 @@ services:
       - RATE_4GB=0.20
       - RATE_8GB=0.40
       - RATE_16GB=0.80
+
+      # B5 Auto-Scaling (Hetzner Cloud)
+      - HETZNER_CLOUD_TOKEN=${HETZNER_CLOUD_TOKEN:-}
+      - HETZNER_SSH_KEY_NAME=${HETZNER_SSH_KEY_NAME:-payperplay-main}
+      - SCALING_ENABLED=${SCALING_ENABLED:-true}
+      - SCALING_CHECK_INTERVAL=2m
+      - SCALING_SCALE_UP_THRESHOLD=85.0
+      - SCALING_SCALE_DOWN_THRESHOLD=30.0
+      - SCALING_MAX_CLOUD_NODES=10
+
+      # System Resource Reservation
+      - SYSTEM_RESERVED_RAM_MB=1000
+      - SYSTEM_RESERVED_CPU_CORES=0.5
+      - SYSTEM_RESERVED_RAM_PERCENT=15.0
     networks:
       - payperplay-network
     depends_on:
