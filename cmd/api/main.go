@@ -257,6 +257,11 @@ func main() {
 	cond.SyncRunningContainers(dockerService, serverRepo)
 	logger.Info("Container state sync completed", nil)
 
+	// CRITICAL: Sync queued servers from database into StartQueue (prevents queue loss after restarts)
+	logger.Info("Syncing queued servers into StartQueue...", nil)
+	cond.SyncQueuedServers(serverRepo)
+	logger.Info("Queue sync completed", nil)
+
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)
 	oauthHandler := api.NewOAuthHandler(oauthService)

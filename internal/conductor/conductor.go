@@ -294,6 +294,105 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 	})
 }
 
+// SyncQueuedServers synchronizes queued servers from database into StartQueue
+// CRITICAL: Prevents queue loss after container restart, ensures Worker-Nodes aren't decommissioned prematurely
+// This must be called from main.go after services are initialized
+func (c *Conductor) SyncQueuedServers(serverRepo interface{}) {
+	logger.Info("QUEUE_SYNC: Detecting queued servers from database...", nil)
+
+	// Use reflection to call FindByStatus on serverRepo
+	repoVal := reflect.ValueOf(serverRepo)
+	findMethod := repoVal.MethodByName("FindByStatus")
+	if !findMethod.IsValid() {
+		logger.Error("QUEUE_SYNC: Repository missing FindByStatus method", nil, nil)
+		return
+	}
+
+	// Call FindByStatus("queued")
+	results := findMethod.Call([]reflect.Value{reflect.ValueOf("queued")})
+	if len(results) != 2 {
+		logger.Error("QUEUE_SYNC: Unexpected return from FindByStatus", nil, nil)
+		return
+	}
+
+	// Check for error (second return value)
+	if !results[1].IsNil() {
+		err := results[1].Interface().(error)
+		logger.Error("QUEUE_SYNC: Failed to query queued servers", err, nil)
+		return
+	}
+
+	// Get servers slice
+	serversVal := results[0]
+	if serversVal.Len() == 0 {
+		logger.Info("QUEUE_SYNC: No queued servers found (clean state)", nil)
+		return
+	}
+
+	logger.Info("QUEUE_SYNC: Found queued servers, re-enqueuing...", map[string]interface{}{
+		"count": serversVal.Len(),
+	})
+
+	enqueuedCount := 0
+
+	// Iterate over servers
+	for i := 0; i < serversVal.Len(); i++ {
+		server := serversVal.Index(i).Elem() // Elem() to dereference pointer
+
+		// Extract fields
+		serverID := server.FieldByName("ID").String()
+		serverName := server.FieldByName("Name").String()
+		ownerID := server.FieldByName("OwnerID").String()
+
+		// Get RAM via GetRAMMb() method
+		getRamMethod := serversVal.Index(i).MethodByName("GetRAMMb")
+		if !getRamMethod.IsValid() {
+			logger.Warn("QUEUE_SYNC: Server missing GetRAMMb method", map[string]interface{}{
+				"server_id": serverID[:8],
+			})
+			continue
+		}
+
+		ramResults := getRamMethod.Call(nil)
+		if len(ramResults) != 1 {
+			logger.Warn("QUEUE_SYNC: Unexpected return from GetRAMMb", map[string]interface{}{
+				"server_id": serverID[:8],
+			})
+			continue
+		}
+
+		ramMB := int(ramResults[0].Int())
+
+		// Enqueue the server
+		queuedServer := &QueuedServer{
+			ServerID:      serverID,
+			ServerName:    serverName,
+			RequiredRAMMB: ramMB,
+			QueuedAt:      time.Now(), // Use current time since we don't have original queue time
+			UserID:        ownerID,
+		}
+
+		c.StartQueue.Enqueue(queuedServer)
+		enqueuedCount++
+
+		logger.Info("QUEUE_SYNC: Server re-enqueued", map[string]interface{}{
+			"server_id":   serverID[:8],
+			"server_name": serverName,
+			"ram_mb":      ramMB,
+		})
+	}
+
+	logger.Info("QUEUE_SYNC: Completed", map[string]interface{}{
+		"enqueued": enqueuedCount,
+	})
+
+	// Trigger immediate scaling check to provision capacity for queued servers
+	if enqueuedCount > 0 {
+		logger.Info("QUEUE_SYNC: Triggering scaling check to provision capacity", nil)
+		c.TriggerScalingCheck()
+	}
+}
+
 // Stop stops the conductor and all its subsystems
 func (c *Conductor) Stop() {
 	logger.Info("Stopping Conductor Core", nil)
