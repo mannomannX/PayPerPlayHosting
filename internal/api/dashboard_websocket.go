@@ -191,14 +191,15 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 			Type:      "node.created",
 			Timestamp: time.Now(),
 			Data: map[string]interface{}{
-				"node_id":       node.ID,
-				"node_type":     node.Type,
-				"provider":      provider,
-				"location":      location,
-				"total_ram_mb":  node.TotalRAMMB,
-				"usable_ram_mb": node.UsableRAMMB(),
-				"status":        string(node.Status),
-				"ip_address":    node.IPAddress,
+				"node_id":        node.ID,
+				"node_type":      node.Type,
+				"provider":       provider,
+				"location":       location,
+				"total_ram_mb":   node.TotalRAMMB,
+				"usable_ram_mb":  node.UsableRAMMB(),
+				"status":         string(node.Status),
+				"ip_address":     node.IPAddress,
+				"is_system_node": node.IsSystemNode,
 			},
 		}
 		ws.sendToClient(client, event)
