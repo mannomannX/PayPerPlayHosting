@@ -759,6 +759,17 @@ func (c *Conductor) GetStatus() ConductorStatus {
 	return status
 }
 
+// TriggerScalingCheck triggers an immediate scaling evaluation
+// This should be called when a new server is created, updated, or deleted
+// to ensure capacity is provisioned without waiting for the next scaling interval
+func (c *Conductor) TriggerScalingCheck() {
+	if c.ScalingEngine != nil {
+		c.ScalingEngine.TriggerImmediateCheck()
+	} else {
+		logger.Debug("Scaling check skipped (ScalingEngine not available)", nil)
+	}
+}
+
 // ConductorStatus contains the current status of the conductor
 type ConductorStatus struct {
 	FleetStats      FleetStats           `json:"fleet_stats"`

@@ -109,6 +109,11 @@ type ConductorInterface interface {
 	// ProcessStartQueue attempts to start servers from the queue when capacity is available
 	ProcessStartQueue()
 
+	// TriggerScalingCheck triggers an immediate scaling evaluation
+	// This should be called when a server is created, updated, or deleted
+	// to ensure capacity is provisioned without waiting for the next scaling interval
+	TriggerScalingCheck()
+
 	// GetRemoteNode builds a RemoteNode struct from a nodeID for remote Docker operations
 	GetRemoteNode(nodeID string) (*docker.RemoteNode, error)
 
@@ -250,6 +255,11 @@ func (s *MinecraftService) CreateServer(
 
 	// Publish event
 	events.PublishServerCreated(server.ID, server.OwnerID, string(server.ServerType))
+
+	// Trigger immediate scaling check to provision capacity if needed
+	if s.conductor != nil {
+		s.conductor.TriggerScalingCheck()
+	}
 
 	log.Printf("Created server %s (%s) on port %d", serverID, name, port)
 	return server, nil
@@ -1017,6 +1027,11 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 
 	// Publish event
 	events.PublishServerDeleted(server.ID, server.OwnerID)
+
+	// Trigger immediate scaling check to scale down if needed
+	if s.conductor != nil {
+		s.conductor.TriggerScalingCheck()
+	}
 
 	log.Printf("Successfully deleted server %s", serverID)
 	return nil

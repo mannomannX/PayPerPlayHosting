@@ -125,6 +125,22 @@ func (e *ScalingEngine) IsEnabled() bool {
 	return e.enabled
 }
 
+// TriggerImmediateCheck triggers an immediate scaling evaluation
+// This is called when a new server is created or capacity changes to avoid waiting for the next interval
+func (e *ScalingEngine) TriggerImmediateCheck() {
+	if !e.enabled {
+		logger.Debug("Immediate scaling check skipped (disabled)", nil)
+		return
+	}
+
+	logger.Info("Triggering immediate scaling check", map[string]interface{}{
+		"reason": "server_created_or_modified",
+	})
+
+	// Run evaluation in background to avoid blocking the caller
+	go e.evaluateScaling()
+}
+
 // runLoop is the main evaluation loop
 func (e *ScalingEngine) runLoop() {
 	ticker := time.NewTicker(e.checkInterval)
