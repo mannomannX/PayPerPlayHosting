@@ -99,21 +99,22 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	// Calculate current capacity utilization (based on USABLE RAM, not total)
-	// This respects system reserve and only considers RAM available for containers
-	if ctx.FleetStats.UsableRAMMB == 0 {
+	// PROPORTIONAL OVERHEAD SYSTEM: Calculate based on TOTAL RAM (not UsableRAM!)
+	// With proportional overhead, we allocate based on BOOKED RAM (e.g. 8GB server = 8192MB allocation)
+	// The actual container gets less (ActualRAM), but capacity planning uses TOTAL RAM
+	// This is the CORRECT way - we no longer pre-reserve system overhead!
+	if ctx.FleetStats.TotalRAMMB == 0 {
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 
 	logger.Debug("ReactivePolicy: Capacity check", map[string]interface{}{
 		"capacity_percent":      capacityPercent,
 		"scale_up_threshold":    p.ScaleUpThreshold,
 		"allocated_ram_mb":      ctx.FleetStats.AllocatedRAMMB,
-		"usable_ram_mb":         ctx.FleetStats.UsableRAMMB,
-		"system_reserved_mb":    ctx.FleetStats.SystemReservedRAMMB,
 		"total_ram_mb":          ctx.FleetStats.TotalRAMMB,
+		"system_reserved_mb":    ctx.FleetStats.SystemReservedRAMMB,
 		"queued_servers":        ctx.QueuedServerCount,
 		"worker_nodes":          len(ctx.WorkerNodes),
 	})
@@ -159,17 +160,17 @@ func (p *ReactivePolicy) ShouldScaleDown(ctx ScalingContext) (bool, ScaleRecomme
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	// Calculate current capacity utilization (based on USABLE RAM, not total)
-	if ctx.FleetStats.UsableRAMMB == 0 {
+	// PROPORTIONAL OVERHEAD SYSTEM: Calculate based on TOTAL RAM (not UsableRAM!)
+	if ctx.FleetStats.TotalRAMMB == 0 {
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 
 	logger.Debug("ReactivePolicy: Scale down check", map[string]interface{}{
 		"capacity_percent":      capacityPercent,
 		"scale_down_threshold":  p.ScaleDownThreshold,
-		"usable_ram_mb":         ctx.FleetStats.UsableRAMMB,
+		"total_ram_mb":          ctx.FleetStats.TotalRAMMB,
 		"allocated_ram_mb":      ctx.FleetStats.AllocatedRAMMB,
 		"cloud_nodes":           len(ctx.CloudNodes),
 	})

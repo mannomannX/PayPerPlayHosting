@@ -282,18 +282,21 @@ func (r *NodeRegistry) GetFleetStats() FleetStats {
 		}
 	}
 
-	// Calculate usable RAM (Total - System Reserved)
+	// PROPORTIONAL OVERHEAD SYSTEM: Calculate based on TOTAL RAM (not UsableRAM!)
+	// UsableRAMMB is kept for backwards compatibility but no longer used for capacity decisions
 	stats.UsableRAMMB = stats.TotalRAMMB - stats.SystemReservedRAMMB
 
-	// Calculate available RAM (Usable - Allocated)
-	stats.AvailableRAMMB = stats.UsableRAMMB - stats.AllocatedRAMMB
+	// Calculate available RAM based on TOTAL RAM (proportional overhead system)
+	// Allocation uses BOOKED RAM (8GB = 8192MB), but containers get ActualRAM (less)
+	stats.AvailableRAMMB = stats.TotalRAMMB - stats.AllocatedRAMMB
 	if stats.AvailableRAMMB < 0 {
 		stats.AvailableRAMMB = 0
 	}
 
-	// Calculate utilization based on USABLE RAM (not total)
-	if stats.UsableRAMMB > 0 {
-		stats.RAMUtilizationPercent = (float64(stats.AllocatedRAMMB) / float64(stats.UsableRAMMB)) * 100.0
+	// Calculate utilization based on TOTAL RAM (not UsableRAM!)
+	// This is the CORRECT way with proportional overhead
+	if stats.TotalRAMMB > 0 {
+		stats.RAMUtilizationPercent = (float64(stats.AllocatedRAMMB) / float64(stats.TotalRAMMB)) * 100.0
 	}
 
 	return stats

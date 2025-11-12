@@ -38,12 +38,32 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	// This ensures the next scaling cycle sees "Worker-Node exists (provisioning)" instead of "0 nodes"
 	cfg := config.AppConfig
 	placeholderID := fmt.Sprintf("provisioning-%d", time.Now().UnixNano())
+
+	// Estimate RAM based on server type (common Hetzner types)
+	// This prevents the placeholder from being invisible due to TotalRAMMB=0
+	estimatedRAM := map[string]int{
+		"cx11":  2048,  // 2 GB
+		"cpx11": 2048,  // 2 GB
+		"cx22":  4096,  // 4 GB
+		"cpx22": 4096,  // 4 GB
+		"cx32":  8192,  // 8 GB
+		"cpx32": 8192,  // 8 GB
+		"cx42":  16384, // 16 GB
+		"cpx42": 16384, // 16 GB
+		"cx52":  32768, // 32 GB
+		"cpx52": 32768, // 32 GB
+	}
+	ramMB := estimatedRAM[serverType]
+	if ramMB == 0 {
+		ramMB = 8192 // Default fallback: 8GB
+	}
+
 	placeholderNode := &Node{
 		ID:               placeholderID,
 		Hostname:         fmt.Sprintf("provisioning-node-%d", time.Now().Unix()),
 		IPAddress:        "0.0.0.0", // Temporary IP until server is created
 		Type:             "cloud",
-		TotalRAMMB:       0, // Will be updated after server creation
+		TotalRAMMB:       ramMB, // CRITICAL: Set estimated RAM so node counts towards capacity!
 		TotalCPUCores:    0,
 		Status:           NodeStatusUnhealthy, // Unhealthy until fully provisioned
 		LastHealthCheck:  time.Now(),

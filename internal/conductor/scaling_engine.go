@@ -197,8 +197,8 @@ func (e *ScalingEngine) evaluateScaling() {
 
 			// Publish scaling decision event
 			capacityPercent := 0.0
-			if ctx.FleetStats.UsableRAMMB > 0 {
-				capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+			if ctx.FleetStats.TotalRAMMB > 0 {
+				capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 			}
 			events.PublishScalingDecision(policy.Name(), string(recommendation.Action), recommendation.ServerType, recommendation.Reason, string(recommendation.Urgency), recommendation.Count, capacityPercent, nil)
 
@@ -226,8 +226,8 @@ func (e *ScalingEngine) evaluateScaling() {
 
 			// Publish scaling decision event
 			capacityPercent := 0.0
-			if ctx.FleetStats.UsableRAMMB > 0 {
-				capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+			if ctx.FleetStats.TotalRAMMB > 0 {
+				capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 			}
 			events.PublishScalingDecision(policy.Name(), string(recommendation.Action), recommendation.ServerType, recommendation.Reason, string(recommendation.Urgency), recommendation.Count, capacityPercent, nil)
 
