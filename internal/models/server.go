@@ -22,6 +22,7 @@ const (
 type ServerStatus string
 
 const (
+	StatusQueued    ServerStatus = "queued"    // Waiting for node assignment and provisioning
 	StatusStopped   ServerStatus = "stopped"
 	StatusStarting  ServerStatus = "starting"
 	StatusRunning   ServerStatus = "running"
@@ -95,9 +96,9 @@ type MinecraftServer struct {
 	MOTD string `gorm:"size:512;default:'A Minecraft Server'"` // Message of the Day - server description
 
 	// Container Info
-	Status      ServerStatus `gorm:"default:stopped"`
+	Status      ServerStatus `gorm:"default:queued"` // Default to queued - Conductor will assign node
 	ContainerID string       `gorm:"size:128"`
-	NodeID      string       `gorm:"size:64;default:'local-node'"` // Multi-Node: Which node hosts this container
+	NodeID      string       `gorm:"size:64"` // Multi-Node: Which node hosts this container (assigned by Conductor)
 
 	// Timestamps
 	LastStartedAt *time.Time

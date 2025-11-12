@@ -185,7 +185,7 @@ func (s *MinecraftService) CreateServer(
 		MinecraftVersion:     minecraftVersion,
 		RAMMb:                ramMB,
 		Port:                 port,
-		Status:               models.StatusStopped,
+		Status:               models.StatusQueued, // Start in queue - Conductor will assign node
 		IdleTimeoutSeconds:   s.cfg.DefaultIdleTimeout,
 		AutoShutdownEnabled:  true,
 		MaxPlayers:           20,
