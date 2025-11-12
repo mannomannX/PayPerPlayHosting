@@ -679,19 +679,28 @@ func (c *Conductor) ProcessStartQueue() {
 			break // Queue empty
 		}
 
-		// Check if we have capacity for this server
-		fleetStats := c.NodeRegistry.GetFleetStats()
-		if fleetStats.AvailableRAMMB < queuedServer.RequiredRAMMB {
-			logger.Info("Insufficient capacity for queued server", map[string]interface{}{
-				"server_id":      queuedServer.ServerID,
-				"required_ram":   queuedServer.RequiredRAMMB,
-				"available_ram":  fleetStats.AvailableRAMMB,
-				"queue_position": 1,
+		// CRITICAL: Check capacity ONLY on Worker Nodes (MC servers cannot run on System nodes)
+		workerNodeRAM := 0
+		workerNodeCount := 0
+		for _, node := range c.NodeRegistry.GetAllNodes() {
+			if !node.IsSystemNode {
+				workerNodeRAM += node.AvailableRAMMB()
+				workerNodeCount++
+			}
+		}
+
+		if workerNodeRAM < queuedServer.RequiredRAMMB {
+			logger.Info("Insufficient Worker-Node capacity for queued server", map[string]interface{}{
+				"server_id":            queuedServer.ServerID,
+				"required_ram":         queuedServer.RequiredRAMMB,
+				"worker_node_ram":      workerNodeRAM,
+				"worker_node_count":    workerNodeCount,
+				"queue_position":       1,
 			})
 
 			// Trigger scaling if enabled
 			if c.ScalingEngine != nil && c.ScalingEngine.IsEnabled() {
-				logger.Info("Queued servers waiting for capacity, scaling will be triggered in next cycle", map[string]interface{}{
+				logger.Info("Queued servers waiting for Worker-Node capacity, scaling will be triggered in next cycle", map[string]interface{}{
 					"queue_size":     c.StartQueue.Size(),
 					"total_required": c.StartQueue.GetTotalRequiredRAM(),
 				})
@@ -701,15 +710,16 @@ func (c *Conductor) ProcessStartQueue() {
 			break // Stop processing, wait for more capacity
 		}
 
-		// We have capacity - dequeue and signal that server can start
+		// We have Worker-Node capacity - dequeue and signal that server can start
 		server := c.StartQueue.Dequeue()
 
-		logger.Info("Capacity available for queued server", map[string]interface{}{
-			"server_id":     server.ServerID,
-			"server_name":   server.ServerName,
-			"required_ram":  server.RequiredRAMMB,
-			"available_ram": fleetStats.AvailableRAMMB,
-			"wait_time":     time.Since(server.QueuedAt).String(),
+		logger.Info("Worker-Node capacity available for queued server", map[string]interface{}{
+			"server_id":           server.ServerID,
+			"server_name":         server.ServerName,
+			"required_ram":        server.RequiredRAMMB,
+			"worker_node_ram":     workerNodeRAM,
+			"worker_node_count":   workerNodeCount,
+			"wait_time":           time.Since(server.QueuedAt).String(),
 		})
 
 		// Start the server asynchronously
