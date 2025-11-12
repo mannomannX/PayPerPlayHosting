@@ -1,11 +1,14 @@
 package conductor
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/payperplay/hosting/internal/cloud"
+	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
 )
@@ -22,23 +25,48 @@ type Conductor struct {
 	NodeRegistry      *NodeRegistry
 	ContainerRegistry *ContainerRegistry
 	HealthChecker     *HealthChecker
-	ScalingEngine     *ScalingEngine // B5 - Auto-Scaling
-	StartQueue        *StartQueue    // Queue for servers waiting for capacity
-	StartedAt         time.Time      // When Conductor started (for startup delay)
-	serverStarter     ServerStarter  // Interface to start servers (injected)
-	stopChan          chan struct{}  // For graceful shutdown of background workers
+	NodeSelector      *NodeSelector         // Multi-Node: Intelligent node selection for container placement
+	ScalingEngine     *ScalingEngine        // B5 - Auto-Scaling
+	RemoteClient      *docker.RemoteDockerClient // For remote node operations (SSH-based)
+	StartQueue        *StartQueue           // Queue for servers waiting for capacity
+	StartedAt         time.Time             // When Conductor started (for startup delay)
+	serverStarter     ServerStarter         // Interface to start servers (injected)
+	stopChan          chan struct{}         // For graceful shutdown of background workers
 }
 
 // NewConductor creates a new conductor instance
-func NewConductor(healthCheckInterval time.Duration) *Conductor {
+// sshKeyPath is optional - if empty, remote node health checks will be skipped
+func NewConductor(healthCheckInterval time.Duration, sshKeyPath string) *Conductor {
 	nodeRegistry := NewNodeRegistry()
 	containerRegistry := NewContainerRegistry()
-	healthChecker := NewHealthChecker(nodeRegistry, containerRegistry, healthCheckInterval)
+
+	// Create RemoteDockerClient if SSH key path is provided
+	var remoteClient *docker.RemoteDockerClient
+	if sshKeyPath != "" {
+		var err error
+		remoteClient, err = docker.NewRemoteDockerClient(sshKeyPath)
+		if err != nil {
+			logger.Warn("Failed to create RemoteDockerClient, remote health checks will be skipped", map[string]interface{}{
+				"ssh_key_path": sshKeyPath,
+				"error":        err.Error(),
+			})
+			remoteClient = nil
+		} else {
+			logger.Info("RemoteDockerClient initialized successfully", map[string]interface{}{
+				"ssh_key_path": sshKeyPath,
+			})
+		}
+	}
+
+	healthChecker := NewHealthChecker(nodeRegistry, containerRegistry, remoteClient, healthCheckInterval)
+	nodeSelector := NewNodeSelector(nodeRegistry)
 
 	return &Conductor{
 		NodeRegistry:      nodeRegistry,
 		ContainerRegistry: containerRegistry,
 		HealthChecker:     healthChecker,
+		NodeSelector:      nodeSelector,
+		RemoteClient:      remoteClient,
 		ScalingEngine:     nil, // Initialized later with cloud provider
 		StartQueue:        NewStartQueue(),
 		StartedAt:         time.Now(), // Track startup time for delay
@@ -48,18 +76,20 @@ func NewConductor(healthCheckInterval time.Duration) *Conductor {
 
 // InitializeScaling initializes the scaling engine with a cloud provider
 // This is called after conductor creation once cloud credentials are available
-func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyName string, enabled bool) {
+func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyName string, enabled bool, velocityClient VelocityClient) {
 	if c.ScalingEngine != nil {
 		logger.Warn("Scaling engine already initialized", nil)
 		return
 	}
 
 	vmProvisioner := NewVMProvisioner(cloudProvider, c.NodeRegistry, sshKeyName)
-	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, c.StartQueue, enabled)
+	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, c.StartQueue, enabled, velocityClient)
+	c.ScalingEngine.SetConductor(c) // Set back-reference for migrations (B8)
 
 	logger.Info("Scaling engine initialized", map[string]interface{}{
 		"ssh_key": sshKeyName,
 		"enabled": enabled,
+		"consolidation_enabled": velocityClient != nil,
 	})
 }
 
@@ -88,6 +118,10 @@ func (c *Conductor) Start() {
 	// Start periodic queue processor (checks every 30 seconds as failsafe)
 	go c.periodicQueueWorker()
 	logger.Info("Periodic queue worker started (30-second intervals)", nil)
+
+	// Start reservation timeout cleaner (checks every 5 minutes)
+	go c.reservationTimeoutWorker()
+	logger.Info("Reservation timeout worker started (5-minute intervals, 30-minute timeout)", nil)
 
 	logger.Info("Conductor Core started successfully", nil)
 }
@@ -292,6 +326,18 @@ func (c *Conductor) CheckCapacity(requiredRAMMB int) (bool, int) {
 	fleetStats := c.NodeRegistry.GetFleetStats()
 	hasCapacity := fleetStats.AvailableRAMMB >= requiredRAMMB
 	return hasCapacity, fleetStats.AvailableRAMMB
+}
+
+// AtomicAllocateRAMOnNode atomically reserves RAM on a specific node
+// This is a wrapper for NodeRegistry.AtomicAllocateRAMOnNode()
+func (c *Conductor) AtomicAllocateRAMOnNode(nodeID string, ramMB int) bool {
+	return c.NodeRegistry.AtomicAllocateRAMOnNode(nodeID, ramMB)
+}
+
+// ReleaseRAMOnNode atomically releases RAM from a specific node
+// This is a wrapper for NodeRegistry.ReleaseRAMOnNode()
+func (c *Conductor) ReleaseRAMOnNode(nodeID string, ramMB int) {
+	c.NodeRegistry.ReleaseRAMOnNode(nodeID, ramMB)
 }
 
 // CanStartServer checks if a server can start now (STARTUP-DELAY + CPU + RAM guard)
@@ -608,4 +654,274 @@ func (c *Conductor) periodicQueueWorker() {
 			return
 		}
 	}
+}
+
+// reservationTimeoutWorker checks for stale "starting" reservations every 5 minutes
+// and automatically releases them after 30 minutes to prevent permanent deadlocks
+func (c *Conductor) reservationTimeoutWorker() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	const reservationTimeout = 30 * time.Minute
+
+	for {
+		select {
+		case <-ticker.C:
+			c.cleanStaleReservations(reservationTimeout)
+		case <-c.stopChan:
+			logger.Info("Reservation timeout worker stopped", nil)
+			return
+		}
+	}
+}
+
+// cleanStaleReservations finds and releases reservations that have been "starting" for too long
+func (c *Conductor) cleanStaleReservations(timeout time.Duration) {
+	c.ContainerRegistry.mu.Lock()
+	defer c.ContainerRegistry.mu.Unlock()
+
+	now := time.Now()
+	staleReservations := []string{}
+
+	// Find stale reservations
+	for serverID, container := range c.ContainerRegistry.containers {
+		if container.Status == "starting" {
+			age := now.Sub(container.LastSeenAt)
+			if age > timeout {
+				staleReservations = append(staleReservations, serverID)
+			}
+		}
+	}
+
+	// Release stale reservations
+	for _, serverID := range staleReservations {
+		container := c.ContainerRegistry.containers[serverID]
+		age := now.Sub(container.LastSeenAt)
+
+		logger.Warn("RESERVATION-TIMEOUT: Releasing stale start reservation", map[string]interface{}{
+			"server_id":   serverID,
+			"server_name": container.ServerName,
+			"ram_mb":      container.RAMMb,
+			"age_minutes": int(age.Minutes()),
+			"timeout":     int(timeout.Minutes()),
+		})
+
+		// Remove the reservation
+		delete(c.ContainerRegistry.containers, serverID)
+
+		// Note: We do NOT release RAM here because RAM is only allocated AFTER
+		// the start slot is reserved, not during reservation itself.
+		// The RAM release happens in ReleaseRAM() when the server actually fails to start.
+	}
+
+	// Only log if we found stale reservations (avoid spam)
+	if len(staleReservations) > 0 {
+		logger.Info("RESERVATION-TIMEOUT: Cleanup completed", map[string]interface{}{
+			"released_count": len(staleReservations),
+		})
+
+		// Trigger queue processing - now that CPU guard is freed, queued servers can start
+		go c.ProcessStartQueue()
+	}
+}
+
+// SelectNodeForContainer selects the best node for a new container using the configured strategy
+// Returns (nodeID, error)
+// This is the Multi-Node equivalent of the old hardcoded "local-node" logic
+func (c *Conductor) SelectNodeForContainer(requiredRAMMB int, strategy SelectionStrategy) (string, error) {
+	// Use NodeSelector to find the best node
+	nodeID, err := c.NodeSelector.SelectNode(requiredRAMMB, strategy)
+	if err != nil {
+		return "", err
+	}
+
+	logger.Info("Node selected for new container", map[string]interface{}{
+		"node_id":      nodeID,
+		"required_ram": requiredRAMMB,
+		"strategy":     strategy,
+	})
+
+	return nodeID, nil
+}
+
+// SelectNodeForContainerAuto selects the best node using the recommended strategy
+// This is a convenience method that automatically chooses the best strategy based on fleet composition
+func (c *Conductor) SelectNodeForContainerAuto(requiredRAMMB int) (string, error) {
+	recommendedStrategy := c.NodeSelector.GetRecommendedStrategy()
+	return c.SelectNodeForContainer(requiredRAMMB, recommendedStrategy)
+}
+
+// GetRemoteNode builds a RemoteNode struct from a nodeID
+// Returns (RemoteNode, error) - error if node not found or is the local node
+func (c *Conductor) GetRemoteNode(nodeID string) (*docker.RemoteNode, error) {
+	// Get node from registry
+	node, exists := c.NodeRegistry.GetNode(nodeID)
+	if !exists {
+		return nil, fmt.Errorf("node %s not found in registry", nodeID)
+	}
+
+	// Check if this is the local node (no remote operations needed)
+	if node.Type == "local" || node.IPAddress == "" || node.IPAddress == "localhost" || node.IPAddress == "127.0.0.1" {
+		return nil, fmt.Errorf("node %s is local, remote operations not supported", nodeID)
+	}
+
+	// Build RemoteNode struct
+	remoteNode := &docker.RemoteNode{
+		ID:        node.ID,
+		IPAddress: node.IPAddress,
+		SSHUser:   node.SSHUser,
+	}
+
+	// Use default SSH user if not specified
+	if remoteNode.SSHUser == "" {
+		remoteNode.SSHUser = "root"
+	}
+
+	return remoteNode, nil
+}
+
+// GetRemoteDockerClient returns the RemoteDockerClient for remote node operations
+func (c *Conductor) GetRemoteDockerClient() *docker.RemoteDockerClient {
+	return c.RemoteClient
+}
+
+// RegisterContainer registers a container in the registry with node tracking
+// This is used by MinecraftService to track which containers are running on which nodes
+func (c *Conductor) RegisterContainer(serverID, serverName, containerID, nodeID string, ramMB, dockerPort, minecraftPort int, status string) {
+	containerInfo := &ContainerInfo{
+		ServerID:      serverID,
+		ServerName:    serverName,
+		ContainerID:   containerID,
+		NodeID:        nodeID,
+		RAMMb:         ramMB,
+		Status:        status,
+		DockerPort:    dockerPort,
+		MinecraftPort: minecraftPort,
+	}
+
+	c.ContainerRegistry.RegisterContainer(containerInfo)
+
+	logger.Info("Container registered in registry", map[string]interface{}{
+		"server_id":      serverID,
+		"container_id":   containerID[:12],
+		"node_id":        nodeID,
+		"ram_mb":         ramMB,
+		"minecraft_port": minecraftPort,
+		"status":         status,
+	})
+}
+
+// GetContainer retrieves container info including node assignment
+// Returns (containerInfo, exists)
+func (c *Conductor) GetContainer(serverID string) (interface{}, bool) {
+	return c.ContainerRegistry.GetContainer(serverID)
+}
+
+// MigrateServer migrates a server from one node to another with minimal downtime (B8)
+// This is the core of the ConsolidationPolicy - enables cost optimization via bin-packing
+func (c *Conductor) MigrateServer(serverID, fromNodeID, toNodeID string, velocityClient VelocityRemoteClient) error {
+	startTime := time.Now()
+	operationID := fmt.Sprintf("migration-%s-%d", serverID[:8], time.Now().Unix())
+
+	logger.Info("MIGRATION: Starting server migration", map[string]interface{}{
+		"server_id":    serverID,
+		"from_node":    fromNodeID,
+		"to_node":      toNodeID,
+		"operation_id": operationID,
+	})
+
+	// 1. Get container info
+	container, exists := c.ContainerRegistry.GetContainer(serverID)
+	if !exists {
+		return fmt.Errorf("server %s not found in container registry", serverID)
+	}
+
+	// Verify current node matches
+	if container.NodeID != fromNodeID {
+		return fmt.Errorf("server %s is not on node %s (currently on %s)",
+			serverID, fromNodeID, container.NodeID)
+	}
+
+	// Publish migration started event
+	events.PublishMigrationStarted(operationID, serverID, container.ServerName, fromNodeID, toNodeID, container.RAMMb, 0)
+
+	// 2. Unregister from Velocity (prevent new player connections during migration)
+	events.PublishMigrationProgress(operationID, serverID, 10, "Unregistering from Velocity")
+	if velocityClient != nil {
+		logger.Info("MIGRATION: Unregistering from Velocity", map[string]interface{}{
+			"server_name": container.ServerName,
+		})
+
+		if err := velocityClient.UnregisterServer(container.ServerName); err != nil {
+			logger.Warn("MIGRATION: Failed to unregister from Velocity (continuing anyway)", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
+	}
+
+	// 3. Stop container on source node
+	events.PublishMigrationProgress(operationID, serverID, 30, "Stopping container on source node")
+	logger.Info("MIGRATION: Stopping container on source node", map[string]interface{}{
+		"node_id":      fromNodeID,
+		"container_id": container.ContainerID[:12],
+	})
+
+	// Get source node
+	sourceNode, err := c.GetRemoteNode(fromNodeID)
+	if err != nil {
+		events.PublishMigrationFailed(operationID, serverID, fmt.Sprintf("Failed to get source node: %v", err))
+		return fmt.Errorf("failed to get source node: %w", err)
+	}
+
+	// Stop container via remote client
+	ctx := context.Background()
+	if err := c.RemoteClient.StopContainer(ctx, sourceNode, container.ContainerID, 30); err != nil {
+		events.PublishMigrationFailed(operationID, serverID, fmt.Sprintf("Failed to stop container: %v", err))
+		return fmt.Errorf("failed to stop container: %w", err)
+	}
+
+	// Get current allocations for source node
+	sourceContainerCount, sourceAllocatedRAM := c.ContainerRegistry.GetNodeAllocation(fromNodeID)
+
+	// Update source node resources (decrement)
+	events.PublishMigrationProgress(operationID, serverID, 60, "Updating node resources")
+	c.NodeRegistry.UpdateNodeResources(fromNodeID, sourceContainerCount-1, sourceAllocatedRAM-container.RAMMb)
+
+	// 4. Start container on target node
+	events.PublishMigrationProgress(operationID, serverID, 80, "Preparing container on target node")
+	logger.Info("MIGRATION: Starting container on target node", map[string]interface{}{
+		"node_id": toNodeID,
+	})
+
+	// This requires MinecraftService to restart the server
+	// We'll mark it as stopped in the registry and let the normal start flow handle it
+	c.ContainerRegistry.RemoveContainer(serverID)
+
+	// NOTE: The actual restart on the new node will be handled by MinecraftService
+	// We just update the registry to reflect the migration intent
+	// MinecraftService will see the server is stopped and start it on the new node via SelectNode()
+
+	// 5. Re-register with Velocity on new node (will happen automatically when server starts)
+	// MinecraftService will call velocityClient.RegisterServer() after successful start
+
+	downtimeMs := time.Since(startTime).Milliseconds()
+
+	logger.Info("MIGRATION: Server migration completed", map[string]interface{}{
+		"server_id":   serverID,
+		"from_node":   fromNodeID,
+		"to_node":     toNodeID,
+		"downtime_ms": downtimeMs,
+	})
+
+	// Publish migration completed event
+	events.PublishMigrationCompleted(operationID, serverID)
+
+	return nil
+}
+
+// VelocityRemoteClient interface for Velocity integration (dependency injection)
+type VelocityRemoteClient interface {
+	RegisterServer(name, address string) error
+	UnregisterServer(name string) error
+	GetPlayerCount(serverName string) (int, error)
 }

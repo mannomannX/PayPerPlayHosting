@@ -33,6 +33,7 @@ func SetupRouter(
 	bulkHandler *BulkHandler,
 	marketplaceHandler *MarketplaceHandler,
 	scalingHandler *ScalingHandler,
+	dashboardWsHandler *DashboardWebSocket,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -266,6 +267,9 @@ func SetupRouter(
 		{
 			admin.GET("/servers", handler.ListAllServers)             // List ALL servers
 			admin.POST("/cleanup", handler.CleanOrphanedServers)      // Clean orphaned servers
+
+			// Dashboard WebSocket (real-time visualization)
+			admin.GET("/dashboard/stream", dashboardWsHandler.HandleConnection)
 		}
 
 		// Global monitoring
@@ -300,13 +304,14 @@ func SetupRouter(
 		admin.POST("/marketplace/sync", marketplaceHandler.SyncMarketplace)
 		admin.POST("/marketplace/plugins/:slug/sync", marketplaceHandler.SyncPlugin)
 
-		// Scaling API (B5 Auto-Scaling) - Admin only
+		// Scaling API (B5 Auto-Scaling + B8 Cost Optimization) - Admin only
 		scaling := api.Group("/scaling")
 		{
 			scaling.GET("/status", scalingHandler.GetScalingStatus)
 			scaling.POST("/enable", scalingHandler.EnableScaling)
 			scaling.POST("/disable", scalingHandler.DisableScaling)
 			scaling.GET("/history", scalingHandler.GetScalingHistory)
+			scaling.POST("/optimize-costs", scalingHandler.OptimizeCosts) // B8: Manual cost optimization trigger
 		}
 	}
 

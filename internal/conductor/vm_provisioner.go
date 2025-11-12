@@ -130,8 +130,15 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		"cost_eur_hr":        node.HourlyCostEUR,
 	})
 
-	// Publish event
+	// Publish event (old and new)
 	events.PublishNodeAdded(node.ID, node.Type)
+	// Provider and location are derived from cloud provider or labels
+	provider := "hetzner" // TODO: Get from cloud provider
+	location := "nbg1"    // Default location for now
+	if loc, ok := node.Labels["location"]; ok {
+		location = loc
+	}
+	events.PublishNodeCreated(node.ID, node.Type, provider, location, string(node.Status), node.IPAddress, node.TotalRAMMB, node.UsableRAMMB(), node.CreatedAt)
 
 	return node, nil
 }

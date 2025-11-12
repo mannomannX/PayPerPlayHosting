@@ -200,6 +200,20 @@ func main() {
 	}
 	defer velocityService.Stop()
 
+	// VELOCITY REMOTE API: Initialize HTTP client for remote Velocity proxy (NEW 3-tier architecture)
+	var remoteVelocityClient *velocity.RemoteVelocityClient
+	if cfg.VelocityAPIURL != "" {
+		remoteVelocityClient = velocity.NewRemoteVelocityClient(cfg.VelocityAPIURL)
+
+		// Link Remote Velocity client to MinecraftService for automatic server registration
+		mcService.SetRemoteVelocityClient(remoteVelocityClient)
+		logger.Info("Remote Velocity client initialized and linked to MinecraftService", map[string]interface{}{
+			"url": cfg.VelocityAPIURL,
+		})
+	} else {
+		logger.Warn("VELOCITY_API_URL not configured, remote Velocity integration disabled", nil)
+	}
+
 	// Start monitoring service
 	monitoringService.Start()
 	defer monitoringService.Stop()
@@ -211,15 +225,16 @@ func main() {
 	logger.Info("Prometheus metrics exporter started", nil)
 
 	// Initialize Conductor Core for fleet orchestration
-	cond := conductor.NewConductor(60 * time.Second) // Health check every 60 seconds
+	cond := conductor.NewConductor(60*time.Second, cfg.SSHPrivateKeyPath) // Health check every 60 seconds
 
-	// Initialize Scaling Engine (B5) if Hetzner Cloud token is configured
+	// Initialize Scaling Engine (B5 + B8) if Hetzner Cloud token is configured
 	if cfg.HetznerCloudToken != "" {
 		hetznerProvider := cloud.NewHetznerProvider(cfg.HetznerCloudToken)
-		cond.InitializeScaling(hetznerProvider, cfg.HetznerSSHKeyName, cfg.ScalingEnabled)
+		cond.InitializeScaling(hetznerProvider, cfg.HetznerSSHKeyName, cfg.ScalingEnabled, remoteVelocityClient)
 		logger.Info("Scaling engine initialized", map[string]interface{}{
 			"ssh_key": cfg.HetznerSSHKeyName,
 			"enabled": cfg.ScalingEnabled,
+			"consolidation_enabled": remoteVelocityClient != nil && cfg.CostOptimizationEnabled,
 		})
 	} else {
 		logger.Warn("Hetzner Cloud token not configured, scaling disabled", nil)
@@ -317,8 +332,17 @@ func main() {
 	// Scaling handler for auto-scaling (B5)
 	scalingHandler := api.NewScalingHandler(cond)
 
+	// Dashboard WebSocket for real-time visualization
+	dashboardWs := api.NewDashboardWebSocket(cond)
+	go dashboardWs.Run()
+	defer dashboardWs.Shutdown()
+	logger.Info("Dashboard WebSocket started", nil)
+
+	// Set dashboard WebSocket as global event publisher
+	events.DashboardEventPublisher = dashboardWs
+
 	// Setup router
-	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, dashboardWs, cfg)
 
 	// Graceful shutdown
 	go func() {

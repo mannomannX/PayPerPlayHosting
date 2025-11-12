@@ -13,14 +13,16 @@ import (
 // ScalingEngine orchestrates all scaling operations
 // It combines multiple policies (reactive, spare-pool, predictive) into unified decisions
 type ScalingEngine struct {
-	policies      []ScalingPolicy
-	cloudProvider cloud.CloudProvider
-	vmProvisioner *VMProvisioner
-	nodeRegistry  *NodeRegistry
-	startQueue    *StartQueue // Queue for servers waiting for capacity
-	enabled       bool
-	checkInterval time.Duration
-	stopChan      chan struct{}
+	policies       []ScalingPolicy
+	cloudProvider  cloud.CloudProvider
+	vmProvisioner  *VMProvisioner
+	nodeRegistry   *NodeRegistry
+	startQueue     *StartQueue // Queue for servers waiting for capacity
+	conductor      *Conductor  // Back-reference for migrations (B8)
+	velocityClient interface{} // For Velocity-aware migrations (can be nil or *velocity.RemoteVelocityClient)
+	enabled        bool
+	checkInterval  time.Duration
+	stopChan       chan struct{}
 }
 
 // NewScalingEngine creates a new scaling engine
@@ -30,22 +32,34 @@ func NewScalingEngine(
 	nodeRegistry *NodeRegistry,
 	startQueue *StartQueue,
 	enabled bool,
+	velocityClient VelocityClient,
 ) *ScalingEngine {
 	engine := &ScalingEngine{
-		policies:      []ScalingPolicy{},
-		cloudProvider: cloudProvider,
-		vmProvisioner: vmProvisioner,
-		nodeRegistry:  nodeRegistry,
-		startQueue:    startQueue,
-		enabled:       enabled,
-		checkInterval: 2 * time.Minute, // Check every 2 minutes
-		stopChan:      make(chan struct{}),
+		policies:       []ScalingPolicy{},
+		cloudProvider:  cloudProvider,
+		vmProvisioner:  vmProvisioner,
+		nodeRegistry:   nodeRegistry,
+		startQueue:     startQueue,
+		conductor:      nil, // Set later via SetConductor()
+		velocityClient: velocityClient,
+		enabled:        enabled,
+		checkInterval:  2 * time.Minute, // Check every 2 minutes
+		stopChan:       make(chan struct{}),
 	}
 
 	// Register default policies
-	engine.RegisterPolicy(NewReactivePolicy())
+	engine.RegisterPolicy(NewReactivePolicy(cloudProvider))
 	// TODO B6: engine.RegisterPolicy(NewSparePoolPolicy())
 	// TODO B7: engine.RegisterPolicy(NewPredictivePolicy())
+
+	// B8 Container Migration & Cost Optimization
+	if velocityClient != nil {
+		// ConsolidationPolicy only needs VelocityClient interface (GetPlayerCount method)
+		// velocityClient should implement both VelocityClient and VelocityRemoteClient
+		if vc, ok := velocityClient.(VelocityClient); ok {
+			engine.RegisterPolicy(NewConsolidationPolicy(vc))
+		}
+	}
 
 	return engine
 }
@@ -64,6 +78,11 @@ func (e *ScalingEngine) RegisterPolicy(policy ScalingPolicy) {
 		"policy":   policy.Name(),
 		"priority": policy.Priority(),
 	})
+}
+
+// SetConductor sets the conductor reference (called after initialization to avoid circular dependency)
+func (e *ScalingEngine) SetConductor(conductor *Conductor) {
+	e.conductor = conductor
 }
 
 // Start begins the scaling engine evaluation loop
@@ -160,6 +179,13 @@ func (e *ScalingEngine) evaluateScaling() {
 				"urgency":     recommendation.Urgency,
 			})
 
+			// Publish scaling decision event
+			capacityPercent := 0.0
+			if ctx.FleetStats.UsableRAMMB > 0 {
+				capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+			}
+			events.PublishScalingDecision(policy.Name(), string(recommendation.Action), recommendation.ServerType, recommendation.Reason, string(recommendation.Urgency), recommendation.Count, capacityPercent, nil)
+
 			if err := e.executeScaling(recommendation); err != nil {
 				logger.Error("Failed to execute scaling", err, map[string]interface{}{
 					"policy":     policy.Name(),
@@ -182,10 +208,43 @@ func (e *ScalingEngine) evaluateScaling() {
 				"reason": recommendation.Reason,
 			})
 
+			// Publish scaling decision event
+			capacityPercent := 0.0
+			if ctx.FleetStats.UsableRAMMB > 0 {
+				capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+			}
+			events.PublishScalingDecision(policy.Name(), string(recommendation.Action), recommendation.ServerType, recommendation.Reason, string(recommendation.Urgency), recommendation.Count, capacityPercent, nil)
+
 			if err := e.executeScaling(recommendation); err != nil {
 				logger.Error("Failed to execute scaling", err, map[string]interface{}{
 					"policy": policy.Name(),
 					"action": recommendation.Action,
+				})
+			}
+
+			return // Only execute ONE action per cycle
+		}
+	}
+
+	// Ask all policies if we should CONSOLIDATE (B8 - lowest priority, only if no other action)
+	for _, policy := range e.policies {
+		if shouldConsolidate, plan := policy.ShouldConsolidate(ctx); shouldConsolidate {
+			logger.Info("CONSOLIDATION decision", map[string]interface{}{
+				"policy":                 policy.Name(),
+				"migrations":             len(plan.Migrations),
+				"nodes_before":           len(ctx.CloudNodes),
+				"nodes_after":            len(plan.NodesToKeep),
+				"node_savings":           plan.NodeSavings,
+				"estimated_cost_savings": plan.EstimatedCostSavings,
+				"reason":                 plan.Reason,
+			})
+
+			// Publish consolidation started event
+			events.PublishConsolidationStarted(len(plan.Migrations), len(ctx.CloudNodes), len(plan.NodesToKeep), plan.NodeSavings, plan.EstimatedCostSavings, plan.Reason, plan.NodesToRemove)
+
+			if err := e.executeConsolidation(plan); err != nil {
+				logger.Error("Failed to execute consolidation", err, map[string]interface{}{
+					"policy": policy.Name(),
 				})
 			}
 
@@ -212,13 +271,20 @@ func (e *ScalingEngine) buildScalingContext() ScalingContext {
 
 	now := time.Now()
 
+	// Get ContainerRegistry from conductor (for B8 Consolidation)
+	var containerRegistry *ContainerRegistry
+	if e.conductor != nil {
+		containerRegistry = e.conductor.ContainerRegistry
+	}
+
 	return ScalingContext{
-		FleetStats:     stats,
-		DedicatedNodes: dedicatedNodes,
-		CloudNodes:     cloudNodes,
-		CurrentTime:    now,
-		IsWeekend:      now.Weekday() == time.Saturday || now.Weekday() == time.Sunday,
-		IsHoliday:      false, // TODO: Holiday calendar
+		FleetStats:        stats,
+		DedicatedNodes:    dedicatedNodes,
+		CloudNodes:        cloudNodes,
+		ContainerRegistry: containerRegistry,
+		CurrentTime:       now,
+		IsWeekend:         now.Weekday() == time.Saturday || now.Weekday() == time.Sunday,
+		IsHoliday:         false, // TODO: Holiday calendar
 
 		// TODO: Add historical data from InfluxDB
 		AverageRAMUsageLast1h:  0,
@@ -384,6 +450,126 @@ func (e *ScalingEngine) findLeastUtilizedNode(nodes []*Node) *Node {
 	}
 
 	return leastUtilized
+}
+
+// executeConsolidation performs container migration and node decommissioning (B8)
+func (e *ScalingEngine) executeConsolidation(plan ConsolidationPlan) error {
+	logger.Info("Executing CONSOLIDATION", map[string]interface{}{
+		"migrations":    len(plan.Migrations),
+		"nodes_before":  len(plan.NodesToKeep) + len(plan.NodesToRemove),
+		"nodes_after":   len(plan.NodesToKeep),
+		"node_savings":  plan.NodeSavings,
+		"cost_savings":  plan.EstimatedCostSavings,
+	})
+
+	// 1. Execute migrations
+	successfulMigrations := 0
+	failedMigrations := 0
+
+	for _, migration := range plan.Migrations {
+		logger.Info("Migrating server", map[string]interface{}{
+			"server_id":   migration.ServerID,
+			"server_name": migration.ServerName,
+			"from_node":   migration.FromNode,
+			"to_node":     migration.ToNode,
+			"ram_mb":      migration.RAMMb,
+			"players":     migration.PlayerCount,
+		})
+
+		if err := e.migrateServer(migration); err != nil {
+			logger.Error("Migration failed", err, map[string]interface{}{
+				"server_id":   migration.ServerID,
+				"server_name": migration.ServerName,
+			})
+			failedMigrations++
+
+			// Publish event
+			events.PublishScalingEvent("consolidation_migration_failed", migration.ServerID, err.Error())
+
+			continue // Try other migrations
+		}
+
+		successfulMigrations++
+
+		// Publish event
+		events.PublishScalingEvent("consolidation_migration_success", migration.ServerID, "")
+	}
+
+	logger.Info("Migrations completed", map[string]interface{}{
+		"successful": successfulMigrations,
+		"failed":     failedMigrations,
+	})
+
+	// If any migrations failed, abort decommissioning (safer)
+	if failedMigrations > 0 {
+		logger.Warn("Aborting node decommissioning due to failed migrations", map[string]interface{}{
+			"failed_count": failedMigrations,
+		})
+		return fmt.Errorf("consolidation partially failed: %d migrations failed", failedMigrations)
+	}
+
+	// 2. Decommission empty nodes
+	for _, nodeID := range plan.NodesToRemove {
+		logger.Info("Decommissioning node", map[string]interface{}{
+			"node_id": nodeID,
+		})
+
+		if err := e.vmProvisioner.DecommissionNode(nodeID); err != nil {
+			logger.Error("Failed to decommission node", err, map[string]interface{}{
+				"node_id": nodeID,
+			})
+
+			// Publish event
+			events.PublishScalingEvent("consolidation_decommission_failed", nodeID, err.Error())
+
+			// Don't fail entire consolidation if one decommission fails
+			continue
+		}
+
+		logger.Info("Node decommissioned successfully", map[string]interface{}{
+			"node_id": nodeID,
+		})
+
+		// Publish event
+		events.PublishScalingEvent("consolidation_decommission_success", nodeID, "")
+	}
+
+	// Publish overall consolidation success
+	events.PublishScalingEvent("consolidation_complete", fmt.Sprintf("saved_%d_nodes", plan.NodeSavings), "")
+	events.PublishConsolidationCompleted(successfulMigrations, failedMigrations)
+
+	logger.Info("Consolidation completed successfully", map[string]interface{}{
+		"nodes_decommissioned": len(plan.NodesToRemove),
+		"cost_savings_eur_hr":  plan.EstimatedCostSavings,
+		"cost_savings_eur_mo":  plan.EstimatedCostSavings * 730,
+	})
+
+	return nil
+}
+
+// migrateServer migrates a single server from one node to another
+// This is a helper method that delegates to Conductor.MigrateServer()
+func (e *ScalingEngine) migrateServer(migration Migration) error {
+	if e.conductor == nil {
+		return fmt.Errorf("conductor not set, cannot perform migration")
+	}
+
+	// Type-assert velocityClient to VelocityRemoteClient
+	var velocityRemoteClient VelocityRemoteClient
+	if e.velocityClient != nil {
+		var ok bool
+		velocityRemoteClient, ok = e.velocityClient.(VelocityRemoteClient)
+		if !ok {
+			return fmt.Errorf("velocityClient does not implement VelocityRemoteClient interface")
+		}
+	}
+
+	return e.conductor.MigrateServer(
+		migration.ServerID,
+		migration.FromNode,
+		migration.ToNode,
+		velocityRemoteClient,
+	)
 }
 
 // GetStatus returns the current scaling engine status
