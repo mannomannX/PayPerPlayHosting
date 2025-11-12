@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 import { useDashboardStore } from '../../stores/dashboardStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -13,13 +12,10 @@ export const Dashboard = () => {
     nodes,
     fleetStats,
     queueInfo,
-    migrations,
     connected,
     setConnected,
     handleEvent,
   } = useDashboardStore();
-
-  const [selectedMigration, setSelectedMigration] = useState<string | null>(null);
 
   // WebSocket connection
   useWebSocket({
