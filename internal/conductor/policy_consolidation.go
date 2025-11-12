@@ -102,6 +102,16 @@ func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, Conso
 		return false, ConsolidationPlan{}
 	}
 
+	// CRITICAL: Don't consolidate if there are queued servers waiting for deployment
+	// The queue indicates pending capacity demand that will soon be allocated
+	if ctx.QueuedServerCount > 0 {
+		logger.Debug("ConsolidationPolicy: Skipping consolidation - servers waiting in queue", map[string]interface{}{
+			"queue_size": ctx.QueuedServerCount,
+			"reason":     "Queued servers need Worker-Node capacity",
+		})
+		return false, ConsolidationPlan{}
+	}
+
 	// Safety check: Don't consolidate if capacity too high (risky!)
 	capacityPercent := float64(0)
 	if ctx.FleetStats.UsableRAMMB > 0 {
