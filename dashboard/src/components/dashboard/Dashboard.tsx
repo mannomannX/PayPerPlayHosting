@@ -1,20 +1,9 @@
-import { useCallback, useMemo } from 'react';
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  BackgroundVariant,
-} from 'reactflow';
-import type { NodeTypes, EdgeTypes } from 'reactflow';
-import 'reactflow/dist/style.css';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { useDashboardStore } from '../../stores/dashboardStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
-import { CloudNode } from '../nodes/CloudNode';
-import { DedicatedNode } from '../nodes/DedicatedNode';
-import { VelocityNode } from '../nodes/VelocityNode';
-import { MigrationEdge } from '../edges/MigrationEdge';
+import { GridNode } from '../nodes/GridNode';
 
 // WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
 const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
@@ -22,12 +11,15 @@ const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
 export const Dashboard = () => {
   const {
     nodes,
-    edges,
     fleetStats,
+    queueInfo,
+    migrations,
     connected,
     setConnected,
     handleEvent,
   } = useDashboardStore();
+
+  const [selectedMigration, setSelectedMigration] = useState<string | null>(null);
 
   // WebSocket connection
   useWebSocket({
@@ -38,63 +30,51 @@ export const Dashboard = () => {
     onError: (error) => console.error('[Dashboard] WebSocket error:', error),
   });
 
-  // Define custom node types
-  const nodeTypes: NodeTypes = useMemo(
-    () => ({
-      cloudNode: CloudNode,
-      dedicatedNode: DedicatedNode,
-      velocityNode: VelocityNode,
-    }),
-    []
-  );
+  // Separate nodes by tier for grid layout
+  const controlNodes = nodes.filter(n => n.id.includes('local') || n.id.includes('control'));
+  const proxyNodes = nodes.filter(n => n.id.includes('proxy'));
+  const workloadNodes = nodes.filter(n => !n.id.includes('local') && !n.id.includes('control') && !n.id.includes('proxy'));
 
-  // Define custom edge types
-  const edgeTypes: EdgeTypes = useMemo(
-    () => ({
-      migrationEdge: MigrationEdge,
-    }),
-    []
-  );
-
-  // Mini map node colors
-  const nodeColor = useCallback((node: any) => {
-    switch (node.type) {
-      case 'cloudNode':
-        return '#667eea';
-      case 'dedicatedNode':
-        return '#134e4a';
-      case 'velocityNode':
-        return '#0ea5e9';
-      default:
-        return '#6b7280';
+  // Get container status color
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'running': return '#10b981'; // green
+      case 'starting': return '#3b82f6'; // blue
+      case 'stopping': return '#f59e0b'; // yellow
+      case 'stopped': return '#6b7280'; // gray
+      case 'error':
+      case 'crashed': return '#ef4444'; // red
+      default: return '#6b7280'; // gray
     }
-  }, []);
+  };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#0f172a' }}>
+    <div style={{ width: '100vw', height: '100vh', background: '#0f172a', overflow: 'hidden' }}>
       {/* Header */}
       <motion.div
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         style={{
-          position: 'absolute',
+          position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
-          zIndex: 10,
-          background: 'linear-gradient(to bottom, rgba(15, 23, 42, 0.95), transparent)',
-          padding: '20px 30px',
+          zIndex: 20,
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid #334155',
+          padding: '16px 30px',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
         }}
       >
         <div>
-          <h1 style={{ color: 'white', margin: 0, fontSize: '28px', fontWeight: 'bold' }}>
+          <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
             PayPerPlay Dashboard
           </h1>
-          <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '14px' }}>
-            Live Fleet Monitoring & Auto-Scaling Visualization
+          <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '12px' }}>
+            3-Tier Architecture Fleet Monitoring
           </p>
         </div>
 
@@ -211,56 +191,195 @@ export const Dashboard = () => {
         </motion.div>
       )}
 
-      {/* React Flow Canvas */}
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView
-        attributionPosition="bottom-left"
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#1e293b" />
-        <Controls />
-        <MiniMap nodeColor={nodeColor} pannable zoomable />
-      </ReactFlow>
+      {/* Deployment Queue Panel */}
+      {queueInfo && queueInfo.queue_size > 0 && (
+        <motion.div
+          initial={{ x: 300, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          style={{
+            position: 'fixed',
+            top: '100px',
+            right: '20px',
+            zIndex: 10,
+            background: 'rgba(15, 23, 42, 0.9)',
+            border: '2px solid #f59e0b',
+            borderRadius: '12px',
+            padding: '16px',
+            minWidth: '280px',
+            maxWidth: '320px',
+            color: 'white',
+            backdropFilter: 'blur(10px)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 'bold' }}>
+              Deployment Queue
+            </h3>
+            <div style={{
+              background: '#f59e0b',
+              color: '#000',
+              borderRadius: '12px',
+              padding: '2px 8px',
+              fontSize: '12px',
+              fontWeight: 'bold',
+            }}>
+              {queueInfo.queue_size}
+            </div>
+          </div>
 
-      {/* Legend */}
+          <div style={{ fontSize: '12px', maxHeight: '400px', overflowY: 'auto' }}>
+            {queueInfo.servers.map((server, idx) => (
+              <motion.div
+                key={server.ServerID}
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                transition={{ delay: idx * 0.1 }}
+                style={{
+                  background: 'rgba(245, 158, 11, 0.1)',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '8px',
+                  padding: '10px',
+                  marginBottom: '8px',
+                }}
+              >
+                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
+                  #{idx + 1} {server.ServerName || server.ServerID.substring(0, 8)}
+                </div>
+                <div style={{ opacity: 0.8, fontSize: '11px' }}>
+                  RAM: {server.RequiredRAMMB} MB
+                </div>
+                <div style={{ opacity: 0.7, fontSize: '10px', marginTop: '4px' }}>
+                  Waiting for capacity...
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Grid Layout for Nodes */}
+      <div style={{
+        position: 'absolute',
+        top: '80px',
+        left: '300px',
+        right: queueInfo && queueInfo.queue_size > 0 ? '360px' : '20px',
+        bottom: '20px',
+        padding: '20px',
+        overflowY: 'auto',
+      }}>
+        {/* Tier 1: Control Plane & Proxy */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, 320px)',
+          gap: '20px',
+          marginBottom: '40px',
+          justifyContent: 'start',
+        }}>
+          {controlNodes.map(node => (
+            <GridNode key={node.id} node={node} getStatusColor={getStatusColor} />
+          ))}
+          {proxyNodes.map(node => (
+            <GridNode key={node.id} node={node} getStatusColor={getStatusColor} />
+          ))}
+        </div>
+
+        {/* Separator */}
+        {workloadNodes.length > 0 && (
+          <div style={{
+            height: '2px',
+            background: 'linear-gradient(to right, transparent, #334155, transparent)',
+            marginBottom: '30px',
+            position: 'relative',
+          }}>
+            <div style={{
+              position: 'absolute',
+              top: '-10px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: '#0f172a',
+              padding: '0 16px',
+              color: '#94a3b8',
+              fontSize: '12px',
+              fontWeight: 'bold',
+            }}>
+              WORKLOAD LAYER (Tier 3)
+            </div>
+          </div>
+        )}
+
+        {/* Tier 3: Workload Nodes */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, 320px)',
+          gap: '20px',
+          justifyContent: 'start',
+        }}>
+          {workloadNodes.map(node => (
+            <GridNode key={node.id} node={node} getStatusColor={getStatusColor} />
+          ))}
+        </div>
+
+        {/* Empty State */}
+        {nodes.length === 0 && (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            color: '#64748b',
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🏗️</div>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '8px' }}>
+              No Nodes Detected
+            </div>
+            <div style={{ fontSize: '14px', opacity: 0.7 }}>
+              Waiting for nodes to register...
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Status Legend */}
       <motion.div
-        initial={{ x: 300, opacity: 0 }}
-        animate={{ x: 0, opacity: 1 }}
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
         style={{
-          position: 'absolute',
+          position: 'fixed',
           bottom: '20px',
-          right: '20px',
+          left: '300px',
           zIndex: 10,
           background: 'rgba(15, 23, 42, 0.9)',
           border: '2px solid #334155',
           borderRadius: '12px',
-          padding: '16px',
+          padding: '12px 16px',
           color: 'white',
           backdropFilter: 'blur(10px)',
         }}
       >
-        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: 'bold' }}>
-          Legend
-        </h3>
-        <div style={{ fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', background: '#667eea' }} />
-            <span>Cloud Node</span>
+        <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '8px' }}>
+          Container Status:
+        </div>
+        <div style={{ display: 'flex', gap: '16px', fontSize: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#10b981' }} />
+            <span>Running</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', background: '#134e4a' }} />
-            <span>Dedicated Node</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#3b82f6' }} />
+            <span>Starting</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{ width: '20px', height: '20px', borderRadius: '4px', background: '#0ea5e9' }} />
-            <span>Velocity Proxy</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#f59e0b' }} />
+            <span>Stopping</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #334155' }}>
-            <div style={{ width: '20px', height: '2px', background: '#3b82f6' }} />
-            <span>Active Migration</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#6b7280' }} />
+            <span>Stopped</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#ef4444' }} />
+            <span>Error</span>
           </div>
         </div>
       </motion.div>
