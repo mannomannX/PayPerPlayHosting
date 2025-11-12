@@ -258,18 +258,14 @@ func main() {
 	logger.Info("Container state sync completed", nil)
 
 	// CRITICAL: Sync queued servers from database into StartQueue (prevents queue loss after restarts)
-	// This must run BEFORE Worker-Node sync to avoid consolidation race condition
 	logger.Info("Syncing queued servers into StartQueue...", nil)
 	cond.SyncQueuedServers(serverRepo, false) // Don't trigger scaling yet
 	logger.Info("Queue sync completed", nil)
 
-	// CRITICAL: Sync existing Worker-Nodes from Hetzner API (prevents duplicate provisioning)
-	// This runs AFTER queue sync so consolidation sees the full queue state
-	logger.Info("Syncing Worker-Nodes from Hetzner API...", nil)
-	cond.SyncExistingWorkerNodes(false) // Don't trigger scaling yet
-	logger.Info("Worker-Node sync completed", nil)
+	// NOTE: Worker-Node sync REMOVED - nodes are registered via ProvisionNode, not recovered
+	// This prevents node churn during container restarts
 
-	// Trigger scaling check now that both queue and nodes are synced
+	// Trigger scaling check for queued servers
 	logger.Info("Triggering initial scaling check...", nil)
 	cond.TriggerScalingCheck()
 	logger.Info("Initial scaling check triggered", nil)

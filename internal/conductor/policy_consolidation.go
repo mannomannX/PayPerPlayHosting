@@ -50,7 +50,7 @@ type VelocityClient interface {
 // NewConsolidationPolicy creates a new consolidation policy
 func NewConsolidationPolicy(velocityClient VelocityClient) *ConsolidationPolicy {
 	return &ConsolidationPolicy{
-		Enabled:                   true,
+		Enabled:                   false, // DISABLED: Too aggressive, causes node churn
 		CooldownPeriod:            30 * time.Minute, // Check every 30 minutes
 		ThresholdNodeSavings:      2,                // Only consolidate if saving 2+ nodes
 		MaxCapacityPercent:        70.0,             // Don't consolidate if fleet >70% full

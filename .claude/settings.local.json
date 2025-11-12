@@ -1,8 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(do curl -s -X POST \"http://91.98.202.235:8000/api/servers?token=$TOKEN\" -H \"Content-Type: application/json\" -d \"{\"\"name\"\":\"\"test-$i\"\",\"\"minecraft_version\"\":\"\"1.21\"\",\"\"server_type\"\":\"\"paper\"\",\"\"ram_mb\"\":512,\"\"port\"\":0}\")",
-      "Bash(do curl -s -X POST \"http://91.98.202.235:8000/api/servers?token=$TOKEN\" -H \"Content-Type: application/json\" -d \"{\"\"name\"\":\"\"test-$i\"\",\"\"minecraft_version\"\":\"\"1.21\"\",\"\"server_type\"\":\"\"paper\"\",\"\"ram_mb\"\":1024,\"\"port\"\":0}\")"
+      "Bash(ssh root@91.98.202.235 'TOKEN=\"\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNTdmZGY5NDMtMDRjZC00YzQ0LTk5ZDgtOWU4MTQzN2JmMTgzIiwiZW1haWwiOiJhZG1pbkB0ZXN0LmxvY2FsIiwiaXNfYWRtaW4iOnRydWUsImlzcyI6InBheXBlcnBsYXkiLCJleHAiOjE3NjM1MzE2ODMsImlhdCI6MTc2MjkyNjg4M30.tP6rd0q8qh98vwxKL5MGcO5DPh9psfWj5QZKCvlqf0U\"\" && curl -s -X POST \"\"http://localhost:8000/api/servers\"\" -H \"\"Authorization: Bearer $TOKEN\"\" -H \"\"Content-Type: application/json\"\" -d \"\"{\\\"\"name\\\"\":\\\"\"TriggerTest-4GB\\\"\",\\\"\"minecraft_version\\\"\":\\\"\"1.21\\\"\",\\\"\"server_type\\\"\":\\\"\"paper\\\"\",\\\"\"ram_mb\\\"\":4096,\\\"\"port\\\"\":0}\"\"')",
+      "Bash(ssh root@91.98.202.235 \"docker compose -f /root/PayPerPlayHosting/docker-compose.prod.yml logs payperplay --tail=50 | grep -E ''Triggering immediate|scaling check|Evaluating scaling|TriggerTest''\")",
+      "Bash(ssh root@91.98.202.235 \"docker compose -f /root/PayPerPlayHosting/docker-compose.prod.yml logs payperplay --since=2m | grep -E ''Evaluating scaling|REACTIVE|Worker.*provision|Hetzner|cpx''\")",
+      "Bash(ssh root@91.98.202.235 \"docker compose -f /root/PayPerPlayHosting/docker-compose.prod.yml logs payperplay --tail=100 | grep -i ''scaling'' | tail -20\")",
+      "Bash(ssh root@91.98.202.235 \"docker compose -f /root/PayPerPlayHosting/docker-compose.prod.yml logs payperplay --tail=100 | grep -i ''\"\"level\"\":\"\"DEBUG\"\"'' | head -5\")",
+      "Bash(ssh root@91.98.202.235 \"curl -s http://localhost:8000/conductor/status | python3 -c ''import sys, json; data=json.load(sys.stdin); fs=data[\"\"data\"\"][\"\"fleet_stats\"\"]; print(f\"\"Queue size: {fs.get(\"\"queue_size\"\", \"\"N/A\"\")}\"\"); print(f\"\"Total servers: {fs.get(\"\"total_servers\"\", 0)}\"\"); print(f\"\"Worker nodes: {len([n for n in data[\"\"data\"\"][\"\"nodes\"\"] if not n.get(\"\"is_system_node\"\", True)])}\"\")''  \")",
+      "Bash(ssh root@91.98.202.235 \"docker exec payperplay-postgres psql -U payperplay -d payperplay -c \"\"SELECT id, name, status, ram_mb, node_id FROM minecraft_servers WHERE name LIKE ''TriggerTest%'';\"\"\")",
+      "Bash(ssh root@91.98.202.235 \"cd /root/PayPerPlayHosting && git pull origin main && docker compose -f docker-compose.prod.yml build --no-cache payperplay && docker exec payperplay-postgres psql -U payperplay -d payperplay -c \"\"ALTER TABLE minecraft_servers ALTER COLUMN node_id DROP DEFAULT, ALTER COLUMN status SET DEFAULT ''queued'';\"\" && docker compose -f docker-compose.prod.yml up -d\")",
+      "Bash(ssh root@91.98.202.235 'sleep 5 && TOKEN=\"\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNTdmZGY5NDMtMDRjZC00YzQ0LTk5ZDgtOWU4MTQzN2JmMTgzIiwiZW1haWwiOiJhZG1pbkB0ZXN0LmxvY2FsIiwiaXNfYWRtaW4iOnRydWUsImlzcyI6InBheXBlcnBsYXkiLCJleHAiOjE3NjM1MzE2ODMsImlhdCI6MTc2MjkyNjg4M30.tP6rd0q8qh98vwxKL5MGcO5DPh9psfWj5QZKCvlqf0U\"\" && curl -s -X POST \"\"http://localhost:8000/api/servers\"\" -H \"\"Authorization: Bearer $TOKEN\"\" -H \"\"Content-Type: application/json\"\" -d \"\"{\\\"\"name\\\"\":\\\"\"QueueTest-8GB\\\"\",\\\"\"minecraft_version\\\"\":\\\"\"1.21\\\"\",\\\"\"server_type\\\"\":\\\"\"paper\\\"\",\\\"\"ram_mb\\\"\":8192,\\\"\"port\\\"\":0}\"\" | python3 -c \"\"import sys, json; data=json.load(sys.stdin); print(f\\\"\"Server: {data[\\\"\"ID\\\"\"]} | Status: {data[\\\"\"Status\\\"\"]} | NodeID: {data.get(\\\"\"NodeID\\\"\", \\\"\"NULL\\\"\")}\\\"\")\"\";')",
+      "Bash(ssh root@91.98.202.235 \"docker compose -f /root/PayPerPlayHosting/docker-compose.prod.yml logs payperplay --tail=100 | grep -E ''Triggering immediate|Scale UP|REACTIVE|provision|Worker|Hetzner|QueueTest'' | tail -20\")",
+      "Bash(ssh root@91.98.202.235 \"docker compose -f /root/PayPerPlayHosting/docker-compose.prod.yml logs payperplay --tail=200 | grep -E ''Startup delay|QUEUE-TRIGGER|delay expired'' | tail -5\")",
+      "Bash(ssh root@91.98.202.235 \"curl -s http://localhost:8000/conductor/status | python3 -c ''import sys, json; data=json.load(sys.stdin); fs=data[\"\"data\"\"][\"\"fleet_stats\"\"]; nodes=data[\"\"data\"\"][\"\"nodes\"\"]; print(f\"\"Queue size: {fs.get(\"\"queue_size\"\", 0)}\"\"); print(f\"\"Worker nodes: {len([n for n in nodes if not n.get(\"\"is_system_node\"\", True)])}\"\"); print(f\"\"Total nodes: {len(nodes)}\"\")''\")",
+      "Bash(ssh:*)",
+      "Bash(go build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
