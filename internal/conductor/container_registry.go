@@ -23,8 +23,9 @@ type ContainerInfo struct {
 
 // ContainerRegistry tracks which containers are running on which nodes
 type ContainerRegistry struct {
-	containers map[string]*ContainerInfo // key: serverID
-	mu         sync.RWMutex
+	containers   map[string]*ContainerInfo // key: serverID
+	mu           sync.RWMutex
+	nodeRegistry *NodeRegistry // For updating node lifecycle timestamps
 }
 
 // NewContainerRegistry creates a new container registry
@@ -34,13 +35,34 @@ func NewContainerRegistry() *ContainerRegistry {
 	}
 }
 
+// SetNodeRegistry injects the NodeRegistry for lifecycle tracking
+func (r *ContainerRegistry) SetNodeRegistry(nodeRegistry *NodeRegistry) {
+	r.nodeRegistry = nodeRegistry
+}
+
 // RegisterContainer adds or updates a container in the registry
 func (r *ContainerRegistry) RegisterContainer(info *ContainerInfo) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	info.LastSeenAt = time.Now()
+
+	// Check if this is a NEW container (not just an update)
+	_, existingContainer := r.containers[info.ServerID]
+
 	r.containers[info.ServerID] = info
+
+	// Track container lifecycle on node
+	if !existingContainer && r.nodeRegistry != nil {
+		// New container added - update node's LastContainerAdded timestamp
+		if node, exists := r.nodeRegistry.GetNode(info.NodeID); exists {
+			node.LastContainerAdded = time.Now()
+			logger.Debug("Node container added timestamp updated", map[string]interface{}{
+				"node_id":   info.NodeID,
+				"server_id": info.ServerID,
+			})
+		}
+	}
 }
 
 // GetContainer retrieves a container by server ID
@@ -83,7 +105,36 @@ func (r *ContainerRegistry) RemoveContainer(serverID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Get container info before deleting (for node lifecycle tracking)
+	container, exists := r.containers[serverID]
+	if !exists {
+		return // Container doesn't exist, nothing to remove
+	}
+
+	nodeID := container.NodeID
 	delete(r.containers, serverID)
+
+	// Track container lifecycle on node
+	if r.nodeRegistry != nil {
+		// Check if node is now empty after removing this container
+		remainingOnNode := 0
+		for _, c := range r.containers {
+			if c.NodeID == nodeID {
+				remainingOnNode++
+			}
+		}
+
+		// If node is now empty, update LastContainerRemoved timestamp
+		if remainingOnNode == 0 {
+			if node, exists := r.nodeRegistry.GetNode(nodeID); exists {
+				node.LastContainerRemoved = time.Now()
+				logger.Info("Node is now empty - idle tracking started", map[string]interface{}{
+					"node_id":   nodeID,
+					"server_id": serverID,
+				})
+			}
+		}
+	}
 }
 
 // RemoveContainersByNode removes all containers from a specific node
@@ -303,5 +354,25 @@ func (r *ContainerRegistry) SyncNodeContainers(nodeID string, actualContainerIDs
 			"active_on_node":  len(actualContainerIDs),
 			"registry_total":  len(r.containers),
 		})
+
+		// Check if node is now empty after sync
+		if r.nodeRegistry != nil {
+			remainingOnNode := 0
+			for _, c := range r.containers {
+				if c.NodeID == nodeID {
+					remainingOnNode++
+				}
+			}
+
+			// If node is now empty, update LastContainerRemoved timestamp
+			if remainingOnNode == 0 {
+				if node, exists := r.nodeRegistry.GetNode(nodeID); exists {
+					node.LastContainerRemoved = time.Now()
+					logger.Info("Node is now empty after sync - idle tracking started", map[string]interface{}{
+						"node_id": nodeID,
+					})
+				}
+			}
+		}
 	}
 }

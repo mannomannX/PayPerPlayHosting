@@ -47,14 +47,14 @@ type VelocityClient interface {
 	GetPlayerCount(serverName string) (int, error)
 }
 
-// NewConsolidationPolicy creates a new consolidation policy
+// NewConsolidationPolicy creates a new consolidation policy with intelligent safety checks
 func NewConsolidationPolicy(velocityClient VelocityClient) *ConsolidationPolicy {
 	return &ConsolidationPolicy{
-		Enabled:                   false, // DISABLED: Too aggressive, causes node churn
-		CooldownPeriod:            30 * time.Minute, // Check every 30 minutes
-		ThresholdNodeSavings:      2,                // Only consolidate if saving 2+ nodes
-		MaxCapacityPercent:        70.0,             // Don't consolidate if fleet >70% full
-		AllowMigrationWithPlayers: false,            // Safety first: only migrate empty servers
+		Enabled:                   false, // DISABLED by default - enable when testing is complete
+		CooldownPeriod:            2 * time.Hour, // 2 hours between consolidation attempts (not 30min!)
+		ThresholdNodeSavings:      1,             // Only consolidate if saving at least 1 node
+		MaxCapacityPercent:        70.0,          // Don't consolidate if fleet >70% full (30% buffer)
+		AllowMigrationWithPlayers: false,         // Safety first: only migrate empty servers
 		lastConsolidation:         time.Time{},
 		velocityClient:            velocityClient,
 	}
@@ -79,13 +79,16 @@ func (p *ConsolidationPolicy) ShouldScaleDown(ctx ScalingContext) (bool, ScaleRe
 }
 
 // ShouldConsolidate determines if containers should be migrated to reduce costs
+// NEW IMPLEMENTATION: Intelligent consolidation with 7 safety checks and cost-aware thresholds
 func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, ConsolidationPlan) {
-	// Check if enabled
+	// ===== PHASE 1: PRE-FLIGHT CHECKS =====
+
+	// Check 1: Enabled?
 	if !p.Enabled {
 		return false, ConsolidationPlan{}
 	}
 
-	// Check cooldown period
+	// Check 2: Cooldown active? (2 hours)
 	if time.Since(p.lastConsolidation) < p.CooldownPeriod {
 		logger.Debug("ConsolidationPolicy: Cooldown active", map[string]interface{}{
 			"time_since_last": time.Since(p.lastConsolidation).String(),
@@ -94,7 +97,7 @@ func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, Conso
 		return false, ConsolidationPlan{}
 	}
 
-	// Need at least 2 cloud nodes to consolidate
+	// Check 3: Need at least 2 Worker-Nodes to consolidate
 	if len(ctx.CloudNodes) < 2 {
 		logger.Debug("ConsolidationPolicy: Not enough nodes to consolidate", map[string]interface{}{
 			"cloud_nodes": len(ctx.CloudNodes),
@@ -102,17 +105,28 @@ func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, Conso
 		return false, ConsolidationPlan{}
 	}
 
-	// CRITICAL: Don't consolidate if there are queued servers waiting for deployment
-	// The queue indicates pending capacity demand that will soon be allocated
+	// Check 4: CRITICAL - Queue empty? (no pending deployments)
 	if ctx.QueuedServerCount > 0 {
-		logger.Debug("ConsolidationPolicy: Skipping consolidation - servers waiting in queue", map[string]interface{}{
+		logger.Debug("ConsolidationPolicy: Skipping - servers waiting in queue", map[string]interface{}{
 			"queue_size": ctx.QueuedServerCount,
 			"reason":     "Queued servers need Worker-Node capacity",
 		})
 		return false, ConsolidationPlan{}
 	}
 
-	// Safety check: Don't consolidate if capacity too high (risky!)
+	// Check 5: CRITICAL - Are any containers currently starting?
+	if ctx.ContainerRegistry != nil {
+		startingContainers := ctx.ContainerRegistry.GetStartingCount()
+		if startingContainers > 0 {
+			logger.Debug("ConsolidationPolicy: Skipping - containers starting", map[string]interface{}{
+				"starting_count": startingContainers,
+				"reason":         "Wait for container deployment to complete",
+			})
+			return false, ConsolidationPlan{}
+		}
+	}
+
+	// Check 6: Fleet capacity check (don't consolidate if too full)
 	capacityPercent := float64(0)
 	if ctx.FleetStats.UsableRAMMB > 0 {
 		capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
@@ -120,33 +134,101 @@ func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, Conso
 
 	if capacityPercent > p.MaxCapacityPercent {
 		logger.Debug("ConsolidationPolicy: Fleet too full for safe consolidation", map[string]interface{}{
-			"capacity_percent":      capacityPercent,
-			"max_capacity_percent":  p.MaxCapacityPercent,
+			"capacity_percent":     capacityPercent,
+			"max_capacity_percent": p.MaxCapacityPercent,
 		})
 		return false, ConsolidationPlan{}
 	}
 
-	// Calculate optimal container layout using bin-packing
+	// ===== PHASE 2: NODE ANALYSIS - Filter eligible nodes =====
+
+	const (
+		minNodeUptime = 30 * time.Minute // Node must be alive for 30min
+		minIdleTime   = 15 * time.Minute // Node must be idle for 15min
+		minCostSavings = 0.10             // Minimum €0.10/hour savings
+	)
+
+	eligibleNodes := make([]*Node, 0)
+	ineligibleReasons := make(map[string]string)
+
+	for _, node := range ctx.CloudNodes {
+		// Safety Check 7: Node eligibility for consolidation
+		if !node.CanBeConsolidated(minNodeUptime, minIdleTime) {
+			if node.ContainerCount > 0 {
+				ineligibleReasons[node.ID] = "has containers"
+			} else if node.UptimeDuration() < minNodeUptime {
+				ineligibleReasons[node.ID] = fmt.Sprintf("too young (uptime: %s)", node.UptimeDuration())
+			} else if node.IdleDuration() < minIdleTime {
+				ineligibleReasons[node.ID] = fmt.Sprintf("recently emptied (idle: %s)", node.IdleDuration())
+			} else {
+				ineligibleReasons[node.ID] = "not eligible"
+			}
+			continue
+		}
+		eligibleNodes = append(eligibleNodes, node)
+	}
+
+	// Log node analysis
+	logger.Debug("ConsolidationPolicy: Node analysis complete", map[string]interface{}{
+		"total_nodes":     len(ctx.CloudNodes),
+		"eligible_nodes":  len(eligibleNodes),
+		"ineligible":      ineligibleReasons,
+	})
+
+	// Need at least 1 eligible node to potentially remove
+	if len(eligibleNodes) == 0 {
+		logger.Debug("ConsolidationPolicy: No eligible nodes for consolidation", nil)
+		return false, ConsolidationPlan{}
+	}
+
+	// ===== PHASE 3: PERFECT PACKING - Calculate optimal layout =====
+
 	plan := p.calculateOptimalLayout(ctx)
 
-	// Only consolidate if savings are significant
+	// ===== PHASE 4: VALIDATION - Check if consolidation makes sense =====
+
+	// Validate 1: Are we actually saving nodes?
 	if plan.NodeSavings < p.ThresholdNodeSavings {
 		logger.Debug("ConsolidationPolicy: Savings not significant enough", map[string]interface{}{
-			"node_savings":          plan.NodeSavings,
-			"threshold":             p.ThresholdNodeSavings,
+			"node_savings": plan.NodeSavings,
+			"threshold":    p.ThresholdNodeSavings,
 		})
 		return false, ConsolidationPlan{}
 	}
+
+	// Validate 2: CRITICAL - Is cost savings significant? (>=€0.10/h)
+	if plan.EstimatedCostSavings < minCostSavings {
+		logger.Debug("ConsolidationPolicy: Cost savings too small", map[string]interface{}{
+			"cost_savings_eur_h": plan.EstimatedCostSavings,
+			"min_threshold":      minCostSavings,
+			"reason":             "Not worth the node churn for tiny savings",
+		})
+		return false, ConsolidationPlan{}
+	}
+
+	// Validate 3: Will at least 1 node remain if containers exist?
+	totalContainers := ctx.FleetStats.TotalContainers
+	if totalContainers > 0 && len(plan.NodesToKeep) == 0 {
+		logger.Warn("ConsolidationPolicy: CRITICAL - Would remove ALL nodes with containers!", map[string]interface{}{
+			"total_containers": totalContainers,
+			"nodes_to_remove":  len(plan.NodesToRemove),
+		})
+		return false, ConsolidationPlan{}
+	}
+
+	// ===== PHASE 5: APPROVED - Proceed with consolidation =====
 
 	// Update last consolidation time
 	p.lastConsolidation = time.Now()
 
-	logger.Info("ConsolidationPolicy: Consolidation recommended", map[string]interface{}{
-		"migrations":             len(plan.Migrations),
-		"nodes_before":           len(ctx.CloudNodes),
-		"nodes_after":            len(plan.NodesToKeep),
-		"node_savings":           plan.NodeSavings,
-		"estimated_cost_savings": plan.EstimatedCostSavings,
+	logger.Info("ConsolidationPolicy: ✅ Consolidation APPROVED", map[string]interface{}{
+		"migrations":              len(plan.Migrations),
+		"nodes_before":            len(ctx.CloudNodes),
+		"nodes_after":             len(plan.NodesToKeep),
+		"node_savings":            plan.NodeSavings,
+		"cost_savings_eur_h":      plan.EstimatedCostSavings,
+		"cost_savings_eur_month":  plan.EstimatedCostSavings * 730, // ~730 hours per month
+		"eligible_nodes":          len(eligibleNodes),
 	})
 
 	return true, plan
@@ -294,8 +376,23 @@ func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) Consoli
 
 	nodeSavings := len(ctx.CloudNodes) - len(nodesToKeep)
 
-	// Estimate cost savings (assume CPX22 = €0.0096/h)
-	estimatedCostSavings := float64(nodeSavings) * 0.0096
+	// Calculate REAL cost savings based on actual node costs
+	estimatedCostSavings := float64(0)
+	for _, nodeID := range nodesToRemove {
+		// Find node in cloud nodes list
+		for _, node := range ctx.CloudNodes {
+			if node.ID == nodeID {
+				estimatedCostSavings += node.HourlyCostEUR
+				break
+			}
+		}
+	}
+
+	logger.Debug("Consolidation cost analysis", map[string]interface{}{
+		"nodes_to_remove":     len(nodesToRemove),
+		"cost_savings_eur_h":  estimatedCostSavings,
+		"cost_savings_eur_mo": estimatedCostSavings * 730, // ~730 hours per month
+	})
 
 	return ConsolidationPlan{
 		Migrations:           migrations,
@@ -303,8 +400,8 @@ func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) Consoli
 		NodesToRemove:        nodesToRemove,
 		NodeSavings:          nodeSavings,
 		EstimatedCostSavings: estimatedCostSavings,
-		Reason: fmt.Sprintf("Consolidate %d servers from %d nodes to %d nodes (save %d nodes, %.4f€/h)",
-			len(containers), len(ctx.CloudNodes), len(nodesToKeep), nodeSavings, estimatedCostSavings),
+		Reason: fmt.Sprintf("Consolidate %d servers from %d nodes to %d nodes (save %d nodes, €%.4f/h = €%.2f/month)",
+			len(containers), len(ctx.CloudNodes), len(nodesToKeep), nodeSavings, estimatedCostSavings, estimatedCostSavings*730),
 	}
 }
 

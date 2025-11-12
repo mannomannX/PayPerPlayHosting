@@ -30,10 +30,12 @@ type Node struct {
 	SSHUser             string            `json:"ssh_user"`               // SSH user for remote access
 	SSHPort             int               `json:"ssh_port"`               // SSH port (default: 22)
 	SSHKeyPath          string            `json:"ssh_key_path"`           // Path to SSH private key for authentication
-	CreatedAt           time.Time         `json:"created_at"`
-	Labels              map[string]string `json:"labels,omitempty"`  // Cloud provider labels
-	HourlyCostEUR       float64           `json:"hourly_cost_eur"`   // For cost tracking
-	CloudProviderID     string            `json:"cloud_provider_id"` // External provider ID (e.g., Hetzner server ID)
+	CreatedAt             time.Time         `json:"created_at"`
+	LastContainerAdded    time.Time         `json:"last_container_added"`    // When last container was added
+	LastContainerRemoved  time.Time         `json:"last_container_removed"`  // When last container was removed
+	Labels                map[string]string `json:"labels,omitempty"`  // Cloud provider labels
+	HourlyCostEUR         float64           `json:"hourly_cost_eur"`   // For cost tracking
+	CloudProviderID       string            `json:"cloud_provider_id"` // External provider ID (e.g., Hetzner server ID)
 }
 
 // UsableRAMMB returns the maximum RAM available for containers (Total - System Reserve)
@@ -60,6 +62,50 @@ func (n *Node) RAMUtilizationPercent() float64 {
 		return 0
 	}
 	return (float64(n.AllocatedRAMMB) / float64(usable)) * 100.0
+}
+
+// UptimeDuration returns how long this node has been alive
+func (n *Node) UptimeDuration() time.Duration {
+	return time.Since(n.CreatedAt)
+}
+
+// IdleDuration returns how long this node has been empty (0 containers)
+// Returns 0 if node is not empty or has never been empty
+func (n *Node) IdleDuration() time.Duration {
+	if n.ContainerCount > 0 {
+		return 0 // Not idle
+	}
+	if n.LastContainerRemoved.IsZero() {
+		return 0 // Never had containers
+	}
+	return time.Since(n.LastContainerRemoved)
+}
+
+// IsEmpty returns true if node has no containers
+func (n *Node) IsEmpty() bool {
+	return n.ContainerCount == 0
+}
+
+// CanBeConsolidated checks if this node is eligible for consolidation
+// Requirements:
+// - Must be empty (0 containers)
+// - Must be alive for at least 30 minutes (prevent deleting fresh nodes)
+// - Must be idle for at least 15 minutes (prevent deleting recently emptied nodes)
+// - Must NOT be a System Node
+func (n *Node) CanBeConsolidated(minUptime time.Duration, minIdleTime time.Duration) bool {
+	if n.IsSystemNode {
+		return false // Never consolidate system nodes
+	}
+	if !n.IsEmpty() {
+		return false // Has containers
+	}
+	if n.UptimeDuration() < minUptime {
+		return false // Too young
+	}
+	if n.IdleDuration() < minIdleTime {
+		return false // Recently emptied
+	}
+	return true
 }
 
 // CalculateSystemReserve calculates the intelligent system reserve for this node

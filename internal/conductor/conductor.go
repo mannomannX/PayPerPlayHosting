@@ -42,6 +42,9 @@ func NewConductor(healthCheckInterval time.Duration, sshKeyPath string) *Conduct
 	nodeRegistry := NewNodeRegistry()
 	containerRegistry := NewContainerRegistry()
 
+	// Inject NodeRegistry into ContainerRegistry for lifecycle tracking
+	containerRegistry.SetNodeRegistry(nodeRegistry)
+
 	// Create RemoteDockerClient if SSH key path is provided
 	var remoteClient *docker.RemoteDockerClient
 	if sshKeyPath != "" {
