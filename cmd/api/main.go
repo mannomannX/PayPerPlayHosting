@@ -225,7 +225,7 @@ func main() {
 	logger.Info("Prometheus metrics exporter started", nil)
 
 	// Initialize Conductor Core for fleet orchestration
-	cond := conductor.NewConductor(60*time.Second, cfg.SSHPrivateKeyPath) // Health check every 60 seconds
+	cond := conductor.NewConductor(10*time.Second, cfg.SSHPrivateKeyPath) // Health check every 10 seconds for real-time dashboard updates
 
 	// Initialize Scaling Engine (B5 + B8) if Hetzner Cloud token is configured
 	if cfg.HetznerCloudToken != "" {
