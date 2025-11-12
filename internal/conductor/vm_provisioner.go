@@ -209,6 +209,15 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	node.Status = NodeStatusHealthy
 	node.LastHealthCheck = time.Now()
 
+	// Re-register node to ensure status update is reflected in registry
+	// (Even though we store pointers, explicit re-registration ensures consistency)
+	p.nodeRegistry.RegisterNode(node)
+
+	logger.Info("Node marked as HEALTHY after Cloud-Init", map[string]interface{}{
+		"node_id": node.ID,
+		"status":  "healthy",
+	})
+
 	logger.Info("Cloud node provisioned with intelligent system reserve", map[string]interface{}{
 		"node_id":            node.ID,
 		"ip":                 node.IPAddress,
