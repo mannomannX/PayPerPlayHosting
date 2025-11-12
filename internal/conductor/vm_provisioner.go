@@ -94,13 +94,8 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		}
 	}
 
-	// Wait for Cloud-Init to complete (Docker + Agent installation)
-	logger.Info("Waiting for Cloud-Init to complete", map[string]interface{}{
-		"server_id": server.ID,
-	})
-	time.Sleep(2 * time.Minute) // Cloud-Init typically takes 1-2 minutes
-
-	// Create Node object
+	// Create Node object IMMEDIATELY (before waiting for Cloud-Init)
+	// FIX: Register node as unhealthy FIRST to prevent duplicate provisioning
 	cfg := config.AppConfig
 	node := &Node{
 		ID:               server.ID,
@@ -109,7 +104,7 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		Type:             "cloud", // vs "dedicated"
 		TotalRAMMB:       serverTypeInfo.RAMMB,
 		TotalCPUCores:    serverTypeInfo.Cores,
-		Status:           NodeStatusHealthy,
+		Status:           NodeStatusUnhealthy, // Unhealthy until Cloud-Init completes
 		LastHealthCheck:  time.Now(),
 		ContainerCount:   0,
 		AllocatedRAMMB:   0,
@@ -126,8 +121,27 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	// Calculate intelligent system reserve for cloud node (3-tier strategy)
 	node.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
 
-	// Register node in NodeRegistry
+	// CRITICAL: Register node IMMEDIATELY as unhealthy to prevent duplicate provisioning
+	// This ensures Reactive Policy sees "Worker-Node exists (but unhealthy)" and doesn't provision duplicates
 	p.nodeRegistry.RegisterNode(node)
+
+	logger.Info("Node registered as unhealthy, waiting for Cloud-Init", map[string]interface{}{
+		"node_id":   node.ID,
+		"ip":        node.IPAddress,
+		"status":    "unhealthy",
+		"wait_time": "2 minutes",
+	})
+
+	// Wait for Cloud-Init to complete (Docker + Agent installation)
+	// Node is already registered but unhealthy - will be marked healthy after this
+	logger.Info("Waiting for Cloud-Init to complete", map[string]interface{}{
+		"server_id": server.ID,
+	})
+	time.Sleep(2 * time.Minute) // Cloud-Init typically takes 1-2 minutes
+
+	// Mark node as healthy now that Cloud-Init is complete
+	node.Status = NodeStatusHealthy
+	node.LastHealthCheck = time.Now()
 
 	logger.Info("Cloud node provisioned with intelligent system reserve", map[string]interface{}{
 		"node_id":            node.ID,

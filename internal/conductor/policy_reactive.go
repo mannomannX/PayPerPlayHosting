@@ -61,6 +61,7 @@ func (p *ReactivePolicy) ShouldConsolidate(ctx ScalingContext) (bool, Consolidat
 func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommendation) {
 	// CRITICAL: If servers are queued but NO worker nodes exist, provision immediately
 	// This handles the case where MC containers need worker nodes but none are available
+	// FIX: Only provision if ZERO worker nodes (including unhealthy ones being provisioned)
 	if ctx.QueuedServerCount > 0 && len(ctx.WorkerNodes) == 0 {
 		logger.Info("ReactivePolicy: Queued servers need worker node - provisioning immediately", map[string]interface{}{
 			"queued_servers":  ctx.QueuedServerCount,
