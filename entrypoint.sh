@@ -17,6 +17,19 @@ if [ -S /var/run/docker.sock ]; then
     echo "Docker socket access configured (GID: $DOCKER_GID)"
 fi
 
+# Copy SSH keys from /root/.ssh to /app/.ssh for appuser access
+if [ -d /root/.ssh ]; then
+    echo "Configuring SSH keys for remote node access..."
+    mkdir -p /app/.ssh
+    cp /root/.ssh/id_rsa /app/.ssh/id_rsa 2>/dev/null || true
+    cp /root/.ssh/id_rsa.pub /app/.ssh/id_rsa.pub 2>/dev/null || true
+    cp /root/.ssh/known_hosts /app/.ssh/known_hosts 2>/dev/null || true
+    chown -R appuser:appuser /app/.ssh
+    chmod 700 /app/.ssh
+    chmod 600 /app/.ssh/id_rsa 2>/dev/null || true
+    echo "SSH keys configured successfully"
+fi
+
 echo "Permissions set successfully"
 
 # Switch to appuser and run the application

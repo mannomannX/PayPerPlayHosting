@@ -125,7 +125,7 @@ func Load() *Config {
 		// B5 Auto-Scaling
 		HetznerCloudToken:         getEnv("HETZNER_CLOUD_TOKEN", ""),
 		HetznerSSHKeyName:         getEnv("HETZNER_SSH_KEY_NAME", "payperplay-main"),
-		SSHPrivateKeyPath:         getEnv("SSH_PRIVATE_KEY_PATH", "/root/.ssh/id_rsa"),
+		SSHPrivateKeyPath:         getEnv("SSH_PRIVATE_KEY_PATH", "/app/.ssh/id_rsa"),
 		ScalingEnabled:            getEnvBool("SCALING_ENABLED", false),
 		ScalingCheckInterval:      getEnv("SCALING_CHECK_INTERVAL", "2m"),
 		ScalingScaleUpThreshold:   getEnvFloat("SCALING_SCALE_UP_THRESHOLD", 85.0),
