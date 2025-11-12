@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/payperplay/hosting/internal/cloud"
+	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -274,7 +275,7 @@ func (p *ReactivePolicy) getAvailableServerTypes() ([]*cloud.ServerType, error) 
 }
 
 // selectServerType chooses the appropriate VM size based on needs
-// Now queries Hetzner API dynamically instead of hardcoded values
+// Tier-aware implementation with queue analysis and perfect packing
 func (p *ReactivePolicy) selectServerType(ctx ScalingContext, capacityPercent float64) string {
 	serverTypes, err := p.getAvailableServerTypes()
 	if err != nil || len(serverTypes) == 0 {
@@ -282,47 +283,155 @@ func (p *ReactivePolicy) selectServerType(ctx ScalingContext, capacityPercent fl
 		return "cpx21" // Fallback
 	}
 
-	// Determine required RAM based on urgency
-	var requiredRAMMB int
-	if capacityPercent > 95 {
-		// Emergency: Need large capacity boost (8GB+)
-		requiredRAMMB = 8192
-	} else if capacityPercent > 90 {
-		// High urgency: Need medium capacity (4GB+)
-		requiredRAMMB = 4096
-	} else {
-		// Normal: Cost-effective option (2GB+)
-		requiredRAMMB = 2048
+	// Filter by configured min/max RAM
+	cfg := config.AppConfig
+	filtered := p.filterByRAMConstraints(serverTypes, cfg.WorkerNodeMinRAMMB, cfg.WorkerNodeMaxRAMMB)
+	if len(filtered) == 0 {
+		logger.Warn("No server types match RAM constraints, using unfiltered", map[string]interface{}{
+			"min_ram": cfg.WorkerNodeMinRAMMB,
+			"max_ram": cfg.WorkerNodeMaxRAMMB,
+		})
+		filtered = serverTypes
 	}
 
-	// Find most cost-effective server type that meets requirements
+	// Strategy selection based on config
+	var selectedType string
+	switch cfg.WorkerNodeStrategy {
+	case "queue-based":
+		selectedType = p.selectByQueue(ctx, filtered)
+	case "capacity-based":
+		selectedType = p.selectByCapacity(ctx, capacityPercent, filtered)
+	default: // "tier-aware" (default)
+		// Queue-based has priority if queue exists
+		if ctx.QueuedServerCount > 0 {
+			selectedType = p.selectByQueue(ctx, filtered)
+		} else {
+			selectedType = p.selectByCapacity(ctx, capacityPercent, filtered)
+		}
+	}
+
+	logger.Info("Selected server type (tier-aware)", map[string]interface{}{
+		"type":         selectedType,
+		"strategy":     cfg.WorkerNodeStrategy,
+		"capacity_pct": capacityPercent,
+		"queue_count":  ctx.QueuedServerCount,
+	})
+
+	return selectedType
+}
+
+// filterByRAMConstraints filters server types by min/max RAM limits
+func (p *ReactivePolicy) filterByRAMConstraints(serverTypes []*cloud.ServerType, minRAMMB, maxRAMMB int) []*cloud.ServerType {
+	filtered := make([]*cloud.ServerType, 0)
+	for _, st := range serverTypes {
+		if st.RAMMB >= minRAMMB && st.RAMMB <= maxRAMMB {
+			filtered = append(filtered, st)
+		}
+	}
+	return filtered
+}
+
+// selectByQueue selects node type based on queued servers (multi-tenant packing)
+func (p *ReactivePolicy) selectByQueue(ctx ScalingContext, serverTypes []*cloud.ServerType) string {
+	cfg := config.AppConfig
+
+	// TODO: Calculate total RAM needed from queue when StartQueue is available
+	// For now, estimate based on QueuedServerCount
+	// Assume average 4GB per queued server
+	totalQueueRAM := ctx.QueuedServerCount * 4096
+
+	// Add buffer for growth
+	bufferMultiplier := 1.0 + (cfg.WorkerNodeBufferPercent / 100.0)
+	targetRAM := int(float64(totalQueueRAM) * bufferMultiplier)
+
+	logger.Info("Queue-based node selection", map[string]interface{}{
+		"total_queue_ram": totalQueueRAM,
+		"buffer_percent":  cfg.WorkerNodeBufferPercent,
+		"target_ram":      targetRAM,
+	})
+
+	// Find smallest node that fits target RAM + buffer
 	var bestType *cloud.ServerType
 	for _, st := range serverTypes {
-		if st.RAMMB >= requiredRAMMB {
-			if bestType == nil || st.HourlyCostEUR < bestType.HourlyCostEUR {
+		if st.RAMMB >= targetRAM {
+			if bestType == nil || st.RAMMB < bestType.RAMMB {
+				bestType = st
+			}
+		}
+	}
+
+	// If target is too large, use largest available
+	if bestType == nil && len(serverTypes) > 0 {
+		bestType = serverTypes[0]
+		for _, st := range serverTypes {
+			if st.RAMMB > bestType.RAMMB {
+				bestType = st
+			}
+		}
+	}
+
+	if bestType != nil {
+		return bestType.Name
+	}
+
+	return "cpx41" // Fallback to 16GB standard worker node
+}
+
+// selectByCapacity selects node type based on current capacity pressure
+func (p *ReactivePolicy) selectByCapacity(ctx ScalingContext, capacityPercent float64, serverTypes []*cloud.ServerType) string {
+	cfg := config.AppConfig
+
+	// Determine target RAM based on urgency
+	var targetRAM int
+	if capacityPercent > 95 {
+		// Emergency: Use maximum allowed
+		targetRAM = cfg.WorkerNodeMaxRAMMB
+	} else if capacityPercent > 90 {
+		// High urgency: Use 8GB
+		targetRAM = 8192
+	} else {
+		// Normal: Use minimum allowed (cost-effective)
+		targetRAM = cfg.WorkerNodeMinRAMMB
+	}
+
+	logger.Info("Capacity-based node selection", map[string]interface{}{
+		"capacity_percent": capacityPercent,
+		"target_ram":       targetRAM,
+	})
+
+	// Find closest match to target RAM
+	return p.findClosestServerType(serverTypes, targetRAM)
+}
+
+// findClosestServerType finds the server type closest to target RAM
+func (p *ReactivePolicy) findClosestServerType(serverTypes []*cloud.ServerType, targetRAM int) string {
+	if len(serverTypes) == 0 {
+		return "cpx41" // Fallback
+	}
+
+	var bestType *cloud.ServerType
+	minDiff := int(^uint(0) >> 1) // Max int
+
+	for _, st := range serverTypes {
+		// Prefer types >= targetRAM, but allow smaller if no match
+		diff := st.RAMMB - targetRAM
+		if diff >= 0 {
+			// Type is >= target, prefer smallest that fits
+			if diff < minDiff {
+				minDiff = diff
+				bestType = st
+			}
+		} else {
+			// Type is < target, only use if no >= match found
+			if bestType == nil {
 				bestType = st
 			}
 		}
 	}
 
 	if bestType == nil {
-		// If no exact match, use smallest available
 		bestType = serverTypes[0]
-		for _, st := range serverTypes {
-			if st.RAMMB < bestType.RAMMB {
-				bestType = st
-			}
-		}
 	}
-
-	logger.Info("Selected server type", map[string]interface{}{
-		"type":          bestType.Name,
-		"ram_mb":        bestType.RAMMB,
-		"cores":         bestType.Cores,
-		"cost_eur_hr":   bestType.HourlyCostEUR,
-		"capacity_pct":  capacityPercent,
-		"required_ram":  requiredRAMMB,
-	})
 
 	return bestType.Name
 }

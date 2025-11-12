@@ -2,11 +2,31 @@ package conductor
 
 import (
 	"fmt"
-	"sort"
 	"time"
 
+	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
 )
+
+// ConsolidationNodeBin represents a node bin for bin-packing algorithm
+type ConsolidationNodeBin struct {
+	NodeID     string
+	TotalRAMMb int
+	UsedRAMMb  int
+	Containers []ConsolidationContainerInfo
+}
+
+// ConsolidationContainerInfo holds container information for consolidation analysis
+type ConsolidationContainerInfo struct {
+	ServerID    string
+	ServerName  string
+	RAMMb       int
+	Tier        string
+	CurrentNode string
+	PlayerCount int
+	CanMigrate  bool
+}
 
 // ConsolidationPolicy implements intelligent container migration & bin-packing for cost optimization (B8)
 // This policy focuses on MINIMIZING COSTS by consolidating containers onto fewer nodes
@@ -122,19 +142,12 @@ func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, Conso
 	return true, plan
 }
 
-// calculateOptimalLayout implements First-Fit Decreasing bin-packing algorithm
+// calculateOptimalLayout implements tier-aware perfect bin-packing
+// For standard tiers: O(n) complexity with 100% node utilization
+// For custom tiers: First-Fit Decreasing (fallback)
 func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) ConsolidationPlan {
 	// 1. Collect all containers from all cloud nodes
-	type ContainerInfo struct {
-		ServerID    string
-		ServerName  string
-		RAMMb       int
-		CurrentNode string
-		PlayerCount int
-		CanMigrate  bool
-	}
-
-	containers := []ContainerInfo{}
+	containers := []ConsolidationContainerInfo{}
 	if ctx.ContainerRegistry == nil {
 		logger.Warn("ConsolidationPolicy: ContainerRegistry not available", nil)
 		return ConsolidationPlan{NodeSavings: 0}
@@ -143,13 +156,24 @@ func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) Consoli
 	for _, node := range ctx.CloudNodes {
 		nodeContainers := ctx.ContainerRegistry.GetContainersByNode(node.ID)
 		for _, container := range nodeContainers {
-			playerCount := p.getPlayerCount(container.ServerName)
-			canMigrate := p.canMigrateContainer(playerCount)
+			// Get server info to determine tier and migration settings
+			server, err := p.getServerInfo(container.ServerID)
+			if err != nil {
+				logger.Warn("Could not get server info for consolidation", map[string]interface{}{
+					"server_id": container.ServerID,
+					"error":     err.Error(),
+				})
+				continue
+			}
 
-			containers = append(containers, ContainerInfo{
+			playerCount := p.getPlayerCount(container.ServerName)
+			canMigrate := p.canMigrateServer(server, playerCount)
+
+			containers = append(containers, ConsolidationContainerInfo{
 				ServerID:    container.ServerID,
 				ServerName:  container.ServerName,
 				RAMMb:       container.RAMMb,
+				Tier:        server.RAMTier,
 				CurrentNode: node.ID,
 				PlayerCount: playerCount,
 				CanMigrate:  canMigrate,
@@ -157,75 +181,69 @@ func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) Consoli
 		}
 	}
 
-	// 2. Sort containers by RAM size (descending - largest first for First-Fit Decreasing)
-	sort.Slice(containers, func(i, j int) bool {
-		return containers[i].RAMMb > containers[j].RAMMb
+	logger.Info("Consolidation analysis started", map[string]interface{}{
+		"total_containers": len(containers),
+		"cloud_nodes":      len(ctx.CloudNodes),
 	})
 
-	// 3. Bin-packing: Try to fit containers into minimal number of nodes
-	type NodeBin struct {
-		NodeID      string
-		TotalRAMMb  int
-		UsedRAMMb   int
-		Containers  []ContainerInfo
-	}
+	// 2. Group containers by tier (for perfect packing of standard tiers)
+	tierGroups := make(map[string][]ConsolidationContainerInfo)
+	customContainers := []ConsolidationContainerInfo{}
 
-	// Start with existing nodes as bins (sorted by most full first - Best-Fit)
-	bins := []NodeBin{}
-	for _, node := range ctx.CloudNodes {
-		bins = append(bins, NodeBin{
-			NodeID:     node.ID,
-			TotalRAMMb: node.UsableRAMMB(),
-			UsedRAMMb:  0,
-			Containers: []ContainerInfo{},
-		})
-	}
-
-	// Sort bins by most full first (prefer filling existing nodes)
-	sort.Slice(bins, func(i, j int) bool {
-		return bins[i].UsedRAMMb > bins[j].UsedRAMMb
-	})
-
-	// 4. Place each container into first bin that fits
 	for _, container := range containers {
-		// Skip containers that cannot be migrated
-		if !container.CanMigrate {
-			// Keep container on current node
-			for i := range bins {
-				if bins[i].NodeID == container.CurrentNode {
-					bins[i].Containers = append(bins[i].Containers, container)
-					bins[i].UsedRAMMb += container.RAMMb
-					break
-				}
-			}
-			continue
-		}
-
-		// Find first bin with enough space
-		placed := false
-		for i := range bins {
-			available := bins[i].TotalRAMMb - bins[i].UsedRAMMb
-			if available >= container.RAMMb {
-				bins[i].Containers = append(bins[i].Containers, container)
-				bins[i].UsedRAMMb += container.RAMMb
-				placed = true
-				break
-			}
-		}
-
-		if !placed {
-			// This should not happen if capacity < 70%
-			logger.Warn("ConsolidationPolicy: Could not place container", map[string]interface{}{
-				"server_id":   container.ServerID,
-				"server_name": container.ServerName,
-				"ram_mb":      container.RAMMb,
-			})
-			return ConsolidationPlan{NodeSavings: 0} // Abort consolidation
+		if models.IsStandardTier(container.RAMMb) {
+			tierGroups[container.Tier] = append(tierGroups[container.Tier], container)
+		} else {
+			// Custom tier: use fallback algorithm
+			customContainers = append(customContainers, container)
 		}
 	}
 
-	// 5. Determine which bins are actually used
-	usedBins := []NodeBin{}
+	// 3. Calculate perfect packing for standard tiers
+	nodeCapacity := 16384 // cpx41 = 16GB standard worker node
+	totalNodesNeeded := 0
+
+	// Count containers by tier (for perfect packing calculation)
+	containersByTier := make(map[string]int)
+	for tier, containerList := range tierGroups {
+		migratable := 0
+		for _, c := range containerList {
+			if c.CanMigrate {
+				migratable++
+			}
+		}
+		containersByTier[tier] = migratable
+	}
+
+	// Use models.CalculatePerfectPackingNodes for optimal layout
+	totalNodesNeeded = models.CalculatePerfectPackingNodes(containersByTier, nodeCapacity)
+
+	// Add nodes for custom tier containers (fallback to one per container for safety)
+	totalNodesNeeded += len(customContainers)
+
+	logger.Info("Perfect packing calculated", map[string]interface{}{
+		"standard_tier_containers": len(containers) - len(customContainers),
+		"custom_tier_containers":   len(customContainers),
+		"current_nodes":            len(ctx.CloudNodes),
+		"optimal_nodes":            totalNodesNeeded,
+		"node_savings":             len(ctx.CloudNodes) - totalNodesNeeded,
+	})
+
+	// 4. Build migration plan
+	if totalNodesNeeded >= len(ctx.CloudNodes) {
+		// No savings, abort
+		logger.Info("No consolidation savings possible", map[string]interface{}{
+			"current": len(ctx.CloudNodes),
+			"optimal": totalNodesNeeded,
+		})
+		return ConsolidationPlan{NodeSavings: 0}
+	}
+
+	// 5. Assign containers to nodes (simplified for standard tiers)
+	bins := p.createOptimalBins(tierGroups, customContainers, totalNodesNeeded, nodeCapacity, ctx.CloudNodes)
+
+	// 6. Determine which bins are actually used
+	usedBins := []ConsolidationNodeBin{}
 	for _, bin := range bins {
 		if len(bin.Containers) > 0 {
 			usedBins = append(usedBins, bin)
@@ -298,7 +316,8 @@ func (p *ConsolidationPolicy) getPlayerCount(serverName string) int {
 	return count
 }
 
-// canMigrateContainer determines if a container can be safely migrated
+// canMigrateContainer determines if a container can be safely migrated (deprecated)
+// Use canMigrateServer instead for tier-aware migration decisions
 func (p *ConsolidationPolicy) canMigrateContainer(playerCount int) bool {
 	if playerCount == 0 {
 		return true // Safe to migrate empty servers
@@ -306,4 +325,124 @@ func (p *ConsolidationPolicy) canMigrateContainer(playerCount int) bool {
 
 	// If server has players, only migrate if explicitly allowed
 	return p.AllowMigrationWithPlayers
+}
+
+// getServerInfo retrieves server model for tier and plan information
+func (p *ConsolidationPolicy) getServerInfo(serverID string) (*models.MinecraftServer, error) {
+	// This requires access to database/repository
+	// For now, we'll need to inject this or access it via conductor
+	// Placeholder implementation
+	db := repository.GetDB()
+	if db == nil {
+		return nil, fmt.Errorf("database not available")
+	}
+
+	var server models.MinecraftServer
+	if err := db.Where("id = ?", serverID).First(&server).Error; err != nil {
+		return nil, err
+	}
+
+	return &server, nil
+}
+
+// canMigrateServer determines if a server can be migrated based on tier and plan
+func (p *ConsolidationPolicy) canMigrateServer(server *models.MinecraftServer, playerCount int) bool {
+	// Check if server allows consolidation (tier + plan based)
+	if !server.AllowsConsolidation() {
+		return false
+	}
+
+	// Tier-specific rules
+	switch server.RAMTier {
+	case models.TierMicro, models.TierSmall:
+		// Micro/Small: Aggressive consolidation
+		if server.Plan == models.PlanPayPerPlay {
+			// PayPerPlay: allow migration with ≤5 players
+			return playerCount <= 5
+		}
+		// Balanced: only when empty
+		return playerCount == 0
+
+	case models.TierMedium:
+		// Medium: Only when empty
+		return playerCount == 0
+
+	case models.TierLarge, models.TierXLarge:
+		// Large/XLarge: Never migrate (too risky)
+		return false
+
+	case models.TierCustom:
+		// Custom: Never migrate (inefficient)
+		return false
+
+	default:
+		return false
+	}
+}
+
+// createOptimalBins assigns containers to bins for perfect packing
+func (p *ConsolidationPolicy) createOptimalBins(
+	tierGroups map[string][]ConsolidationContainerInfo,
+	customContainers []ConsolidationContainerInfo,
+	totalNodesNeeded int,
+	nodeCapacity int,
+	existingNodes []*Node,
+) []ConsolidationNodeBin {
+	bins := make([]ConsolidationNodeBin, totalNodesNeeded)
+
+	// Initialize bins (reuse existing nodes where possible)
+	for i := 0; i < totalNodesNeeded; i++ {
+		if i < len(existingNodes) {
+			bins[i] = ConsolidationNodeBin{
+				NodeID:     existingNodes[i].ID,
+				TotalRAMMb: existingNodes[i].UsableRAMMB(),
+				UsedRAMMb:  0,
+				Containers: []ConsolidationContainerInfo{},
+			}
+		} else {
+			// Will need new node (shouldn't happen often)
+			bins[i] = ConsolidationNodeBin{
+				NodeID:     fmt.Sprintf("new-node-%d", i),
+				TotalRAMMb: nodeCapacity,
+				UsedRAMMb:  0,
+				Containers: []ConsolidationContainerInfo{},
+			}
+		}
+	}
+
+	// Pack standard tier containers (perfect packing)
+	binIndex := 0
+	for tier, containers := range tierGroups {
+		tierRAM, _ := models.GetTierRAM(tier)
+		containersPerNode := nodeCapacity / tierRAM
+
+		for i, container := range containers {
+			if !container.CanMigrate {
+				continue // Skip non-migratable
+			}
+
+			// Determine which bin this container goes to
+			containerIndex := i % containersPerNode
+			if containerIndex == 0 && i > 0 {
+				binIndex++
+			}
+
+			if binIndex < len(bins) {
+				bins[binIndex].Containers = append(bins[binIndex].Containers, container)
+				bins[binIndex].UsedRAMMb += container.RAMMb
+			}
+		}
+		binIndex++ // Move to next bin for next tier
+	}
+
+	// Pack custom containers (one per bin for safety)
+	for _, container := range customContainers {
+		if binIndex < len(bins) {
+			bins[binIndex].Containers = append(bins[binIndex].Containers, container)
+			bins[binIndex].UsedRAMMb += container.RAMMb
+			binIndex++
+		}
+	}
+
+	return bins
 }

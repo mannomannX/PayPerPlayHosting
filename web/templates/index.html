@@ -214,15 +214,137 @@
                         </div>
                     </div>
 
+                    <!-- Tier Selection -->
                     <div>
-                        <label class="block text-sm font-medium mb-2">RAM</label>
-                        <select x-model.number="newServer.ram_mb" required
-                                class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-green-400 focus:outline-none">
-                            <option value="2048">2 GB - €0.10/hour (1-5 players)</option>
-                            <option value="4096">4 GB - €0.20/hour (6-15 players)</option>
-                            <option value="8192">8 GB - €0.40/hour (16-30 players)</option>
-                            <option value="16384">16 GB - €0.80/hour (31+ players)</option>
-                        </select>
+                        <label class="block text-sm font-medium mb-2">Server Size (Tier)</label>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <button type="button" @click="newServer.ram_tier = 'micro'; newServer.ram_mb = 2048"
+                                    :class="newServer.ram_tier == 'micro' ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-green-500">
+                                <div class="font-bold">Micro</div>
+                                <div class="text-sm text-gray-300">2 GB RAM</div>
+                                <div class="text-xs text-gray-400">5-10 players</div>
+                            </button>
+                            <button type="button" @click="newServer.ram_tier = 'small'; newServer.ram_mb = 4096"
+                                    :class="newServer.ram_tier == 'small' ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-green-500">
+                                <div class="font-bold">Small</div>
+                                <div class="text-sm text-gray-300">4 GB RAM</div>
+                                <div class="text-xs text-gray-400">10-20 players</div>
+                            </button>
+                            <button type="button" @click="newServer.ram_tier = 'medium'; newServer.ram_mb = 8192"
+                                    :class="newServer.ram_tier == 'medium' ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-green-500">
+                                <div class="font-bold">Medium</div>
+                                <div class="text-sm text-gray-300">8 GB RAM</div>
+                                <div class="text-xs text-gray-400">20-40 players</div>
+                            </button>
+                            <button type="button" @click="newServer.ram_tier = 'large'; newServer.ram_mb = 16384"
+                                    :class="newServer.ram_tier == 'large' ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-green-500">
+                                <div class="font-bold">Large</div>
+                                <div class="text-sm text-gray-300">16 GB RAM</div>
+                                <div class="text-xs text-gray-400">40-80 players</div>
+                            </button>
+                            <button type="button" @click="newServer.ram_tier = 'xlarge'; newServer.ram_mb = 32768"
+                                    :class="newServer.ram_tier == 'xlarge' ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-green-500">
+                                <div class="font-bold">XLarge</div>
+                                <div class="text-sm text-gray-300">32 GB RAM</div>
+                                <div class="text-xs text-gray-400">80-150 players</div>
+                            </button>
+                            <button type="button" @click="showCustomRamInput = !showCustomRamInput; if (!showCustomRamInput) newServer.ram_tier = 'small'"
+                                    :class="showCustomRamInput ? 'bg-yellow-600 border-yellow-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-yellow-500">
+                                <div class="font-bold">Custom</div>
+                                <div class="text-sm text-gray-300">Custom RAM</div>
+                                <div class="text-xs text-gray-400">+30% premium</div>
+                            </button>
+                        </div>
+                        <div x-show="showCustomRamInput" class="mt-3">
+                            <input type="number" x-model.number="newServer.ram_mb" min="512" max="65536" step="512"
+                                   placeholder="Enter custom RAM in MB"
+                                   @input="newServer.ram_tier = 'custom'"
+                                   class="w-full px-4 py-2 bg-gray-700 rounded border border-gray-600 focus:border-yellow-400 focus:outline-none">
+                            <p class="text-xs text-yellow-400 mt-1">⚠️ Custom RAM has a 30% premium and cannot be consolidated efficiently</p>
+                        </div>
+                    </div>
+
+                    <!-- Plan Selection -->
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Hosting Plan</label>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <button type="button" @click="newServer.plan = 'payperplay'"
+                                    :class="newServer.plan == 'payperplay' ? 'bg-green-600 border-green-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-green-500">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="font-bold">PayPerPlay</div>
+                                    <div class="bg-green-500 text-xs px-2 py-1 rounded">CHEAPEST</div>
+                                </div>
+                                <div class="text-sm text-gray-300 mb-2">€0.012/GB/hour</div>
+                                <div class="text-xs text-gray-400">
+                                    ✓ Aggressive optimization<br>
+                                    ✓ Auto-scaling<br>
+                                    ✓ Container migration<br>
+                                    ⚠️ May migrate with players
+                                </div>
+                            </button>
+                            <button type="button" @click="newServer.plan = 'balanced'"
+                                    :class="newServer.plan == 'balanced' ? 'bg-blue-600 border-blue-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-blue-500">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="font-bold">Balanced</div>
+                                    <div class="bg-blue-500 text-xs px-2 py-1 rounded">POPULAR</div>
+                                </div>
+                                <div class="text-sm text-gray-300 mb-2">€0.0175/GB/hour</div>
+                                <div class="text-xs text-gray-400">
+                                    ✓ Moderate optimization<br>
+                                    ✓ Auto-scaling<br>
+                                    ✓ Only migrate when empty<br>
+                                    ✓ Good balance
+                                </div>
+                            </button>
+                            <button type="button" @click="newServer.plan = 'reserved'"
+                                    :class="newServer.plan == 'reserved' ? 'bg-purple-600 border-purple-400' : 'bg-gray-700 border-gray-600'"
+                                    class="p-4 rounded border-2 transition text-left hover:border-purple-500">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="font-bold">Reserved</div>
+                                    <div class="bg-purple-500 text-xs px-2 py-1 rounded">PREMIUM</div>
+                                </div>
+                                <div class="text-sm text-gray-300 mb-2">€0.0225/GB/hour</div>
+                                <div class="text-xs text-gray-400">
+                                    ✓ No optimization<br>
+                                    ✓ Dedicated resources<br>
+                                    ✓ Never migrated<br>
+                                    ✓ Maximum stability
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pricing Summary -->
+                    <div class="bg-gray-700 rounded-lg p-4 border-2 border-green-500">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-gray-300">Estimated Cost</div>
+                            <div class="text-xs text-gray-400" x-show="newServer.ram_tier == 'custom'">
+                                <span class="text-yellow-400">⚠️</span> Custom tier pricing
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-2xl font-bold text-green-400" x-text="'€' + calculateHourlyRate().toFixed(4)"></div>
+                                <div class="text-xs text-gray-400">per hour</div>
+                            </div>
+                            <div>
+                                <div class="text-2xl font-bold text-green-400" x-text="'€' + calculateMonthlyRate().toFixed(2)"></div>
+                                <div class="text-xs text-gray-400">per month (730h)</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 pt-3 border-t border-gray-600 text-xs text-gray-400">
+                            <span x-text="getTierDisplayName(newServer.ram_tier)"></span> •
+                            <span x-text="getPlanDisplayName(newServer.plan)"></span> Plan •
+                            <span x-text="(newServer.ram_mb / 1024).toFixed(0) + ' GB RAM'"></span>
+                        </div>
                     </div>
 
                     <button type="submit"
@@ -274,7 +396,15 @@
                                             <span x-text="server.ServerType"></span>
                                         </span>
                                         <span>MC <span x-text="server.MinecraftVersion"></span></span>
-                                        <span><span x-text="(server.RAMMb / 1024).toFixed(0)"></span> GB RAM</span>
+                                        <span class="flex items-center gap-1">
+                                            <span x-text="getTierDisplayName(server.RAMTier || 'small')"></span>
+                                            <span x-show="server.RAMTier" :class="{
+                                                'bg-green-600': server.Plan == 'payperplay',
+                                                'bg-blue-600': server.Plan == 'balanced',
+                                                'bg-purple-600': server.Plan == 'reserved',
+                                                'bg-yellow-600': server.RAMTier == 'custom'
+                                            }" class="px-2 py-0.5 rounded text-xs font-semibold uppercase" x-text="getPlanDisplayName(server.Plan || 'payperplay')"></span>
+                                        </span>
                                         <span>Port: <span x-text="server.Port"></span></span>
                                         <span x-show="adminMode" class="text-yellow-400">Owner: <span x-text="server.OwnerID"></span></span>
                                     </div>
@@ -2042,11 +2172,14 @@
                 serverStatuses: {},
                 loading: true,
                 adminMode: false,  // Admin toggle for debugging
+                showCustomRamInput: false,  // Show custom RAM input
                 newServer: {
                     name: '',
                     server_type: 'paper',
                     minecraft_version: '1.20.4',
-                    ram_mb: 2048
+                    ram_mb: 4096,
+                    ram_tier: 'small',
+                    plan: 'payperplay'
                 },
                 detailsModal: {
                     show: false,
@@ -3192,6 +3325,59 @@
                     const mins = Math.floor(seconds / 60);
                     const secs = seconds % 60;
                     return `${mins}m ${secs}s`;
+                },
+
+                // Tier-based pricing calculations
+                calculateHourlyRate() {
+                    const ramGB = this.newServer.ram_mb / 1024.0;
+                    let rate = 0.012; // Default: PayPerPlay
+
+                    // Select rate based on plan
+                    switch (this.newServer.plan) {
+                        case 'payperplay':
+                            rate = 0.012;
+                            break;
+                        case 'balanced':
+                            rate = 0.0175;
+                            break;
+                        case 'reserved':
+                            rate = 0.0225;
+                            break;
+                        default:
+                            rate = 0.012;
+                    }
+
+                    // Custom tier gets premium pricing (+30%)
+                    if (this.newServer.ram_tier === 'custom') {
+                        rate = 0.0169;
+                    }
+
+                    return rate * ramGB;
+                },
+
+                calculateMonthlyRate() {
+                    return this.calculateHourlyRate() * 730.0; // 730 hours per month
+                },
+
+                getTierDisplayName(tier) {
+                    const tierNames = {
+                        'micro': 'Micro (2GB)',
+                        'small': 'Small (4GB)',
+                        'medium': 'Medium (8GB)',
+                        'large': 'Large (16GB)',
+                        'xlarge': 'XLarge (32GB)',
+                        'custom': 'Custom'
+                    };
+                    return tierNames[tier] || 'Unknown';
+                },
+
+                getPlanDisplayName(plan) {
+                    const planNames = {
+                        'payperplay': 'PayPerPlay',
+                        'balanced': 'Balanced',
+                        'reserved': 'Reserved'
+                    };
+                    return planNames[plan] || 'Unknown';
                 },
 
                 // Version-aware feature validation

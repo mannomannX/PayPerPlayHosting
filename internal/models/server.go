@@ -57,6 +57,11 @@ type MinecraftServer struct {
 	MaxPlayers       int        `gorm:"default:20"`
 	Port             int        `gorm:"unique"`
 
+	// Tier-Based Scaling & Pricing
+	RAMTier      string `gorm:"type:varchar(20);default:small"` // micro, small, medium, large, xlarge, custom
+	Plan         string `gorm:"type:varchar(20);default:payperplay"` // payperplay, balanced, reserved
+	IsCustomTier bool   `gorm:"default:false"` // True if custom RAM size (not standard tier)
+
 	// Gameplay Settings (Phase 1)
 	Gamemode           string `gorm:"default:survival"`       // survival, creative, adventure, spectator
 	Difficulty         string `gorm:"default:normal"`         // peaceful, easy, normal, hard
@@ -156,4 +161,55 @@ func (UsageLog) TableName() string {
 // Used by Conductor for state synchronization after restarts
 func (s *MinecraftServer) GetRAMMb() int {
 	return s.RAMMb
+}
+
+// CalculateTier automatically determines and sets the tier based on RAM
+func (s *MinecraftServer) CalculateTier() {
+	s.RAMTier = ClassifyTier(s.RAMMb)
+	s.IsCustomTier = (s.RAMTier == TierCustom)
+}
+
+// GetHourlyRate returns the hourly cost for this server
+func (s *MinecraftServer) GetHourlyRate() float64 {
+	return CalculateHourlyRate(s.RAMTier, s.Plan, s.RAMMb)
+}
+
+// GetMonthlyRate returns the estimated monthly cost for this server
+func (s *MinecraftServer) GetMonthlyRate() float64 {
+	return CalculateMonthlyRate(s.RAMTier, s.Plan, s.RAMMb)
+}
+
+// AllowsConsolidation returns whether this server allows consolidation based on tier and plan
+func (s *MinecraftServer) AllowsConsolidation() bool {
+	// Reserved plan: never consolidate
+	if s.Plan == PlanReserved {
+		return false
+	}
+
+	// Custom tier: no consolidation (inefficient)
+	if s.IsCustomTier {
+		return false
+	}
+
+	// Check tier-specific consolidation rules
+	if !AllowConsolidation(s.RAMTier) {
+		return false
+	}
+
+	// Check explicit user opt-out
+	if !s.AllowMigration {
+		return false
+	}
+
+	return true
+}
+
+// GetTierDisplayName returns the human-readable tier name
+func (s *MinecraftServer) GetTierDisplayName() string {
+	return GetTierDisplayName(s.RAMTier)
+}
+
+// GetPlanDisplayName returns the human-readable plan name
+func (s *MinecraftServer) GetPlanDisplayName() string {
+	return GetPlanDisplayName(s.Plan)
 }

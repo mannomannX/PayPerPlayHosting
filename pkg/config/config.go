@@ -81,6 +81,34 @@ type Config struct {
 	VelocityAPIURL string // URL to Velocity Remote API (e.g., http://91.98.232.193:8080)
 	ProxyNodeIP    string // IP address of proxy node for resource monitoring (e.g., 91.98.232.193)
 	ProxyNodeSSHUser string // SSH user for proxy node (default: root)
+
+	// Tier-Based Scaling & Pricing
+	// Standard RAM Tiers (MB) - Powers of 2 for perfect bin-packing
+	StandardTierMicro  int     // 2048 MB (2GB)
+	StandardTierSmall  int     // 4096 MB (4GB)
+	StandardTierMedium int     // 8192 MB (8GB)
+	StandardTierLarge  int     // 16384 MB (16GB)
+	StandardTierXLarge int     // 32768 MB (32GB)
+
+	// Pricing per plan (EUR/GB/h)
+	PricingPayPerPlay  float64 // 0.012 - Cheapest (aggressive optimization)
+	PricingBalanced    float64 // 0.0175 - Moderate (selective optimization)
+	PricingReserved    float64 // 0.0225 - Premium (no optimization)
+	PricingCustom      float64 // 0.0169 - Custom RAM (+30% premium)
+
+	// Worker Node Sizing Strategy
+	WorkerNodeStrategy      string  // "tier-aware" (default), "capacity-based", "queue-based"
+	WorkerNodeMinRAMMB      int     // Minimum RAM for worker nodes (default: 4096)
+	WorkerNodeMaxRAMMB      int     // Maximum RAM for worker nodes (default: 32768)
+	WorkerNodeBufferPercent float64 // Overhead buffer for growth (default: 25.0%)
+
+	// Consolidation rules per tier
+	AllowConsolidationMicro  bool // true - Micro (2GB): aggressive consolidation
+	AllowConsolidationSmall  bool // true - Small (4GB): aggressive consolidation
+	AllowConsolidationMedium bool // false - Medium (8GB): only with explicit opt-in
+	AllowConsolidationLarge  bool // false - Large (16GB): no consolidation
+	AllowConsolidationXLarge bool // false - XLarge (32GB): no consolidation
+	AllowConsolidationCustom bool // false - Custom: no consolidation (inefficient)
 }
 
 var AppConfig *Config
@@ -148,6 +176,30 @@ func Load() *Config {
 		VelocityAPIURL: getEnv("VELOCITY_API_URL", ""),
 		ProxyNodeIP:    getEnv("PROXY_NODE_IP", "91.98.232.193"), // Default to known proxy node
 		ProxyNodeSSHUser: getEnv("PROXY_NODE_SSH_USER", "root"),
+
+		// Tier-Based Scaling & Pricing
+		StandardTierMicro:  getEnvInt("STANDARD_TIER_MICRO_MB", 2048),   // 2GB
+		StandardTierSmall:  getEnvInt("STANDARD_TIER_SMALL_MB", 4096),   // 4GB
+		StandardTierMedium: getEnvInt("STANDARD_TIER_MEDIUM_MB", 8192),  // 8GB
+		StandardTierLarge:  getEnvInt("STANDARD_TIER_LARGE_MB", 16384),  // 16GB
+		StandardTierXLarge: getEnvInt("STANDARD_TIER_XLARGE_MB", 32768), // 32GB
+
+		PricingPayPerPlay: getEnvFloat("PRICING_PAYPERPLAY", 0.012),  // €0.012/GB/h
+		PricingBalanced:   getEnvFloat("PRICING_BALANCED", 0.0175),   // €0.0175/GB/h
+		PricingReserved:   getEnvFloat("PRICING_RESERVED", 0.0225),   // €0.0225/GB/h
+		PricingCustom:     getEnvFloat("PRICING_CUSTOM", 0.0169),     // €0.0169/GB/h (+30% premium)
+
+		WorkerNodeStrategy:      getEnv("WORKER_NODE_STRATEGY", "tier-aware"),
+		WorkerNodeMinRAMMB:      getEnvInt("WORKER_NODE_MIN_RAM_MB", 4096),   // cpx21 minimum
+		WorkerNodeMaxRAMMB:      getEnvInt("WORKER_NODE_MAX_RAM_MB", 32768),  // cpx51 maximum
+		WorkerNodeBufferPercent: getEnvFloat("WORKER_NODE_BUFFER_PERCENT", 25.0), // 25% buffer
+
+		AllowConsolidationMicro:  getEnvBool("ALLOW_CONSOLIDATION_MICRO", true),  // 2GB: aggressive
+		AllowConsolidationSmall:  getEnvBool("ALLOW_CONSOLIDATION_SMALL", true),  // 4GB: aggressive
+		AllowConsolidationMedium: getEnvBool("ALLOW_CONSOLIDATION_MEDIUM", false), // 8GB: opt-in only
+		AllowConsolidationLarge:  getEnvBool("ALLOW_CONSOLIDATION_LARGE", false),  // 16GB: no consolidation
+		AllowConsolidationXLarge: getEnvBool("ALLOW_CONSOLIDATION_XLARGE", false), // 32GB: no consolidation
+		AllowConsolidationCustom: getEnvBool("ALLOW_CONSOLIDATION_CUSTOM", false), // Custom: no consolidation
 	}
 
 	AppConfig = config

@@ -127,6 +127,9 @@ func (s *BillingService) RecordServerStarted(server *models.MinecraftServer) err
 func (s *BillingService) recordServerStartedInternal(server *models.MinecraftServer) error {
 	now := time.Now()
 
+	// Calculate tier-based hourly rate
+	hourlyRate := s.getHourlyRateForServer(server)
+
 	// Create billing event
 	event := &models.BillingEvent{
 		ID:               uuid.New().String(),
@@ -140,7 +143,7 @@ func (s *BillingService) recordServerStartedInternal(server *models.MinecraftSer
 		LifecyclePhase:   models.PhaseActive,
 		PreviousPhase:    server.LifecyclePhase,
 		MinecraftVersion: server.MinecraftVersion,
-		HourlyRateEUR:    s.pricing.ActiveRateEURPerGBHour,
+		HourlyRateEUR:    hourlyRate,
 	}
 
 	if err := s.db.Create(event).Error; err != nil {
@@ -157,7 +160,7 @@ func (s *BillingService) recordServerStartedInternal(server *models.MinecraftSer
 		RAMMb:            server.RAMMb,
 		StorageGB:        0,
 		MinecraftVersion: server.MinecraftVersion,
-		HourlyRateEUR:    s.pricing.ActiveRateEURPerGBHour,
+		HourlyRateEUR:    hourlyRate,
 	}
 
 	if err := s.db.Create(session).Error; err != nil {
@@ -168,7 +171,9 @@ func (s *BillingService) recordServerStartedInternal(server *models.MinecraftSer
 		"server_id":   server.ID,
 		"server_name": server.Name,
 		"ram_mb":      server.RAMMb,
-		"hourly_rate": s.pricing.ActiveRateEURPerGBHour,
+		"tier":        server.RAMTier,
+		"plan":        server.Plan,
+		"hourly_rate": hourlyRate,
 	})
 
 	return nil
@@ -401,4 +406,16 @@ func (s *BillingService) GetUsageSessions(serverID string) ([]models.UsageSessio
 	}
 
 	return sessions, nil
+}
+
+// getHourlyRateForServer returns the tier-based hourly rate for a server
+// This replaces the legacy flat-rate pricing with tier+plan based pricing
+func (s *BillingService) getHourlyRateForServer(server *models.MinecraftServer) float64 {
+	// Auto-calculate tier if not set
+	if server.RAMTier == "" {
+		server.CalculateTier()
+	}
+
+	// Use server's tier+plan based rate
+	return server.GetHourlyRate()
 }
