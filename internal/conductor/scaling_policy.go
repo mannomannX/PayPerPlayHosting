@@ -30,6 +30,10 @@ type ScalingContext struct {
 	// Current Nodes
 	DedicatedNodes []*Node // Always-on base capacity
 	CloudNodes     []*Node // Dynamic capacity
+	WorkerNodes    []*Node // Worker nodes (non-system nodes) - for MC container deployment
+
+	// Queue Information
+	QueuedServerCount int // Number of servers waiting for capacity
 
 	// Container Registry (for B8 - Consolidation Policy)
 	ContainerRegistry *ContainerRegistry

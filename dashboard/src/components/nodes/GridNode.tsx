@@ -22,6 +22,7 @@ interface GridNodeProps {
       cpuUsagePercent?: number;
       status: string;
       ipAddress: string;
+      isSystemNode: boolean;
       containers: Container[];
     };
   };
@@ -71,16 +72,32 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
               {data.ipAddress}
             </div>
           </div>
-          <div
-            style={{
-              fontSize: '9px',
-              padding: '2px 6px',
-              borderRadius: '4px',
-              background: data.status === 'healthy' ? '#10b981' : '#ef4444',
-              fontWeight: 'bold',
-            }}
-          >
-            {data.status.toUpperCase()}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+            {data.isSystemNode && (
+              <div
+                style={{
+                  fontSize: '9px',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  background: '#6366f1',
+                  fontWeight: 'bold',
+                  color: 'white',
+                }}
+              >
+                SYSTEM
+              </div>
+            )}
+            <div
+              style={{
+                fontSize: '9px',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                background: data.status === 'healthy' ? '#10b981' : '#ef4444',
+                fontWeight: 'bold',
+              }}
+            >
+              {data.status.toUpperCase()}
+            </div>
           </div>
         </div>
       </div>

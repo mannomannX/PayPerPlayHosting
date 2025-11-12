@@ -25,11 +25,25 @@ func (r *NodeRegistry) RegisterNode(node *Node) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Auto-detect if this is a system node (API/Proxy nodes cannot run MC containers)
+	node.IsSystemNode = isSystemNodeByID(node.ID)
+
 	if node.CreatedAt.IsZero() {
 		node.CreatedAt = time.Now()
 	}
 
 	r.nodes[node.ID] = node
+}
+
+// isSystemNodeByID checks if a node ID represents a system node (Control Plane or Proxy)
+// System nodes are reserved for infrastructure and should not run Minecraft servers
+func isSystemNodeByID(nodeID string) bool {
+	return nodeID == "local-node" ||
+		nodeID == "control-plane" ||
+		nodeID == "proxy-node" ||
+		(len(nodeID) >= 5 && nodeID[:5] == "local") ||
+		(len(nodeID) >= 7 && nodeID[:7] == "control") ||
+		(len(nodeID) >= 5 && nodeID[:5] == "proxy")
 }
 
 // GetNode retrieves a node by ID

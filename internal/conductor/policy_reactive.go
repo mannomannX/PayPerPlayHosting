@@ -58,6 +58,27 @@ func (p *ReactivePolicy) ShouldConsolidate(ctx ScalingContext) (bool, Consolidat
 
 // ShouldScaleUp checks if we need more capacity
 func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommendation) {
+	// CRITICAL: If servers are queued but NO worker nodes exist, provision immediately
+	// This handles the case where MC containers need worker nodes but none are available
+	if ctx.QueuedServerCount > 0 && len(ctx.WorkerNodes) == 0 {
+		logger.Info("ReactivePolicy: Queued servers need worker node - provisioning immediately", map[string]interface{}{
+			"queued_servers":  ctx.QueuedServerCount,
+			"worker_nodes":    len(ctx.WorkerNodes),
+		})
+
+		serverType := p.selectServerType(ctx, 0)
+		p.lastScaleAction = time.Now()
+		p.lastScaleType = ScaleActionScaleUp
+
+		return true, ScaleRecommendation{
+			Action:     ScaleActionScaleUp,
+			ServerType: serverType,
+			Count:      1,
+			Reason:     fmt.Sprintf("Queued servers (%d) require worker node - no worker nodes available", ctx.QueuedServerCount),
+			Urgency:    UrgencyHigh, // High urgency - users are waiting
+		}
+	}
+
 	// Check cooldown period
 	if time.Since(p.lastScaleAction) < p.CooldownPeriod {
 		logger.Debug("ReactivePolicy: Cooldown active", map[string]interface{}{
@@ -91,6 +112,8 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 		"usable_ram_mb":         ctx.FleetStats.UsableRAMMB,
 		"system_reserved_mb":    ctx.FleetStats.SystemReservedRAMMB,
 		"total_ram_mb":          ctx.FleetStats.TotalRAMMB,
+		"queued_servers":        ctx.QueuedServerCount,
+		"worker_nodes":          len(ctx.WorkerNodes),
 	})
 
 	// Check if we need to scale up

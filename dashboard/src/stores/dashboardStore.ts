@@ -25,6 +25,7 @@ interface DashboardNode extends Node {
     cpuUsagePercent?: number;
     status: string;
     ipAddress: string;
+    isSystemNode: boolean;
     containers: ContainerInfo[];
   };
 }
@@ -190,6 +191,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         capacityPercent: 0,
         status: event.status,
         ipAddress: event.ip_address,
+        isSystemNode: event.is_system_node,
         containers: [],
       },
     };

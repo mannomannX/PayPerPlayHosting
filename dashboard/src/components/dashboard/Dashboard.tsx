@@ -317,11 +317,11 @@ export const Dashboard = () => {
           ))}
         </div>
 
-        {/* Separator */}
+        {/* Separator between System Nodes and Worker Nodes */}
         {workloadNodes.length > 0 && (
           <div style={{
             height: '2px',
-            background: 'linear-gradient(to right, transparent, #334155, transparent)',
+            background: 'linear-gradient(to right, transparent, #6366f1, transparent)',
             marginBottom: '60px',
             position: 'relative',
           }}>
@@ -332,11 +332,11 @@ export const Dashboard = () => {
               transform: 'translateX(-50%)',
               background: '#0f172a',
               padding: '0 16px',
-              color: '#94a3b8',
+              color: '#a5b4fc',
               fontSize: '12px',
               fontWeight: 'bold',
             }}>
-              WORKLOAD LAYER (Tier 3)
+              WORKER NODES (MC Containers Only)
             </div>
           </div>
         )}

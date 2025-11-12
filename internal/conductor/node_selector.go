@@ -89,25 +89,12 @@ func (ns *NodeSelector) getCandidates(requiredRAMMB int) []*Node {
 		// 2. Node must have sufficient available RAM
 		// 3. Node must NOT be a system node (Control Plane or Proxy)
 		//    - Minecraft servers should only run on worker nodes
-		if node.IsHealthy() && node.AvailableRAMMB() >= requiredRAMMB && !ns.isSystemNode(node) {
+		if node.IsHealthy() && node.AvailableRAMMB() >= requiredRAMMB && !node.IsSystemNode {
 			candidates = append(candidates, node)
 		}
 	}
 
 	return candidates
-}
-
-// isSystemNode checks if a node is a system node (Control Plane or Proxy)
-// System nodes are reserved for infrastructure and should not run Minecraft servers
-func (ns *NodeSelector) isSystemNode(node *Node) bool {
-	// Check if node ID contains system node identifiers
-	nodeID := node.ID
-	return nodeID == "local-node" ||
-		   nodeID == "control-plane" ||
-		   nodeID == "proxy-node" ||
-		   (len(nodeID) >= 5 && nodeID[:5] == "local") ||
-		   (len(nodeID) >= 7 && nodeID[:7] == "control") ||
-		   (len(nodeID) >= 5 && nodeID[:5] == "proxy")
 }
 
 // selectBestFit selects the node with the smallest available RAM that still fits
@@ -231,4 +218,36 @@ func (ns *NodeSelector) GetRecommendedStrategy() SelectionStrategy {
 
 	// If we only have dedicated nodes, use best-fit for efficiency
 	return StrategyBestFit
+}
+
+// HasAvailableWorkerNodes returns true if there are any healthy worker nodes with ANY available capacity
+// This is used to check if we can deploy containers or need to provision a new worker node
+func (ns *NodeSelector) HasAvailableWorkerNodes() bool {
+	ns.nodeRegistry.mu.RLock()
+	defer ns.nodeRegistry.mu.RUnlock()
+
+	for _, node := range ns.nodeRegistry.nodes {
+		// Check if this is a healthy worker node (not a system node) with any available RAM
+		if !node.IsSystemNode && node.IsHealthy() && node.AvailableRAMMB() > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// GetWorkerNodeCount returns the total number of worker nodes (excluding system nodes)
+// This is used by the scaling engine to track worker node fleet size
+func (ns *NodeSelector) GetWorkerNodeCount() int {
+	ns.nodeRegistry.mu.RLock()
+	defer ns.nodeRegistry.mu.RUnlock()
+
+	count := 0
+	for _, node := range ns.nodeRegistry.nodes {
+		if !node.IsSystemNode {
+			count++
+		}
+	}
+
+	return count
 }

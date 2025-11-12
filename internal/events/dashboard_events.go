@@ -16,26 +16,28 @@ type DashboardPublisher interface {
 }
 
 // PublishNodeCreated publishes a node creation event
-func PublishNodeCreated(nodeID, nodeType, provider, location, status, ipAddress string, totalRAMMB, usableRAMMB int, createdAt time.Time) {
+func PublishNodeCreated(nodeID, nodeType, provider, location, status, ipAddress string, totalRAMMB, usableRAMMB int, isSystemNode bool, createdAt time.Time) {
 	if DashboardEventPublisher == nil {
 		return
 	}
 
 	data := map[string]interface{}{
-		"node_id":       nodeID,
-		"node_type":     nodeType,
-		"provider":      provider,
-		"location":      location,
-		"total_ram_mb":  totalRAMMB,
-		"usable_ram_mb": usableRAMMB,
-		"status":        status,
-		"ip_address":    ipAddress,
-		"created_at":    createdAt,
+		"node_id":        nodeID,
+		"node_type":      nodeType,
+		"provider":       provider,
+		"location":       location,
+		"total_ram_mb":   totalRAMMB,
+		"usable_ram_mb":  usableRAMMB,
+		"status":         status,
+		"ip_address":     ipAddress,
+		"is_system_node": isSystemNode,
+		"created_at":     createdAt,
 	}
 
 	DashboardEventPublisher.PublishEvent("node.created", data)
 	logger.Debug("Dashboard event published: node.created", map[string]interface{}{
-		"node_id": nodeID,
+		"node_id":        nodeID,
+		"is_system_node": isSystemNode,
 	})
 }
 

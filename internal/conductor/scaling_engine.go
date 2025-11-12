@@ -260,12 +260,17 @@ func (e *ScalingEngine) buildScalingContext() ScalingContext {
 	stats := e.nodeRegistry.GetFleetStats()
 	nodes := e.nodeRegistry.GetAllNodes()
 
-	var dedicatedNodes, cloudNodes []*Node
+	var dedicatedNodes, cloudNodes, workerNodes []*Node
 	for _, node := range nodes {
 		if node.Type == "dedicated" {
 			dedicatedNodes = append(dedicatedNodes, node)
 		} else if node.Type == "cloud" {
 			cloudNodes = append(cloudNodes, node)
+		}
+
+		// Worker nodes are all non-system nodes (can run MC containers)
+		if !node.IsSystemNode {
+			workerNodes = append(workerNodes, node)
 		}
 	}
 
@@ -277,10 +282,18 @@ func (e *ScalingEngine) buildScalingContext() ScalingContext {
 		containerRegistry = e.conductor.ContainerRegistry
 	}
 
+	// Get queue size
+	queueSize := 0
+	if e.startQueue != nil {
+		queueSize = e.startQueue.Size()
+	}
+
 	return ScalingContext{
 		FleetStats:        stats,
 		DedicatedNodes:    dedicatedNodes,
 		CloudNodes:        cloudNodes,
+		WorkerNodes:       workerNodes,
+		QueuedServerCount: queueSize,
 		ContainerRegistry: containerRegistry,
 		CurrentTime:       now,
 		IsWeekend:         now.Weekday() == time.Saturday || now.Weekday() == time.Sunday,

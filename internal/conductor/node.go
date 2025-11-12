@@ -17,6 +17,7 @@ type Node struct {
 	Hostname            string            `json:"hostname"`
 	IPAddress           string            `json:"ip_address"`
 	Type                string            `json:"type"` // "dedicated", "cloud", "local", or "spare"
+	IsSystemNode        bool              `json:"is_system_node"` // System nodes (API/Proxy) cannot run MC containers
 	TotalRAMMB          int               `json:"total_ram_mb"`
 	TotalCPUCores       int               `json:"total_cpu_cores"`
 	CPUUsagePercent     float64           `json:"cpu_usage_percent"`     // Current CPU usage (0-100%)

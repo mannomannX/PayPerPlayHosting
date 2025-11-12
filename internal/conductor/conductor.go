@@ -340,6 +340,7 @@ func (c *Conductor) bootstrapLocalNode() {
 		localNode.IPAddress,
 		localNode.TotalRAMMB,
 		localNode.UsableRAMMB(),
+		localNode.IsSystemNode,
 		localNode.CreatedAt,
 	)
 
@@ -471,6 +472,7 @@ func (c *Conductor) bootstrapProxyNode() {
 		proxyNode.IPAddress,
 		proxyNode.TotalRAMMB,
 		proxyNode.UsableRAMMB(),
+		proxyNode.IsSystemNode,
 		proxyNode.CreatedAt,
 	)
 
@@ -912,9 +914,25 @@ func (c *Conductor) SelectNodeForContainer(requiredRAMMB int, strategy Selection
 
 // SelectNodeForContainerAuto selects the best node using the recommended strategy
 // This is a convenience method that automatically chooses the best strategy based on fleet composition
+// Returns error if no worker nodes are available (caller should queue and provision)
 func (c *Conductor) SelectNodeForContainerAuto(requiredRAMMB int) (string, error) {
+	// First check if we have ANY worker nodes at all
+	// If no worker nodes exist, we need to provision one before deployment
+	if c.NodeSelector.GetWorkerNodeCount() == 0 {
+		return "", fmt.Errorf("no worker nodes available - need to provision worker node first")
+	}
+
+	// Try to select a node with the recommended strategy
 	recommendedStrategy := c.NodeSelector.GetRecommendedStrategy()
-	return c.SelectNodeForContainer(requiredRAMMB, recommendedStrategy)
+	nodeID, err := c.SelectNodeForContainer(requiredRAMMB, recommendedStrategy)
+
+	// If selection failed due to capacity but we have worker nodes, return specific error
+	// This allows the caller to distinguish between "need more capacity" vs "need first worker node"
+	if err != nil && c.NodeSelector.GetWorkerNodeCount() > 0 {
+		return "", fmt.Errorf("no worker nodes with sufficient capacity (%d MB required) - need to provision additional worker node", requiredRAMMB)
+	}
+
+	return nodeID, err
 }
 
 // GetRemoteNode builds a RemoteNode struct from a nodeID

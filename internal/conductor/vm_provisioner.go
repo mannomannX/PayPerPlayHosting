@@ -138,7 +138,7 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	if loc, ok := node.Labels["location"]; ok {
 		location = loc
 	}
-	events.PublishNodeCreated(node.ID, node.Type, provider, location, string(node.Status), node.IPAddress, node.TotalRAMMB, node.UsableRAMMB(), node.CreatedAt)
+	events.PublishNodeCreated(node.ID, node.Type, provider, location, string(node.Status), node.IPAddress, node.TotalRAMMB, node.UsableRAMMB(), node.IsSystemNode, node.CreatedAt)
 
 	return node, nil
 }

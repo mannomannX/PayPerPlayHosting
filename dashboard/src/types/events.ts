@@ -16,6 +16,7 @@ export interface NodeCreatedEvent {
   usable_ram_mb: number;
   status: string;
   ip_address: string;
+  is_system_node: boolean;
   created_at: string;
 }
 
