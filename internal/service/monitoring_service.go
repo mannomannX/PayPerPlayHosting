@@ -240,7 +240,7 @@ func (m *MonitoringService) checkServer(serverID string) {
 }
 
 // getPlayerCount attempts to get the current player count via RCON
-func (m *MonitoringService) getPlayerCount(server *models.MinecraftServer) (int, error) {
+func (m *MonitoringService) getPlayerCount(_ *models.MinecraftServer) (int, error) {
 	// RCON is on port 25575 by default for itzg/minecraft-server
 	// We need to enable RCON in the container
 	rconPort := 25575

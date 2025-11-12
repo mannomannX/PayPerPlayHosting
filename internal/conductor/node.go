@@ -16,7 +16,7 @@ type Node struct {
 	ID                  string            `json:"id"`
 	Hostname            string            `json:"hostname"`
 	IPAddress           string            `json:"ip_address"`
-	Type                string            `json:"type"` // "dedicated", "cloud", or "spare"
+	Type                string            `json:"type"` // "dedicated", "cloud", "local", or "spare"
 	TotalRAMMB          int               `json:"total_ram_mb"`
 	TotalCPUCores       int               `json:"total_cpu_cores"`
 	Status              NodeStatus        `json:"status"`
@@ -24,12 +24,14 @@ type Node struct {
 	ContainerCount      int               `json:"container_count"`
 	AllocatedRAMMB      int               `json:"allocated_ram_mb"`
 	SystemReservedRAMMB int               `json:"system_reserved_ram_mb"` // RAM reserved for system processes
-	DockerSocketPath    string            `json:"docker_socket_path"`
-	SSHUser             string            `json:"ssh_user"`
+	DockerSocketPath    string            `json:"docker_socket_path"`     // Docker socket path (default: /var/run/docker.sock)
+	SSHUser             string            `json:"ssh_user"`               // SSH user for remote access
+	SSHPort             int               `json:"ssh_port"`               // SSH port (default: 22)
+	SSHKeyPath          string            `json:"ssh_key_path"`           // Path to SSH private key for authentication
 	CreatedAt           time.Time         `json:"created_at"`
-	Labels              map[string]string `json:"labels,omitempty"`    // Cloud provider labels
-	HourlyCostEUR       float64           `json:"hourly_cost_eur"`     // For cost tracking
-	CloudProviderID     string            `json:"cloud_provider_id"`   // External provider ID (e.g., Hetzner server ID)
+	Labels              map[string]string `json:"labels,omitempty"`  // Cloud provider labels
+	HourlyCostEUR       float64           `json:"hourly_cost_eur"`   // For cost tracking
+	CloudProviderID     string            `json:"cloud_provider_id"` // External provider ID (e.g., Hetzner server ID)
 }
 
 // UsableRAMMB returns the maximum RAM available for containers (Total - System Reserve)

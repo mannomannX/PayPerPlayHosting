@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math"
@@ -16,12 +17,13 @@ import (
 )
 
 type MinecraftService struct {
-	repo            *repository.ServerRepository
-	dockerService   *docker.DockerService
-	cfg             *config.Config
-	velocityService VelocityServiceInterface // Interface to avoid circular dependency
-	wsHub           WebSocketHubInterface    // Interface for WebSocket broadcasting
-	conductor       ConductorInterface        // Interface for capacity management
+	repo                  *repository.ServerRepository
+	dockerService         *docker.DockerService
+	cfg                   *config.Config
+	velocityService       VelocityServiceInterface // Interface to avoid circular dependency (DEPRECATED - use remoteVelocityClient)
+	remoteVelocityClient  RemoteVelocityClientInterface // NEW: HTTP API client for remote Velocity server
+	wsHub                 WebSocketHubInterface    // Interface for WebSocket broadcasting
+	conductor             ConductorInterface        // Interface for capacity management
 }
 
 // WebSocketHubInterface defines the methods needed from WebSocket Hub
@@ -29,11 +31,18 @@ type WebSocketHubInterface interface {
 	Broadcast(messageType string, data interface{})
 }
 
-// VelocityServiceInterface defines the methods needed from VelocityService
+// VelocityServiceInterface defines the methods needed from VelocityService (DEPRECATED)
 type VelocityServiceInterface interface {
 	RegisterServer(server *models.MinecraftServer) error
 	UnregisterServer(serverID string) error
 	IsRunning() bool
+}
+
+// RemoteVelocityClientInterface defines the methods needed from RemoteVelocityClient
+// This is the NEW way of communicating with Velocity via HTTP API
+type RemoteVelocityClientInterface interface {
+	RegisterServer(name, address string) error
+	UnregisterServer(name string) error
 }
 
 // ConductorInterface defines the methods needed from Conductor for capacity management
@@ -61,10 +70,32 @@ type ConductorInterface interface {
 	// AtomicAllocateRAM atomically reserves RAM for a server
 	// Returns true if allocation succeeded, false if insufficient capacity
 	// THIS IS THE SAFE METHOD - prevents race conditions!
+	// DEPRECATED: Use AtomicAllocateRAMOnNode() for multi-node support
 	AtomicAllocateRAM(ramMB int) bool
 
 	// ReleaseRAM atomically releases RAM when a server stops
+	// DEPRECATED: Use ReleaseRAMOnNode() for multi-node support
 	ReleaseRAM(ramMB int)
+
+	// Multi-Node Support: Node Selection and RAM Management
+
+	// SelectNodeForContainerAuto selects the best node for a new container
+	// Uses the recommended node selection strategy based on fleet composition
+	// Returns (nodeID, error)
+	SelectNodeForContainerAuto(requiredRAMMB int) (string, error)
+
+	// AtomicAllocateRAMOnNode atomically reserves RAM on a specific node
+	// Returns true if allocation succeeded, false if insufficient capacity
+	AtomicAllocateRAMOnNode(nodeID string, ramMB int) bool
+
+	// ReleaseRAMOnNode atomically releases RAM from a specific node
+	ReleaseRAMOnNode(nodeID string, ramMB int)
+
+	// RegisterContainer registers a container in the registry with node tracking
+	RegisterContainer(serverID, serverName, containerID, nodeID string, ramMB, dockerPort, minecraftPort int, status string)
+
+	// GetContainer retrieves container info including node assignment
+	GetContainer(serverID string) (containerInfo interface{}, exists bool)
 
 	// EnqueueServer adds a server to the start queue if capacity is insufficient
 	EnqueueServer(serverID, serverName string, requiredRAMMB int, userID string)
@@ -77,6 +108,12 @@ type ConductorInterface interface {
 
 	// ProcessStartQueue attempts to start servers from the queue when capacity is available
 	ProcessStartQueue()
+
+	// GetRemoteNode builds a RemoteNode struct from a nodeID for remote Docker operations
+	GetRemoteNode(nodeID string) (*docker.RemoteNode, error)
+
+	// GetRemoteDockerClient returns the RemoteDockerClient for remote node operations
+	GetRemoteDockerClient() *docker.RemoteDockerClient
 }
 
 func NewMinecraftService(
@@ -92,8 +129,14 @@ func NewMinecraftService(
 }
 
 // SetVelocityService sets the velocity service (called after initialization to avoid circular dependency)
+// DEPRECATED: Use SetRemoteVelocityClient instead
 func (s *MinecraftService) SetVelocityService(velocityService VelocityServiceInterface) {
 	s.velocityService = velocityService
+}
+
+// SetRemoteVelocityClient sets the remote Velocity API client (NEW)
+func (s *MinecraftService) SetRemoteVelocityClient(client RemoteVelocityClientInterface) {
+	s.remoteVelocityClient = client
 }
 
 // SetWebSocketHub sets the WebSocket hub for real-time updates
@@ -225,6 +268,7 @@ func (s *MinecraftService) StartServer(serverID string) error {
 
 	// PRE-START RESOURCE GUARD: CPU + RAM protection
 	// This is a CRITICAL FIX to prevent multiple parallel requests from overloading the system
+	var selectedNodeID string
 	ramAllocated := false
 	startSlotReserved := false
 	if s.conductor != nil {
@@ -256,10 +300,27 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		}
 		startSlotReserved = true
 
-		// CPU/RAM checks passed - now atomically allocate RAM
-		// ATOMIC RAM ALLOCATION: Lock, check, and allocate in ONE operation
+		// MULTI-NODE: Intelligent Node Selection
+		// Select the best node for this container using automatic strategy selection
+		nodeID, err := s.conductor.SelectNodeForContainerAuto(server.RAMMb)
+		if err != nil {
+			// No nodes available with sufficient capacity
+			s.conductor.ReleaseStartSlot(server.ID)
+			startSlotReserved = false
+
+			// Add to queue - will auto-start when nodes become available
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+
+			log.Printf("NODE_SELECTION: No nodes available for server %s (%d MB required) - Added to queue: %v",
+				server.ID, server.RAMMb, err)
+
+			return fmt.Errorf("no healthy nodes available with sufficient capacity (%d MB required) - server queued for start", server.RAMMb)
+		}
+		selectedNodeID = nodeID
+
+		// ATOMIC RAM ALLOCATION: Lock, check, and allocate in ONE operation on selected node
 		// This prevents race conditions where multiple threads check capacity simultaneously
-		if !s.conductor.AtomicAllocateRAM(server.RAMMb) {
+		if !s.conductor.AtomicAllocateRAMOnNode(selectedNodeID, server.RAMMb) {
 			// Allocation failed - insufficient capacity
 			// ROLLBACK: Release start slot
 			s.conductor.ReleaseStartSlot(server.ID)
@@ -268,15 +329,15 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			// Add to queue instead of starting
 			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
 
-			log.Printf("RESOURCE_GUARD: Insufficient capacity for server %s (%d MB required) - Added to queue",
-				server.ID, server.RAMMb)
+			log.Printf("RESOURCE_GUARD: Insufficient capacity on node %s for server %s (%d MB required) - Added to queue",
+				selectedNodeID, server.ID, server.RAMMb)
 
 			return fmt.Errorf("insufficient capacity to start server (%d MB required) - server queued for start, will auto-start when capacity available", server.RAMMb)
 		}
 
 		// RAM successfully allocated!
 		ramAllocated = true
-		log.Printf("RESOURCE_GUARD: RAM allocated atomically for server %s (%d MB)", server.ID, server.RAMMb)
+		log.Printf("RESOURCE_GUARD: RAM allocated atomically for server %s (%d MB) on node %s", server.ID, server.RAMMb, selectedNodeID)
 
 		// Remove from queue if it was queued (in case of manual retry)
 		s.conductor.RemoveFromQueue(server.ID)
@@ -293,6 +354,25 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		}
 	}
 
+	// Store the selected node ID in the database
+	server.NodeID = selectedNodeID
+	if err := s.repo.Update(server); err != nil {
+		// ROLLBACK: Release RAM and start slot if database update failed
+		if s.conductor != nil {
+			if ramAllocated {
+				s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after nodeID update failure", server.RAMMb, selectedNodeID, server.ID)
+			}
+			if startSlotReserved {
+				s.conductor.ReleaseStartSlot(server.ID)
+				log.Printf("ROLLBACK: Released start slot for server %s after nodeID update failure", server.ID)
+			}
+		}
+		return fmt.Errorf("failed to update server with nodeID: %w", err)
+	}
+
+	log.Printf("Server %s assigned to node %s", server.ID, selectedNodeID)
+
 	// CRITICAL: Remove any existing container with the same name before creating a new one
 	// This prevents "port already allocated" errors from zombie containers
 	containerName := fmt.Sprintf("mc-%s", server.ID)
@@ -301,49 +381,97 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		log.Printf("Warning: failed to remove old container %s: %v", containerName, err)
 	}
 
-	// Create container if it doesn't exist (or we just removed the old one)
+	// MULTI-NODE: Create container on selected node (local or remote)
 	if server.ContainerID == "" || server.ContainerID != "" {
 		// Always create a fresh container to avoid state issues
-		containerID, err := s.dockerService.CreateContainer(
-			server.ID,
-			string(server.ServerType),
-			server.MinecraftVersion,
-			server.RAMMb,
-			server.Port,
-			// Phase 1 Parameters
-			server.MaxPlayers,
-			server.Gamemode,
-			server.Difficulty,
-			server.PVP,
-			server.EnableCommandBlock,
-			server.LevelSeed,
-			// Phase 2 Parameters - Performance
-			server.ViewDistance,
-			server.SimulationDistance,
-			// Phase 2 Parameters - World Generation
-			server.AllowNether,
-			server.AllowEnd,
-			server.GenerateStructures,
-			server.WorldType,
-			server.BonusChest,
-			server.MaxWorldSize,
-			// Phase 2 Parameters - Spawn Settings
-			server.SpawnProtection,
-			server.SpawnAnimals,
-			server.SpawnMonsters,
-			server.SpawnNPCs,
-			// Phase 2 Parameters - Network & Performance
-			server.MaxTickTime,
-			server.NetworkCompressionThreshold,
-			// Phase 4 Parameters - Server Description
-			server.MOTD,
-		)
+		var containerID string
+		var err error
+
+		if s.isLocalNode(selectedNodeID) {
+			// LOCAL NODE: Use existing dockerService.CreateContainer()
+			log.Printf("Creating container for server %s on local node", server.ID)
+			containerID, err = s.dockerService.CreateContainer(
+				server.ID,
+				string(server.ServerType),
+				server.MinecraftVersion,
+				server.RAMMb,
+				server.Port,
+				// Phase 1 Parameters
+				server.MaxPlayers,
+				server.Gamemode,
+				server.Difficulty,
+				server.PVP,
+				server.EnableCommandBlock,
+				server.LevelSeed,
+				// Phase 2 Parameters - Performance
+				server.ViewDistance,
+				server.SimulationDistance,
+				// Phase 2 Parameters - World Generation
+				server.AllowNether,
+				server.AllowEnd,
+				server.GenerateStructures,
+				server.WorldType,
+				server.BonusChest,
+				server.MaxWorldSize,
+				// Phase 2 Parameters - Spawn Settings
+				server.SpawnProtection,
+				server.SpawnAnimals,
+				server.SpawnMonsters,
+				server.SpawnNPCs,
+				// Phase 2 Parameters - Network & Performance
+				server.MaxTickTime,
+				server.NetworkCompressionThreshold,
+				// Phase 4 Parameters - Server Description
+				server.MOTD,
+			)
+		} else {
+			// REMOTE NODE: Use RemoteDockerClient with environment builder
+			log.Printf("Creating container for server %s on remote node %s", server.ID, selectedNodeID)
+
+			// Get remote node info
+			remoteNode, err := s.conductor.GetRemoteNode(selectedNodeID)
+			if err != nil {
+				// ROLLBACK: Release RAM and start slot
+				if s.conductor != nil {
+					if ramAllocated {
+						s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+						log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after GetRemoteNode failure", server.RAMMb, selectedNodeID, server.ID)
+					}
+					if startSlotReserved {
+						s.conductor.ReleaseStartSlot(server.ID)
+						log.Printf("ROLLBACK: Released start slot for server %s after GetRemoteNode failure", server.ID)
+					}
+				}
+				return fmt.Errorf("failed to get remote node info: %w", err)
+			}
+
+			// Build container configuration using helper methods
+			containerName := fmt.Sprintf("mc-%s", server.ID)
+			imageName := docker.GetDockerImageName(string(server.ServerType))
+			env := docker.BuildContainerEnv(server)
+			portBindings := docker.BuildPortBindings(server.Port)
+			binds := docker.BuildVolumeBinds(server.ID, "/minecraft/servers")
+
+			// Create and start container on remote node
+			ctx := context.Background()
+			containerID, err = s.conductor.GetRemoteDockerClient().StartContainer(
+				ctx,
+				remoteNode,
+				containerName,
+				imageName,
+				env,
+				portBindings,
+				binds,
+				server.RAMMb,
+			)
+		}
+
 		if err != nil {
 			// ROLLBACK: Release RAM and start slot if container creation failed
 			if s.conductor != nil {
 				if ramAllocated {
-					s.conductor.ReleaseRAM(server.RAMMb)
-					log.Printf("ROLLBACK: Released %d MB RAM for server %s after container creation failure", server.RAMMb, server.ID)
+					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after container creation failure", server.RAMMb, selectedNodeID, server.ID)
 				}
 				if startSlotReserved {
 					s.conductor.ReleaseStartSlot(server.ID)
@@ -358,8 +486,8 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			// ROLLBACK: Release RAM and start slot if database update failed
 			if s.conductor != nil {
 				if ramAllocated {
-					s.conductor.ReleaseRAM(server.RAMMb)
-					log.Printf("ROLLBACK: Released %d MB RAM for server %s after database update failure", server.RAMMb, server.ID)
+					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after database update failure", server.RAMMb, selectedNodeID, server.ID)
 				}
 				if startSlotReserved {
 					s.conductor.ReleaseStartSlot(server.ID)
@@ -376,8 +504,8 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		// ROLLBACK: Release RAM and start slot if database update failed
 		if s.conductor != nil {
 			if ramAllocated {
-				s.conductor.ReleaseRAM(server.RAMMb)
-				log.Printf("ROLLBACK: Released %d MB RAM for server %s after status update failure", server.RAMMb, server.ID)
+				s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after status update failure", server.RAMMb, selectedNodeID, server.ID)
 			}
 			if startSlotReserved {
 				s.conductor.ReleaseStartSlot(server.ID)
@@ -387,21 +515,26 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return err
 	}
 
-	if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
-		server.Status = models.StatusError
-		s.repo.Update(server)
-		// ROLLBACK: Release RAM and start slot if container start failed
-		if s.conductor != nil {
-			if ramAllocated {
-				s.conductor.ReleaseRAM(server.RAMMb)
-				log.Printf("ROLLBACK: Released %d MB RAM for server %s after container start failure", server.RAMMb, server.ID)
+	// Only call StartContainer for LOCAL nodes (remote containers are already started by RemoteDockerClient.StartContainer)
+	if s.isLocalNode(selectedNodeID) {
+		if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
+			server.Status = models.StatusError
+			s.repo.Update(server)
+			// ROLLBACK: Release RAM and start slot if container start failed
+			if s.conductor != nil {
+				if ramAllocated {
+					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after container start failure", server.RAMMb, selectedNodeID, server.ID)
+				}
+				if startSlotReserved {
+					s.conductor.ReleaseStartSlot(server.ID)
+					log.Printf("ROLLBACK: Released start slot for server %s after container start failure", server.ID)
+				}
 			}
-			if startSlotReserved {
-				s.conductor.ReleaseStartSlot(server.ID)
-				log.Printf("ROLLBACK: Released start slot for server %s after container start failure", server.ID)
-			}
+			return fmt.Errorf("failed to start container: %w", err)
 		}
-		return fmt.Errorf("failed to start container: %w", err)
+	} else {
+		log.Printf("Skipping StartContainer call for server %s on remote node %s (already started by RemoteDockerClient)", server.ID, selectedNodeID)
 	}
 
 	// Wait for Minecraft server to be ready before marking as running
@@ -428,6 +561,21 @@ func (s *MinecraftService) StartServer(serverID string) error {
 
 		// Trigger queue processing - now that this server is running, queued servers can start
 		go s.conductor.ProcessStartQueue()
+	}
+
+	// VELOCITY: Register server with Velocity proxy via HTTP API
+	if s.remoteVelocityClient != nil {
+		// Build server address for Velocity to connect to
+		// Format: "host:port" where host is the Control Plane IP and port is the Docker host port
+		velocityServerName := fmt.Sprintf("mc-%s", server.ID)
+		serverAddress := fmt.Sprintf("%s:%d", s.cfg.ControlPlaneIP, server.Port)
+
+		if err := s.remoteVelocityClient.RegisterServer(velocityServerName, serverAddress); err != nil {
+			log.Printf("Warning: Failed to register server %s with Velocity: %v", server.ID, err)
+			// Don't fail the entire operation - server is still usable, just not via Velocity
+		} else {
+			log.Printf("Server %s registered with Velocity as %s at %s", server.ID, velocityServerName, serverAddress)
+		}
 	}
 
 	// Broadcast WebSocket event
@@ -463,6 +611,7 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 	// QUEUE-BYPASS: Skip capacity and queue checks - we know capacity was available when dequeued
 	// However, we STILL need CPU-Guard slot reservation and RAM allocation for thread safety!
 
+	var selectedNodeID string
 	ramAllocated := false
 	startSlotReserved := false
 	if s.conductor != nil {
@@ -475,25 +624,60 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		}
 		startSlotReserved = true
 
+		// MULTI-NODE: Intelligent Node Selection for queued server
+		nodeID, err := s.conductor.SelectNodeForContainerAuto(server.RAMMb)
+		if err != nil {
+			// No nodes available - re-queue
+			s.conductor.ReleaseStartSlot(server.ID)
+			startSlotReserved = false
+
+			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+			log.Printf("QUEUE_START: No nodes available for queued server %s (%d MB) - re-queued: %v",
+				server.ID, server.RAMMb, err)
+
+			return fmt.Errorf("no healthy nodes available - server re-queued")
+		}
+		selectedNodeID = nodeID
+
 		// ATOMIC RAM ALLOCATION: Even though capacity was checked during dequeue,
 		// we still need to atomically allocate to prevent race conditions
-		if !s.conductor.AtomicAllocateRAM(server.RAMMb) {
+		if !s.conductor.AtomicAllocateRAMOnNode(selectedNodeID, server.RAMMb) {
 			// Allocation failed - insufficient capacity (capacity changed since dequeue)
 			s.conductor.ReleaseStartSlot(server.ID)
 			startSlotReserved = false
 
 			// Re-queue for retry
 			s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
-			log.Printf("QUEUE_START: RAM allocation failed for queued server %s (%d MB) - re-queued", server.ID, server.RAMMb)
+			log.Printf("QUEUE_START: RAM allocation failed on node %s for queued server %s (%d MB) - re-queued",
+				selectedNodeID, server.ID, server.RAMMb)
 
 			return fmt.Errorf("insufficient capacity (changed since dequeue) - server re-queued")
 		}
 
 		ramAllocated = true
-		log.Printf("QUEUE_START: Starting queued server %s (%d MB RAM allocated)", server.ID, server.RAMMb)
+		log.Printf("QUEUE_START: Starting queued server %s (%d MB RAM allocated) on node %s", server.ID, server.RAMMb, selectedNodeID)
 	}
 
 	// From here, the logic is IDENTICAL to StartServer (lines 285-447)
+
+	// Store the selected node ID in the database
+	server.NodeID = selectedNodeID
+	if err := s.repo.Update(server); err != nil {
+		// ROLLBACK: Release RAM and start slot if database update failed
+		if s.conductor != nil {
+			if ramAllocated {
+				s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM on node %s for queued server %s after nodeID update failure", server.RAMMb, selectedNodeID, server.ID)
+			}
+			if startSlotReserved {
+				s.conductor.ReleaseStartSlot(server.ID)
+				log.Printf("ROLLBACK: Released start slot for queued server %s after nodeID update failure", server.ID)
+			}
+		}
+		return fmt.Errorf("failed to update queued server with nodeID: %w", err)
+	}
+
+	log.Printf("Queued server %s assigned to node %s", server.ID, selectedNodeID)
 
 	// Wake from sleep if necessary
 	if server.LifecyclePhase == models.PhaseSleep || server.Status == models.StatusSleeping {
@@ -513,42 +697,81 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		log.Printf("Warning: failed to remove old container %s: %v", containerName, err)
 	}
 
-	// Create container
+	// Create container with local/remote routing
+	var containerID string
 	if server.ContainerID == "" || server.ContainerID != "" {
-		containerID, err := s.dockerService.CreateContainer(
-			server.ID,
-			string(server.ServerType),
-			server.MinecraftVersion,
-			server.RAMMb,
-			server.Port,
-			server.MaxPlayers,
-			server.Gamemode,
-			server.Difficulty,
-			server.PVP,
-			server.EnableCommandBlock,
-			server.LevelSeed,
-			server.ViewDistance,
-			server.SimulationDistance,
-			server.AllowNether,
-			server.AllowEnd,
-			server.GenerateStructures,
-			server.WorldType,
-			server.BonusChest,
-			server.MaxWorldSize,
-			server.SpawnProtection,
-			server.SpawnAnimals,
-			server.SpawnMonsters,
-			server.SpawnNPCs,
-			server.MaxTickTime,
-			server.NetworkCompressionThreshold,
-			server.MOTD,
-		)
+		// Route container creation based on node type
+		if s.isLocalNode(selectedNodeID) {
+			// LOCAL NODE: Use local dockerService
+			log.Printf("Creating container for queued server %s on LOCAL node", server.ID)
+			containerID, err = s.dockerService.CreateContainer(
+				server.ID,
+				string(server.ServerType),
+				server.MinecraftVersion,
+				server.RAMMb,
+				server.Port,
+				server.MaxPlayers,
+				server.Gamemode,
+				server.Difficulty,
+				server.PVP,
+				server.EnableCommandBlock,
+				server.LevelSeed,
+				server.ViewDistance,
+				server.SimulationDistance,
+				server.AllowNether,
+				server.AllowEnd,
+				server.GenerateStructures,
+				server.WorldType,
+				server.BonusChest,
+				server.MaxWorldSize,
+				server.SpawnProtection,
+				server.SpawnAnimals,
+				server.SpawnMonsters,
+				server.SpawnNPCs,
+				server.MaxTickTime,
+				server.NetworkCompressionThreshold,
+				server.MOTD,
+			)
+		} else {
+			// REMOTE NODE: Use RemoteDockerClient with environment builder
+			log.Printf("Creating container for queued server %s on remote node %s", server.ID, selectedNodeID)
+
+			// Get remote node info
+			remoteNode, err := s.conductor.GetRemoteNode(selectedNodeID)
+			if err != nil {
+				// ROLLBACK: Release RAM and start slot
+				s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+				s.conductor.ReleaseStartSlot(server.ID)
+				return fmt.Errorf("failed to get remote node info for queued server: %w", err)
+			}
+
+			// Build container configuration using helper methods
+			containerName := fmt.Sprintf("mc-%s", server.ID)
+			imageName := docker.GetDockerImageName(string(server.ServerType))
+			env := docker.BuildContainerEnv(server)
+			portBindings := docker.BuildPortBindings(server.Port)
+			binds := docker.BuildVolumeBinds(server.ID, "/minecraft/servers")
+
+			// Create and start container on remote node
+			ctx := context.Background()
+			containerID, err = s.conductor.GetRemoteDockerClient().StartContainer(
+				ctx,
+				remoteNode,
+				containerName,
+				imageName,
+				env,
+				portBindings,
+				binds,
+				server.RAMMb,
+			)
+		}
+
 		if err != nil {
 			// ROLLBACK
 			if s.conductor != nil {
 				if ramAllocated {
-					s.conductor.ReleaseRAM(server.RAMMb)
-					log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after container creation failure", server.RAMMb, server.ID)
+					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM on node %s for queued server %s after container creation failure", server.RAMMb, selectedNodeID, server.ID)
 				}
 				if startSlotReserved {
 					s.conductor.ReleaseStartSlot(server.ID)
@@ -563,8 +786,8 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 			// ROLLBACK
 			if s.conductor != nil {
 				if ramAllocated {
-					s.conductor.ReleaseRAM(server.RAMMb)
-					log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after database update failure", server.RAMMb, server.ID)
+					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM on node %s for queued server %s after database update failure", server.RAMMb, selectedNodeID, server.ID)
 				}
 				if startSlotReserved {
 					s.conductor.ReleaseStartSlot(server.ID)
@@ -575,14 +798,14 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		}
 	}
 
-	// Start container
+	// Start container (only for LOCAL nodes - remote nodes are already started)
 	server.Status = models.StatusStarting
 	if err := s.repo.Update(server); err != nil {
 		// ROLLBACK
 		if s.conductor != nil {
 			if ramAllocated {
-				s.conductor.ReleaseRAM(server.RAMMb)
-				log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after status update failure", server.RAMMb, server.ID)
+				s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+				log.Printf("ROLLBACK: Released %d MB RAM on node %s for queued server %s after status update failure", server.RAMMb, selectedNodeID, server.ID)
 			}
 			if startSlotReserved {
 				s.conductor.ReleaseStartSlot(server.ID)
@@ -592,21 +815,26 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		return err
 	}
 
-	if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
-		server.Status = models.StatusError
-		s.repo.Update(server)
-		// ROLLBACK
-		if s.conductor != nil {
-			if ramAllocated {
-				s.conductor.ReleaseRAM(server.RAMMb)
-				log.Printf("ROLLBACK: Released %d MB RAM for queued server %s after container start failure", server.RAMMb, server.ID)
+	// Only call StartContainer for LOCAL nodes (remote containers are already started by RemoteDockerClient.StartContainer)
+	if s.isLocalNode(selectedNodeID) {
+		if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
+			server.Status = models.StatusError
+			s.repo.Update(server)
+			// ROLLBACK
+			if s.conductor != nil {
+				if ramAllocated {
+					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+					log.Printf("ROLLBACK: Released %d MB RAM on node %s for queued server %s after container start failure", server.RAMMb, selectedNodeID, server.ID)
+				}
+				if startSlotReserved {
+					s.conductor.ReleaseStartSlot(server.ID)
+					log.Printf("ROLLBACK: Released start slot for queued server %s after container start failure", server.ID)
+				}
 			}
-			if startSlotReserved {
-				s.conductor.ReleaseStartSlot(server.ID)
-				log.Printf("ROLLBACK: Released start slot for queued server %s after container start failure", server.ID)
-			}
+			return fmt.Errorf("failed to start container: %w", err)
 		}
-		return fmt.Errorf("failed to start container: %w", err)
+	} else {
+		log.Printf("Skipping StartContainer call for queued server %s on remote node %s (already started by RemoteDockerClient)", server.ID, selectedNodeID)
 	}
 
 	// Wait for Minecraft server to be ready
@@ -630,6 +858,18 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 
 		// Trigger queue processing - queued servers can now start
 		go s.conductor.ProcessStartQueue()
+	}
+
+	// VELOCITY: Register server with Velocity proxy via HTTP API
+	if s.remoteVelocityClient != nil {
+		velocityServerName := fmt.Sprintf("mc-%s", server.ID)
+		serverAddress := fmt.Sprintf("%s:%d", s.cfg.ControlPlaneIP, server.Port)
+
+		if err := s.remoteVelocityClient.RegisterServer(velocityServerName, serverAddress); err != nil {
+			log.Printf("Warning: Failed to register queued server %s with Velocity: %v", server.ID, err)
+		} else {
+			log.Printf("Queued server %s registered with Velocity as %s at %s", server.ID, velocityServerName, serverAddress)
+		}
 	}
 
 	// Broadcast WebSocket event
@@ -682,12 +922,30 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 	}
 
 	// Release RAM when server stops (critical for capacity management)
+	// MULTI-NODE: Use the node ID stored in the database
 	if s.conductor != nil {
-		s.conductor.ReleaseRAM(server.RAMMb)
-		log.Printf("RESOURCE_RELEASE: Released %d MB RAM for server %s", server.RAMMb, server.ID)
+		// Use nodeID from database (defaults to "local-node" for backward compatibility)
+		nodeID := server.NodeID
+		if nodeID == "" {
+			nodeID = "local-node" // Fallback for legacy servers
+		}
+
+		s.conductor.ReleaseRAMOnNode(nodeID, server.RAMMb)
+		log.Printf("RESOURCE_RELEASE: Released %d MB RAM on node %s for server %s", server.RAMMb, nodeID, server.ID)
 
 		// Trigger queue processing - maybe now we have capacity for queued servers
 		go s.conductor.ProcessStartQueue()
+	}
+
+	// VELOCITY: Unregister server from Velocity proxy via HTTP API
+	if s.remoteVelocityClient != nil {
+		velocityServerName := fmt.Sprintf("mc-%s", server.ID)
+
+		if err := s.remoteVelocityClient.UnregisterServer(velocityServerName); err != nil {
+			log.Printf("Warning: Failed to unregister server %s from Velocity: %v", server.ID, err)
+		} else {
+			log.Printf("Server %s unregistered from Velocity", server.ID)
+		}
 	}
 
 	// Broadcast WebSocket event
@@ -887,8 +1145,8 @@ func (s *MinecraftService) GetServerLogs(serverID string, tail int) (string, err
 	return logOutput.String(), nil
 }
 
-// calculateCost calculates the cost based on RAM and duration
-func (s *MinecraftService) calculateCost(ramMB int, durationSeconds float64) float64 {
+// CalculateCost calculates the cost based on RAM and duration (exported for billing integration)
+func (s *MinecraftService) CalculateCost(ramMB int, durationSeconds float64) float64 {
 	durationHours := durationSeconds / 3600.0
 
 	var rate float64
@@ -904,4 +1162,124 @@ func (s *MinecraftService) calculateCost(ramMB int, durationSeconds float64) flo
 
 	cost := durationHours * rate
 	return math.Round(cost*10000) / 10000 // Round to 4 decimals
+}
+
+// UpgradeServerRAM upgrades the RAM allocation for a server
+// This implements the Stop-Update-Start workflow for RAM upgrades
+func (s *MinecraftService) UpgradeServerRAM(serverID string, newRAMMB int) error {
+	// Validation
+	if newRAMMB < 512 || newRAMMB > 16384 {
+		return fmt.Errorf("invalid RAM size: must be between 512 MB and 16384 MB")
+	}
+
+	// Get server
+	server, err := s.repo.FindByID(serverID)
+	if err != nil {
+		return fmt.Errorf("failed to get server: %w", err)
+	}
+
+	oldRAMMB := server.RAMMb
+
+	// No change needed
+	if oldRAMMB == newRAMMB {
+		return fmt.Errorf("server already has %d MB RAM", newRAMMB)
+	}
+
+	// Store original status to restore later
+	wasRunning := (server.Status == models.StatusRunning)
+
+	log.Printf("[RAM-UPGRADE] Starting RAM upgrade for server %s: %d MB -> %d MB (was running: %v)",
+		serverID, oldRAMMB, newRAMMB, wasRunning)
+
+	// STEP 1: Stop server if running
+	if wasRunning {
+		log.Printf("[RAM-UPGRADE] Stopping server %s for RAM upgrade", serverID)
+		if err := s.StopServer(serverID, "RAM upgrade"); err != nil {
+			return fmt.Errorf("failed to stop server for RAM upgrade: %w", err)
+		}
+	}
+
+	// STEP 2: Update RAM allocation atomically
+	// MULTI-NODE: Use the node ID stored in the database
+	// Get nodeID from database (fallback to "local-node" for backward compatibility)
+	nodeID := server.NodeID
+	if nodeID == "" {
+		nodeID = "local-node" // Fallback for legacy servers
+	}
+
+	// Release old allocation
+	if s.conductor != nil {
+		log.Printf("[RAM-UPGRADE] Releasing old RAM allocation: %d MB on node %s", oldRAMMB, nodeID)
+		s.conductor.ReleaseRAMOnNode(nodeID, oldRAMMB)
+
+		// Reserve new allocation
+		log.Printf("[RAM-UPGRADE] Reserving new RAM allocation: %d MB on node %s", newRAMMB, nodeID)
+		if !s.conductor.AtomicAllocateRAMOnNode(nodeID, newRAMMB) {
+			// Failed to allocate - rollback
+			log.Printf("[RAM-UPGRADE] Failed to allocate new RAM on node %s - rolling back to %d MB", nodeID, oldRAMMB)
+			s.conductor.AtomicAllocateRAMOnNode(nodeID, oldRAMMB) // Re-allocate old amount
+
+			// Restart server if it was running
+			if wasRunning {
+				go s.StartServer(serverID)
+			}
+
+			return fmt.Errorf("insufficient capacity on node %s for RAM upgrade (required: %d MB)", nodeID, newRAMMB)
+		}
+	}
+
+	// STEP 3: Update database
+	server.RAMMb = newRAMMB
+	if err := s.repo.Update(server); err != nil {
+		// Rollback RAM allocation
+		if s.conductor != nil {
+			s.conductor.ReleaseRAMOnNode(nodeID, newRAMMB)
+			s.conductor.AtomicAllocateRAMOnNode(nodeID, oldRAMMB)
+		}
+		return fmt.Errorf("failed to update server in database: %w", err)
+	}
+
+	log.Printf("[RAM-UPGRADE] Database updated successfully for server %s", serverID)
+
+	// STEP 4: Update container memory limit if container exists
+	if server.ContainerID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		log.Printf("[RAM-UPGRADE] Updating container memory limit for %s", server.ContainerID[:12])
+		if err := s.dockerService.UpdateContainerMemory(ctx, server.ContainerID, newRAMMB); err != nil {
+			log.Printf("[RAM-UPGRADE] Warning: Failed to update container memory limit: %v", err)
+			// Don't fail the upgrade - container will get new limits on next start
+		}
+	}
+
+	// STEP 5: Restart server if it was running
+	if wasRunning {
+		log.Printf("[RAM-UPGRADE] Restarting server %s with new RAM allocation", serverID)
+		if err := s.StartServer(serverID); err != nil {
+			log.Printf("[RAM-UPGRADE] Warning: Failed to restart server after RAM upgrade: %v", err)
+			// Don't rollback - upgrade succeeded, just restart failed
+			return fmt.Errorf("RAM upgrade succeeded but failed to restart server: %w", err)
+		}
+	}
+
+	log.Printf("[RAM-UPGRADE] RAM upgrade completed successfully for server %s: %d MB -> %d MB",
+		serverID, oldRAMMB, newRAMMB)
+
+	// Broadcast update via WebSocket
+	if s.wsHub != nil {
+		s.wsHub.Broadcast("server_updated", map[string]interface{}{
+			"server_id": serverID,
+			"ram_mb":    newRAMMB,
+			"status":    server.Status,
+		})
+	}
+
+	return nil
+}
+
+// isLocalNode checks if a node ID represents the local Docker daemon
+// Returns true if nodeID is "local-node" or empty (backward compatibility)
+func (s *MinecraftService) isLocalNode(nodeID string) bool {
+	return nodeID == "" || nodeID == "local-node"
 }

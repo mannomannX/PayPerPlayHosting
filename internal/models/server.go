@@ -92,6 +92,7 @@ type MinecraftServer struct {
 	// Container Info
 	Status      ServerStatus `gorm:"default:stopped"`
 	ContainerID string       `gorm:"size:128"`
+	NodeID      string       `gorm:"size:64;default:'local-node'"` // Multi-Node: Which node hosts this container
 
 	// Timestamps
 	LastStartedAt *time.Time
@@ -105,6 +106,10 @@ type MinecraftServer struct {
 	// Settings
 	IdleTimeoutSeconds   int  `gorm:"default:300"`
 	AutoShutdownEnabled  bool `gorm:"default:true"`
+
+	// Container Migration Settings (B8 - Cost Optimization)
+	AllowMigration bool   `gorm:"default:true"`            // Allow server to be migrated for cost optimization
+	MigrationMode  string `gorm:"default:only_offline"`    // Migration modes: "only_offline", "always", "never"
 
 	// Velocity Proxy Integration
 	VelocityRegistered  bool   `gorm:"default:false"`

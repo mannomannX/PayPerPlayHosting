@@ -2,8 +2,10 @@ package conductor
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/payperplay/hosting/internal/cloud"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -17,10 +19,16 @@ type ReactivePolicy struct {
 	MaxCloudNodes      int           // Never scale above this
 	lastScaleAction    time.Time
 	lastScaleType      ScaleAction
+
+	// Dynamic server type selection (queries Hetzner API)
+	cloudProvider   cloud.CloudProvider
+	serverTypeCache []*cloud.ServerType
+	cacheExpiry     time.Time
+	cacheMutex      sync.RWMutex
 }
 
 // NewReactivePolicy creates a new reactive scaling policy
-func NewReactivePolicy() *ReactivePolicy {
+func NewReactivePolicy(cloudProvider cloud.CloudProvider) *ReactivePolicy {
 	return &ReactivePolicy{
 		ScaleUpThreshold:   85.0,              // Scale up at 85% capacity
 		ScaleDownThreshold: 30.0,              // Scale down below 30% capacity
@@ -29,6 +37,9 @@ func NewReactivePolicy() *ReactivePolicy {
 		MaxCloudNodes:      10,                 // Max 10 cloud nodes
 		lastScaleAction:    time.Time{},
 		lastScaleType:      ScaleActionNone,
+		cloudProvider:      cloudProvider,
+		serverTypeCache:    nil,
+		cacheExpiry:        time.Time{},
 	}
 }
 
@@ -37,7 +48,12 @@ func (p *ReactivePolicy) Name() string {
 }
 
 func (p *ReactivePolicy) Priority() int {
-	return 10 // Medium priority (Predictive will be 20, SparePool will be 5)
+	return 10 // Medium priority (Predictive will be 20, SparePool will be 5, Consolidation will be 1)
+}
+
+// ShouldConsolidate - ReactivePolicy does not handle consolidation (delegated to ConsolidationPolicy)
+func (p *ReactivePolicy) ShouldConsolidate(ctx ScalingContext) (bool, ConsolidationPlan) {
+	return false, ConsolidationPlan{} // ReactivePolicy focuses on capacity, not cost optimization
 }
 
 // ShouldScaleUp checks if we need more capacity
@@ -166,20 +182,126 @@ func (p *ReactivePolicy) calculateUrgency(capacityPercent float64) Urgency {
 	return UrgencyLow // Can wait a bit
 }
 
+// getAvailableServerTypes fetches and caches server types from Hetzner API
+// Cache expires after 1 hour to get fresh pricing and availability
+func (p *ReactivePolicy) getAvailableServerTypes() ([]*cloud.ServerType, error) {
+	p.cacheMutex.RLock()
+	if p.serverTypeCache != nil && time.Now().Before(p.cacheExpiry) {
+		defer p.cacheMutex.RUnlock()
+		return p.serverTypeCache, nil
+	}
+	p.cacheMutex.RUnlock()
+
+	// Cache expired or not populated, fetch from API
+	p.cacheMutex.Lock()
+	defer p.cacheMutex.Unlock()
+
+	// Double-check after acquiring write lock
+	if p.serverTypeCache != nil && time.Now().Before(p.cacheExpiry) {
+		return p.serverTypeCache, nil
+	}
+
+	if p.cloudProvider == nil {
+		// Fallback if cloudProvider not available (shouldn't happen)
+		logger.Warn("CloudProvider not available, using fallback server types", nil)
+		return []*cloud.ServerType{
+			{Name: "cpx11", RAMMB: 2048, Cores: 2, HourlyCostEUR: 0.0063},  // NBG1 pricing
+			{Name: "cpx22", RAMMB: 4096, Cores: 2, HourlyCostEUR: 0.0096},  // NBG1 pricing (CPX2 - better value than cpx21)
+			{Name: "cpx32", RAMMB: 8192, Cores: 4, HourlyCostEUR: 0.0168},  // NBG1 pricing (CPX2 - better value than cpx31)
+			{Name: "cpx42", RAMMB: 16384, Cores: 8, HourlyCostEUR: 0.0312}, // NBG1 pricing (CPX2)
+		}, nil
+	}
+
+	serverTypes, err := p.cloudProvider.GetServerTypes()
+	if err != nil {
+		logger.Error("Failed to fetch server types from Hetzner", err, nil)
+		// Return fallback on error (NBG1 pricing - CPX2 series preferred)
+		return []*cloud.ServerType{
+			{Name: "cpx11", RAMMB: 2048, Cores: 2, HourlyCostEUR: 0.0063},  // CPX1
+			{Name: "cpx22", RAMMB: 4096, Cores: 2, HourlyCostEUR: 0.0096},  // CPX2 - better value
+			{Name: "cpx32", RAMMB: 8192, Cores: 4, HourlyCostEUR: 0.0168},  // CPX2 - better value
+			{Name: "cpx42", RAMMB: 16384, Cores: 8, HourlyCostEUR: 0.0312}, // CPX2
+		}, err
+	}
+
+	// Filter to only x86 CPX-series (shared CPU, regular purpose, non-deprecated)
+	filtered := make([]*cloud.ServerType, 0)
+	for _, st := range serverTypes {
+		// Only use CPX-series (shared x86 for regular workloads)
+		if len(st.Name) >= 3 && st.Name[:3] == "cpx" {
+			filtered = append(filtered, st)
+		}
+	}
+
+	p.serverTypeCache = filtered
+	p.cacheExpiry = time.Now().Add(1 * time.Hour) // Cache for 1 hour
+
+	logger.Info("Server types cached", map[string]interface{}{
+		"count": len(filtered),
+		"types": func() []string {
+			names := make([]string, len(filtered))
+			for i, st := range filtered {
+				names[i] = st.Name
+			}
+			return names
+		}(),
+	})
+
+	return filtered, nil
+}
+
 // selectServerType chooses the appropriate VM size based on needs
+// Now queries Hetzner API dynamically instead of hardcoded values
 func (p *ReactivePolicy) selectServerType(ctx ScalingContext, capacityPercent float64) string {
-	// For emergency situations, use larger VMs
+	serverTypes, err := p.getAvailableServerTypes()
+	if err != nil || len(serverTypes) == 0 {
+		logger.Warn("Using fallback server type", map[string]interface{}{"error": err})
+		return "cpx21" // Fallback
+	}
+
+	// Determine required RAM based on urgency
+	var requiredRAMMB int
 	if capacityPercent > 95 {
-		return "cx31" // 2 vCPU, 8GB RAM - larger capacity boost
+		// Emergency: Need large capacity boost (8GB+)
+		requiredRAMMB = 8192
+	} else if capacityPercent > 90 {
+		// High urgency: Need medium capacity (4GB+)
+		requiredRAMMB = 4096
+	} else {
+		// Normal: Cost-effective option (2GB+)
+		requiredRAMMB = 2048
 	}
 
-	// For high capacity, use medium VMs
-	if capacityPercent > 90 {
-		return "cx21" // 2 vCPU, 4GB RAM - standard cloud node
+	// Find most cost-effective server type that meets requirements
+	var bestType *cloud.ServerType
+	for _, st := range serverTypes {
+		if st.RAMMB >= requiredRAMMB {
+			if bestType == nil || st.HourlyCostEUR < bestType.HourlyCostEUR {
+				bestType = st
+			}
+		}
 	}
 
-	// For normal scaling, use small VMs (most cost-effective)
-	return "cx21" // 2 vCPU, 4GB RAM - default choice
+	if bestType == nil {
+		// If no exact match, use smallest available
+		bestType = serverTypes[0]
+		for _, st := range serverTypes {
+			if st.RAMMB < bestType.RAMMB {
+				bestType = st
+			}
+		}
+	}
+
+	logger.Info("Selected server type", map[string]interface{}{
+		"type":          bestType.Name,
+		"ram_mb":        bestType.RAMMB,
+		"cores":         bestType.Cores,
+		"cost_eur_hr":   bestType.HourlyCostEUR,
+		"capacity_pct":  capacityPercent,
+		"required_ram":  requiredRAMMB,
+	})
+
+	return bestType.Name
 }
 
 // SetCooldownPeriod allows adjusting the cooldown period (for testing)

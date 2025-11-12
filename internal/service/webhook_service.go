@@ -78,7 +78,7 @@ func (s *WebhookService) UpdateWebhook(serverID string, updates map[string]inter
 		return nil, err
 	}
 	if webhook == nil {
-		return nil, fmt.Errorf("webhook not found for server %d", serverID)
+		return nil, fmt.Errorf("webhook not found for server %s", serverID)
 	}
 
 	if err := s.db.Model(webhook).Updates(updates).Error; err != nil {

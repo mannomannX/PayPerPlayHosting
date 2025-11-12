@@ -504,6 +504,11 @@ func (s *ConfigService) applyChanges(server *models.MinecraftServer, changes map
 
 	// If requires restart and server was running, recreate container
 	if requiresRestart && wasRunning {
+		// SAFEGUARD: Container recreation not yet supported for remote nodes
+		if !s.isLocalNode(server.NodeID) {
+			return fmt.Errorf("configuration changes requiring restart are not yet supported for remote servers (node: %s)", server.NodeID)
+		}
+
 		logger.Info("Recreating container with new configuration", map[string]interface{}{
 			"server_id": server.ID,
 		})
@@ -650,4 +655,10 @@ func contains(slice []string, str string) bool {
 		}
 	}
 	return false
+}
+
+// isLocalNode checks if a node ID represents the local Docker daemon
+// Returns true if nodeID is "local-node" or empty (backward compatibility)
+func (s *ConfigService) isLocalNode(nodeID string) bool {
+	return nodeID == "" || nodeID == "local-node"
 }

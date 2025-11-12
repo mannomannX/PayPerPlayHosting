@@ -566,6 +566,30 @@ func (d *DockerService) GetClient() *client.Client {
 	return d.client
 }
 
+// UpdateContainerMemory updates the memory limit of a running container
+// This is used for RAM upgrades without full recreation
+func (d *DockerService) UpdateContainerMemory(ctx context.Context, containerID string, ramMB int) error {
+	// Calculate memory with 25% overhead for JVM
+	memoryBytes := int64(float64(ramMB)*1.25) * 1024 * 1024
+
+	// Prepare update configuration
+	updateConfig := container.UpdateConfig{
+		Resources: container.Resources{
+			Memory: memoryBytes,
+		},
+	}
+
+	// Update the container
+	_, err := d.client.ContainerUpdate(ctx, containerID, updateConfig)
+	if err != nil {
+		return fmt.Errorf("failed to update container memory: %w", err)
+	}
+
+	log.Printf("[Docker] Updated container %s memory limit to %d MB (with overhead: %d bytes)",
+		containerID[:12], ramMB, memoryBytes)
+	return nil
+}
+
 // Close closes the Docker client
 func (d *DockerService) Close() error {
 	return d.client.Close()

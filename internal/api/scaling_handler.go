@@ -149,3 +149,100 @@ func (h *ScalingHandler) GetScalingHistory(c *gin.Context) {
 		"limit": limit,
 	})
 }
+
+// OptimizeCosts triggers container consolidation for cost optimization (B8)
+// POST /api/scaling/optimize-costs
+func (h *ScalingHandler) OptimizeCosts(c *gin.Context) {
+	if h.conductor.ScalingEngine == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "Scaling engine not initialized",
+		})
+		return
+	}
+
+	if !h.conductor.ScalingEngine.IsEnabled() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Scaling engine is disabled",
+		})
+		return
+	}
+
+	logger.Info("Manual cost optimization triggered via API", map[string]interface{}{
+		"user_id": c.GetString("user_id"),
+	})
+
+	// Check if there are any consolidation opportunities
+	fleetStats := h.conductor.NodeRegistry.GetFleetStats()
+	capacityPercent := 0.0
+	if fleetStats.UsableRAMMB > 0 {
+		capacityPercent = (float64(fleetStats.AllocatedRAMMB) / float64(fleetStats.UsableRAMMB)) * 100
+	}
+
+	cloudNodes := h.conductor.NodeRegistry.GetNodesByType("cloud")
+
+	if len(cloudNodes) < 2 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Not enough cloud nodes to consolidate",
+			"analysis": gin.H{
+				"cloud_nodes": len(cloudNodes),
+				"capacity_percent": capacityPercent,
+			},
+		})
+		return
+	}
+
+	if capacityPercent > 70.0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Fleet capacity too high for safe consolidation",
+			"analysis": gin.H{
+				"cloud_nodes": len(cloudNodes),
+				"capacity_percent": capacityPercent,
+				"max_safe_capacity": 70.0,
+			},
+		})
+		return
+	}
+
+	// Return success - the scaling engine will handle consolidation on next cycle
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Cost optimization analysis complete",
+		"status": "consolidation_candidate",
+		"analysis": gin.H{
+			"cloud_nodes": len(cloudNodes),
+			"capacity_percent": capacityPercent,
+			"allocated_ram_mb": fleetStats.AllocatedRAMMB,
+			"usable_ram_mb": fleetStats.UsableRAMMB,
+			"potential_savings": "Will be evaluated on next scaling engine cycle",
+		},
+		"next_steps": "The scaling engine will automatically consolidate on the next evaluation cycle (every 2 minutes)",
+	})
+
+	// Note: We don't directly trigger consolidation here to avoid bypassing safety checks
+	// The scaling engine will naturally consolidate on its next cycle if conditions are met
+	logger.Info("Cost optimization request completed", map[string]interface{}{
+		"user_id": c.GetString("user_id"),
+		"cloud_nodes": len(cloudNodes),
+		"capacity_percent": capacityPercent,
+	})
+}
+
+// buildScalingContext is a helper to build context for manual operations
+func (h *ScalingHandler) buildScalingContext() conductor.ScalingContext {
+	stats := h.conductor.NodeRegistry.GetFleetStats()
+	nodes := h.conductor.NodeRegistry.GetAllNodes()
+
+	var dedicatedNodes, cloudNodes []*conductor.Node
+	for _, node := range nodes {
+		if node.Type == "dedicated" {
+			dedicatedNodes = append(dedicatedNodes, node)
+		} else if node.Type == "cloud" {
+			cloudNodes = append(cloudNodes, node)
+		}
+	}
+
+	return conductor.ScalingContext{
+		FleetStats:     stats,
+		DedicatedNodes: dedicatedNodes,
+		CloudNodes:     cloudNodes,
+	}
+}

@@ -407,8 +407,30 @@ func (p *HetznerProvider) convertServerType(hst *hetznerServerType) *ServerType 
 	hourlyCost := 0.0
 	monthlyCost := 0.0
 
+	// Find pricing for deployment location (nbg1 or fallback to fsn1/hel1/first available)
+	preferredLocations := []string{"nbg1", "fsn1", "hel1"} // German datacenters
+
 	if hst.Prices != nil && len(hst.Prices) > 0 {
-		if monthly, err := strconv.ParseFloat(hst.Prices[0].Monthly.Gross, 64); err == nil {
+		// Try to find price for preferred locations
+		var priceData *hetznerPrice
+		for _, prefLoc := range preferredLocations {
+			for i := range hst.Prices {
+				if hst.Prices[i].Location == prefLoc {
+					priceData = &hst.Prices[i]
+					break
+				}
+			}
+			if priceData != nil {
+				break
+			}
+		}
+
+		// Fallback to first price if no preferred location found
+		if priceData == nil {
+			priceData = &hst.Prices[0]
+		}
+
+		if monthly, err := strconv.ParseFloat(priceData.Monthly.Gross, 64); err == nil {
 			monthlyCost = monthly
 			hourlyCost = monthly / 730.0
 		}
@@ -486,8 +508,9 @@ type hetznerServerType struct {
 }
 
 type hetznerPrice struct {
-	Monthly hetznerPriceDetail `json:"price_monthly"`
-	Hourly  hetznerPriceDetail `json:"price_hourly"`
+	Location string             `json:"location"`
+	Monthly  hetznerPriceDetail `json:"price_monthly"`
+	Hourly   hetznerPriceDetail `json:"price_hourly"`
 }
 
 type hetznerPriceDetail struct {

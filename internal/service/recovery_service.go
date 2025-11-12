@@ -495,8 +495,9 @@ func (s *RecoveryService) restartContainer(server *models.MinecraftServer) bool 
 	server.Status = models.StatusStopped
 	s.serverRepo.Update(server)
 
-	// Start container
-	if err := s.dockerService.StartContainer(containerID); err != nil {
+	// Start container (only for local nodes - remote containers are handled by RemoteDockerClient)
+	if s.isLocalNode(server.NodeID) {
+		if err := s.dockerService.StartContainer(containerID); err != nil {
 		logger.Error("Failed to start container during recovery", err, map[string]interface{}{
 			"server_id": server.ID,
 		})
@@ -505,14 +506,24 @@ func (s *RecoveryService) restartContainer(server *models.MinecraftServer) bool 
 		return false
 	}
 
-	// Wait for server to be ready (with shorter timeout for recovery)
-	err = s.dockerService.WaitForServerReady(containerID, 90)
-	if err != nil {
-		logger.Warn("Server may not be fully ready after recovery", map[string]interface{}{
+		// Wait for server to be ready (with shorter timeout for recovery)
+		err = s.dockerService.WaitForServerReady(containerID, 90)
+		if err != nil {
+			logger.Warn("Server may not be fully ready after recovery", map[string]interface{}{
+				"server_id": server.ID,
+				"error":     err.Error(),
+			})
+			// Don't fail recovery - server might still come up
+		}
+	} else {
+		// SAFEGUARD: Recovery not yet supported for remote nodes
+		logger.Warn("Container recovery not yet supported for remote nodes", map[string]interface{}{
 			"server_id": server.ID,
-			"error":     err.Error(),
+			"node_id":   server.NodeID,
 		})
-		// Don't fail recovery - server might still come up
+		server.Status = models.StatusError
+		s.serverRepo.Update(server)
+		return false
 	}
 
 	server.Status = models.StatusRunning
@@ -597,4 +608,10 @@ func (s *RecoveryService) CheckAndRecoverCrashedServers() error {
 	}
 
 	return nil
+}
+
+// isLocalNode checks if a node ID represents the local Docker daemon
+// Returns true if nodeID is "local-node" or empty (backward compatibility)
+func (s *RecoveryService) isLocalNode(nodeID string) bool {
+	return nodeID == "" || nodeID == "local-node"
 }

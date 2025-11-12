@@ -119,14 +119,24 @@ func (r *NodeRegistry) UnregisterNode(nodeID string) {
 // AtomicAllocateRAM atomically reserves RAM on the local node
 // Returns true if allocation succeeded, false if insufficient capacity
 // THIS IS CRITICAL FOR PREVENTING RACE CONDITIONS!
+// DEPRECATED: Use AtomicAllocateRAMOnNode() for multi-node support
 func (r *NodeRegistry) AtomicAllocateRAM(ramMB int) bool {
+	return r.AtomicAllocateRAMOnNode("local-node", ramMB)
+}
+
+// AtomicAllocateRAMOnNode atomically reserves RAM on a specific node
+// Returns true if allocation succeeded, false if insufficient capacity
+// This is the Multi-Node version that supports any node ID
+func (r *NodeRegistry) AtomicAllocateRAMOnNode(nodeID string, ramMB int) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Find local node (currently only one node: "local-node")
-	node, exists := r.nodes["local-node"]
+	// Find the specified node
+	node, exists := r.nodes[nodeID]
 	if !exists {
-		logger.Error("AtomicAllocateRAM: local-node not found", nil, nil)
+		logger.Error("AtomicAllocateRAMOnNode: node not found", nil, map[string]interface{}{
+			"node_id": nodeID,
+		})
 		return false
 	}
 
@@ -134,7 +144,8 @@ func (r *NodeRegistry) AtomicAllocateRAM(ramMB int) bool {
 	usableRAM := node.UsableRAMMB()
 	availableRAM := usableRAM - node.AllocatedRAMMB
 
-	logger.Debug("AtomicAllocateRAM", map[string]interface{}{
+	logger.Debug("AtomicAllocateRAMOnNode", map[string]interface{}{
+		"node_id":           nodeID,
 		"requested_ram_mb":  ramMB,
 		"total_ram_mb":      node.TotalRAMMB,
 		"system_reserve_mb": node.SystemReservedRAMMB,
@@ -146,7 +157,8 @@ func (r *NodeRegistry) AtomicAllocateRAM(ramMB int) bool {
 
 	if availableRAM < ramMB {
 		// Insufficient capacity
-		logger.Info("AtomicAllocateRAM: Insufficient capacity", map[string]interface{}{
+		logger.Info("AtomicAllocateRAMOnNode: Insufficient capacity", map[string]interface{}{
+			"node_id":          nodeID,
 			"requested_ram_mb": ramMB,
 			"available_ram_mb": availableRAM,
 			"result":           "REJECTED",
@@ -158,7 +170,8 @@ func (r *NodeRegistry) AtomicAllocateRAM(ramMB int) bool {
 	node.AllocatedRAMMB += ramMB
 	node.ContainerCount++
 
-	logger.Info("AtomicAllocateRAM: Success", map[string]interface{}{
+	logger.Info("AtomicAllocateRAMOnNode: Success", map[string]interface{}{
+		"node_id":               nodeID,
 		"requested_ram_mb":      ramMB,
 		"new_allocated_ram_mb":  node.AllocatedRAMMB,
 		"new_available_ram_mb":  usableRAM - node.AllocatedRAMMB,
@@ -170,25 +183,51 @@ func (r *NodeRegistry) AtomicAllocateRAM(ramMB int) bool {
 }
 
 // ReleaseRAM atomically releases RAM from the local node
+// DEPRECATED: Use ReleaseRAMOnNode() for multi-node support
 func (r *NodeRegistry) ReleaseRAM(ramMB int) {
+	r.ReleaseRAMOnNode("local-node", ramMB)
+}
+
+// ReleaseRAMOnNode atomically releases RAM from a specific node
+// This is the Multi-Node version that supports any node ID
+func (r *NodeRegistry) ReleaseRAMOnNode(nodeID string, ramMB int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	node, exists := r.nodes["local-node"]
+	node, exists := r.nodes[nodeID]
 	if !exists {
+		logger.Warn("ReleaseRAMOnNode: node not found", map[string]interface{}{
+			"node_id": nodeID,
+		})
 		return
 	}
 
 	// Release the RAM
 	node.AllocatedRAMMB -= ramMB
 	if node.AllocatedRAMMB < 0 {
+		logger.Warn("ReleaseRAMOnNode: AllocatedRAMMB went negative, resetting to 0", map[string]interface{}{
+			"node_id":           nodeID,
+			"allocated_ram_mb":  node.AllocatedRAMMB,
+		})
 		node.AllocatedRAMMB = 0 // Safety check
 	}
 
 	node.ContainerCount--
 	if node.ContainerCount < 0 {
+		logger.Warn("ReleaseRAMOnNode: ContainerCount went negative, resetting to 0", map[string]interface{}{
+			"node_id":         nodeID,
+			"container_count": node.ContainerCount,
+		})
 		node.ContainerCount = 0 // Safety check
 	}
+
+	logger.Info("ReleaseRAMOnNode: RAM released", map[string]interface{}{
+		"node_id":               nodeID,
+		"released_ram_mb":       ramMB,
+		"new_allocated_ram_mb":  node.AllocatedRAMMB,
+		"new_available_ram_mb":  node.UsableRAMMB() - node.AllocatedRAMMB,
+		"new_container_count":   node.ContainerCount,
+	})
 }
 
 // GetFleetStats returns aggregate statistics for the entire fleet

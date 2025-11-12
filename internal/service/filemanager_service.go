@@ -179,7 +179,7 @@ func (fm *FileManagerService) WriteFile(serverID string, filePath string, conten
 }
 
 // validateFilePath ensures the file path is safe and within the server directory
-func (fm *FileManagerService) validateFilePath(serverID string, filePath string) error {
+func (fm *FileManagerService) validateFilePath(_ string, filePath string) error {
 	// Prevent directory traversal
 	if strings.Contains(filePath, "..") {
 		return fmt.Errorf("invalid file path: directory traversal not allowed")

@@ -1,278 +1,250 @@
-# PayPerPlay Velocity Plugin
+# Velocity Remote API Plugin
 
-Auto-wakeup plugin for PayPerPlay Minecraft hosting platform.
+HTTP REST API for dynamic Minecraft server registration in Velocity Proxy.
 
-## Features
+## Overview
 
-- ✅ Automatically wakes up stopped servers when players try to connect
-- ✅ Configurable wakeup timeout and retry intervals
-- ✅ HTTP API integration with PayPerPlay backend
-- ✅ Concurrent wakeup handling
-- ✅ Server status polling
-- ✅ Player notifications
+This plugin enables the PayPerPlay Control Plane (Tier 1) to dynamically register/unregister Minecraft servers with the Velocity Proxy (Tier 2) without requiring direct access to Velocity configuration files.
 
-## How It Works
+## Architecture
 
-1. **Player Connects**: Player tries to connect to a server via Velocity proxy
-2. **Server Check**: Plugin pings the target server
-3. **Wakeup Request**: If server is offline, plugin sends POST to backend API
-4. **Status Polling**: Plugin polls server status until it's running
-5. **Connection**: Player is automatically connected when server is ready
+```
+┌─────────────────┐         HTTP API          ┌──────────────────┐
+│  Control Plane  │ ────────────────────────> │  Velocity Proxy  │
+│   (Tier 1)      │  POST /api/servers        │     (Tier 2)     │
+│  91.98.202.235  │  DELETE /api/servers/:id  │  91.98.232.193   │
+└─────────────────┘                            └──────────────────┘
+                                                        │
+                                                        │ Routes players
+                                                        │
+                                                        v
+                                              ┌──────────────────┐
+                                              │  MC Servers      │
+                                              │   (Tier 3)       │
+                                              │  Cloud Nodes     │
+                                              └──────────────────┘
+```
+
+## API Endpoints
+
+### POST /api/servers
+Register a new backend Minecraft server with Velocity.
+
+**Request:**
+```json
+{
+  "name": "survival-1",
+  "address": "91.98.202.235:25566"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Server registered successfully",
+  "name": "survival-1",
+  "address": "91.98.202.235:25566"
+}
+```
+
+### DELETE /api/servers/:name
+Unregister a backend server.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "message": "Server unregistered successfully",
+  "name": "survival-1"
+}
+```
+
+### GET /api/servers
+List all registered servers.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "count": 2,
+  "servers": [
+    {
+      "name": "survival-1",
+      "address": "91.98.202.235:25566",
+      "players": 5
+    },
+    {
+      "name": "creative-1",
+      "address": "91.98.202.235:25567",
+      "players": 2
+    }
+  ]
+}
+```
+
+### GET /api/players/:server
+Get player count for a specific server.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "server": "survival-1",
+  "players": 5
+}
+```
+
+### GET /health
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "servers_count": 2,
+  "players_online": 7
+}
+```
+
+## Building
+
+Requires Maven 3.6+ and Java 17+.
+
+```bash
+mvn clean package
+```
+
+Output: `target/velocity-remote-api-1.0.0.jar`
 
 ## Installation
 
-### Requirements
+### Automatic Deployment
 
-- Java 17 or higher
-- Maven 3.8+
-- Velocity Proxy 3.3.0+
-- PayPerPlay Backend running
-
-### Build from Source
+Use the provided deployment script:
 
 ```bash
 cd velocity-plugin
-mvn clean package
+./deploy-velocity-server.sh
 ```
 
-This creates `payperplay-velocity-1.0.0.jar` in the `target/` directory.
+This will:
+1. Build the plugin
+2. Install Docker on the Velocity server
+3. Create the necessary directory structure
+4. Deploy the plugin
+5. Start Velocity in a Docker container
 
-### Install Plugin
+### Manual Installation
 
-1. Copy the JAR file to Velocity's `plugins/` directory:
+1. Build the plugin:
    ```bash
-   cp target/payperplay-velocity-1.0.0.jar /path/to/velocity/plugins/
+   mvn clean package
    ```
 
-2. Start Velocity proxy
+2. Copy JAR to Velocity plugins folder:
+   ```bash
+   scp target/velocity-remote-api-1.0.0.jar root@91.98.232.193:/path/to/velocity/plugins/
+   ```
 
-3. Configure the plugin (see Configuration section)
-
-4. Restart Velocity or use `/velocity reload` (if supported)
+3. Restart Velocity:
+   ```bash
+   docker restart velocity-proxy
+   ```
 
 ## Configuration
 
-The plugin creates `plugins/payperplay-velocity/config.json` on first run:
+No plugin configuration required. The API listens on port 8080 by default.
 
-```json
-{
-  "backendUrl": "http://localhost:8000",
-  "wakeupTimeout": 60,
-  "retryInterval": 2000,
-  "apiPath": "/api/internal/servers/{id}/wakeup",
-  "statusPath": "/api/internal/servers/{id}/status"
-}
+## Testing
+
+### Test Health Endpoint
+```bash
+curl http://91.98.232.193:8080/health
 ```
 
-### Configuration Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `backendUrl` | string | `http://localhost:8000` | PayPerPlay backend API URL |
-| `wakeupTimeout` | int | `60` | Maximum time to wait for server startup (seconds) |
-| `retryInterval` | int | `2000` | Time between status checks (milliseconds) |
-| `apiPath` | string | `/api/internal/servers/{id}/wakeup` | Wakeup API endpoint |
-| `statusPath` | string | `/api/internal/servers/{id}/status` | Status API endpoint |
-
-### Example Production Config
-
-```json
-{
-  "backendUrl": "http://payperplay-backend:8000",
-  "wakeupTimeout": 90,
-  "retryInterval": 1500,
-  "apiPath": "/api/internal/servers/{id}/wakeup",
-  "statusPath": "/api/internal/servers/{id}/status"
-}
+### Test Server Registration
+```bash
+curl -X POST http://91.98.232.193:8080/api/servers \
+  -H "Content-Type: application/json" \
+  -d '{"name":"test-server","address":"91.98.202.235:25566"}'
 ```
 
-## Backend API Integration
-
-The plugin expects the following API endpoints from PayPerPlay backend:
-
-### Wakeup Endpoint
-
-**POST** `/api/internal/servers/{id}/wakeup`
-
-Request:
-```json
-{
-  "player": "PlayerName",
-  "reason": "player_connect"
-}
+### Test Server List
+```bash
+curl http://91.98.232.193:8080/api/servers
 ```
 
-Response (200 OK):
-```json
-{
-  "message": "Server wakeup initiated",
-  "server_id": "abc123"
-}
+### Test Server Unregistration
+```bash
+curl -X DELETE http://91.98.232.193:8080/api/servers/test-server
 ```
 
-### Status Endpoint
+## Integration with PayPerPlay API
 
-**GET** `/api/internal/servers/{id}/status`
+### Environment Configuration
 
-Response (200 OK):
-```json
-{
-  "server_id": "abc123",
-  "status": "running",
-  "port": 25566
-}
-```
-
-Status values:
-- `stopped` - Server is not running
-- `starting` - Server is starting up
-- `running` - Server is fully online
-- `stopping` - Server is shutting down
-
-## Velocity Configuration
-
-Update your `velocity.toml` to register PayPerPlay servers:
-
-```toml
-[servers]
-  # PayPerPlay managed servers
-  server1 = "localhost:25566"
-  server2 = "localhost:25567"
-  server3 = "localhost:25568"
-
-try = [
-  "server1"
-]
-
-[forced-hosts]
-  "server1.example.com" = [
-    "server1"
-  ]
-  "server2.example.com" = [
-    "server2"
-  ]
-```
-
-**Important**: Server names in `velocity.toml` must match server IDs in PayPerPlay backend!
-
-## Development
-
-### Project Structure
-
-```
-velocity-plugin/
-├── pom.xml                          # Maven configuration
-├── README.md                        # This file
-└── src/
-    └── main/
-        ├── java/
-        │   └── com/payperplay/velocity/
-        │       ├── PayPerPlayPlugin.java       # Main plugin class
-        │       ├── PluginConfig.java           # Configuration handler
-        │       └── ServerWakeupListener.java   # Event listener & wakeup logic
-        └── resources/
-            └── velocity-plugin.json  # Plugin metadata
-```
-
-### Building for Development
+Add to `.env` on the API server (91.98.202.235):
 
 ```bash
-# Build and install to local Velocity
-mvn clean package
-cp target/payperplay-velocity-1.0.0.jar /path/to/velocity/plugins/
-
-# Watch logs
-tail -f /path/to/velocity/logs/latest.log
+VELOCITY_API_URL=http://91.98.232.193:8080
 ```
 
-### Debugging
+### Usage in Go Code
 
-Enable debug logging in Velocity's `velocity.toml`:
+```go
+import "github.com/payperplay/hosting/internal/velocity"
 
-```toml
-[advanced]
-  log-level = "debug"
+// Create client
+client := velocity.NewRemoteVelocityClient(cfg.VelocityAPIURL)
+
+// Register server when starting
+err := client.RegisterServer("survival-1", "91.98.202.235:25566")
+
+// Unregister server when stopping
+err := client.UnregisterServer("survival-1")
+
+// Health check
+health, err := client.HealthCheck()
 ```
 
 ## Troubleshooting
 
-### Plugin Not Loading
+### Plugin not loading
+Check Velocity logs:
+```bash
+docker logs velocity-proxy
+```
 
-**Symptom**: Plugin doesn't appear in `/velocity plugins`
+### API not accessible
+Verify port 8080 is exposed:
+```bash
+docker port velocity-proxy
+```
 
-**Solutions**:
-1. Check Java version: `java -version` (must be 17+)
-2. Verify plugin is in `plugins/` directory
-3. Check Velocity logs for errors
-4. Ensure `velocity-plugin.json` is in JAR
+Check firewall rules:
+```bash
+sudo ufw allow 8080/tcp
+```
 
-### Wakeup Requests Failing
+### Cannot register servers
+Verify Velocity is running:
+```bash
+docker ps | grep velocity
+```
 
-**Symptom**: Servers don't wake up when players connect
+Check plugin status in logs:
+```bash
+docker logs velocity-proxy 2>&1 | grep "VelocityRemoteAPI"
+```
 
-**Solutions**:
-1. Verify backend URL in config.json
-2. Check backend is running: `curl http://localhost:8000/health`
-3. Test wakeup endpoint manually:
-   ```bash
-   curl -X POST http://localhost:8000/api/internal/servers/test/wakeup \
-     -H "Content-Type: application/json" \
-     -d '{"player":"TestPlayer","reason":"player_connect"}'
-   ```
-4. Check Velocity logs for HTTP errors
-5. Ensure firewall allows connections to backend
+## Dependencies
 
-### Timeout Issues
-
-**Symptom**: "Server did not start within timeout"
-
-**Solutions**:
-1. Increase `wakeupTimeout` in config.json
-2. Check server startup time in backend logs
-3. Verify Docker containers are starting correctly
-4. Monitor system resources (CPU, RAM, Disk)
-
-### Server Name Mismatch
-
-**Symptom**: Wrong server being woken up
-
-**Solutions**:
-1. Ensure Velocity server names match backend server IDs
-2. Check `velocity.toml` `[servers]` section
-3. Verify backend server registration
-
-## Performance
-
-### Resource Usage
-
-- CPU: Minimal (<1% idle, ~5% during wakeup)
-- RAM: ~20MB (with OkHttp + dependencies)
-- Network: ~10KB per wakeup request
-- Threads: 1 core thread + dynamic pool for wakeups
-
-### Benchmarks
-
-- Wakeup Request: ~50ms
-- Status Poll (per attempt): ~30ms
-- Average Total Wakeup Time: 15-30 seconds (depends on server type)
+- Velocity API 3.3.0-SNAPSHOT
+- Javalin 5.6.3 (HTTP framework)
+- Jackson 2.15.3 (JSON processing)
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## Support
-
-For issues and questions:
-- GitHub Issues: https://github.com/payperplay/hosting/issues
-- Discord: https://discord.gg/payperplay
-- Email: support@payperplay.com
-
-## Changelog
-
-### 1.0.0 (2025-11-06)
-- Initial release
-- Auto-wakeup functionality
-- Configurable timeouts and retry intervals
-- HTTP API integration
-- Status polling
-- Concurrent wakeup handling
+Part of the PayPerPlay Hosting platform.

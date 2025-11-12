@@ -1,8 +1,11 @@
 package conductor
 
 import (
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/payperplay/hosting/pkg/logger"
 )
 
 // ContainerInfo represents a Minecraft server container running on a node
@@ -122,4 +125,146 @@ func (r *ContainerRegistry) GetStartingCount() int {
 		}
 	}
 	return count
+}
+
+// GetStartingCountOnNode returns the number of containers in "starting" status on a specific node
+// Multi-Node CPU-GUARD: Limits parallel starts per node
+func (r *ContainerRegistry) GetStartingCountOnNode(nodeID string) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	count := 0
+	for _, container := range r.containers {
+		if container.NodeID == nodeID && container.Status == "starting" {
+			count++
+		}
+	}
+	return count
+}
+
+// GetContainersByStatus returns all containers with a specific status
+func (r *ContainerRegistry) GetContainersByStatus(status string) []*ContainerInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	containers := make([]*ContainerInfo, 0)
+	for _, container := range r.containers {
+		if container.Status == status {
+			containers = append(containers, container)
+		}
+	}
+	return containers
+}
+
+// GetNodeStats returns aggregated statistics for a specific node
+func (r *ContainerRegistry) GetNodeStats(nodeID string) NodeStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	stats := NodeStats{
+		NodeID: nodeID,
+	}
+
+	for _, container := range r.containers {
+		if container.NodeID == nodeID {
+			stats.TotalContainers++
+			stats.TotalRAMMB += container.RAMMb
+
+			switch container.Status {
+			case "running":
+				stats.RunningContainers++
+			case "starting":
+				stats.StartingContainers++
+			case "stopped":
+				stats.StoppedContainers++
+			}
+		}
+	}
+
+	return stats
+}
+
+// GetAllNodeStats returns aggregated statistics for all nodes
+func (r *ContainerRegistry) GetAllNodeStats() map[string]NodeStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	statsMap := make(map[string]NodeStats)
+
+	for _, container := range r.containers {
+		stats, exists := statsMap[container.NodeID]
+		if !exists {
+			stats = NodeStats{
+				NodeID: container.NodeID,
+			}
+		}
+
+		stats.TotalContainers++
+		stats.TotalRAMMB += container.RAMMb
+
+		switch container.Status {
+		case "running":
+			stats.RunningContainers++
+		case "starting":
+			stats.StartingContainers++
+		case "stopped":
+			stats.StoppedContainers++
+		}
+
+		statsMap[container.NodeID] = stats
+	}
+
+	return statsMap
+}
+
+// NodeStats contains aggregated statistics for a single node
+type NodeStats struct {
+	NodeID              string `json:"node_id"`
+	TotalContainers     int    `json:"total_containers"`
+	RunningContainers   int    `json:"running_containers"`
+	StartingContainers  int    `json:"starting_containers"`
+	StoppedContainers   int    `json:"stopped_containers"`
+	TotalRAMMB          int    `json:"total_ram_mb"`
+}
+
+// UpdateContainerNode moves a container to a different node (for migration scenarios)
+// This is useful for live migration or failover scenarios
+func (r *ContainerRegistry) UpdateContainerNode(serverID, newNodeID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	container, exists := r.containers[serverID]
+	if !exists {
+		return fmt.Errorf("container not found: %s", serverID)
+	}
+
+	oldNodeID := container.NodeID
+	container.NodeID = newNodeID
+	container.LastSeenAt = time.Now()
+
+	logger.Info("Container moved to new node", map[string]interface{}{
+		"server_id":   serverID,
+		"old_node_id": oldNodeID,
+		"new_node_id": newNodeID,
+	})
+
+	return nil
+}
+
+// GetStaleContainers returns containers that haven't been seen for a specified duration
+// Useful for detecting orphaned containers or node failures
+func (r *ContainerRegistry) GetStaleContainers(staleDuration time.Duration) []*ContainerInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	stale := make([]*ContainerInfo, 0)
+	now := time.Now()
+
+	for _, container := range r.containers {
+		if now.Sub(container.LastSeenAt) > staleDuration {
+			stale = append(stale, container)
+		}
+	}
+
+	return stale
 }
