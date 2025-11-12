@@ -186,6 +186,7 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 			location = loc
 		}
 
+		// Send node.created event
 		event := DashboardEvent{
 			Type:      "node.created",
 			Timestamp: time.Now(),
@@ -201,6 +202,27 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 			},
 		}
 		ws.sendToClient(client, event)
+
+		// Send node.stats event with current allocations
+		containerCount, allocatedRAM := ws.conductor.ContainerRegistry.GetNodeAllocation(node.ID)
+		capacityPercent := 0.0
+		if node.UsableRAMMB() > 0 {
+			capacityPercent = (float64(allocatedRAM) / float64(node.UsableRAMMB())) * 100
+		}
+
+		statsEvent := DashboardEvent{
+			Type:      "node.stats",
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"node_id":           node.ID,
+				"allocated_ram_mb":  allocatedRAM,
+				"free_ram_mb":       node.AvailableRAMMB(),
+				"container_count":   containerCount,
+				"capacity_percent":  capacityPercent,
+				"cpu_usage_percent": node.CPUUsagePercent,
+			},
+		}
+		ws.sendToClient(client, statsEvent)
 	}
 
 	// Send all containers
