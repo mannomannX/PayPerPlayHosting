@@ -34,9 +34,45 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		"server_type": serverType,
 	})
 
+	// CRITICAL FIX: Create placeholder node IMMEDIATELY to prevent duplicate provisioning
+	// This ensures the next scaling cycle sees "Worker-Node exists (provisioning)" instead of "0 nodes"
+	cfg := config.AppConfig
+	placeholderID := fmt.Sprintf("provisioning-%d", time.Now().UnixNano())
+	placeholderNode := &Node{
+		ID:               placeholderID,
+		Hostname:         fmt.Sprintf("provisioning-node-%d", time.Now().Unix()),
+		IPAddress:        "0.0.0.0", // Temporary IP until server is created
+		Type:             "cloud",
+		TotalRAMMB:       0, // Will be updated after server creation
+		TotalCPUCores:    0,
+		Status:           NodeStatusUnhealthy, // Unhealthy until fully provisioned
+		LastHealthCheck:  time.Now(),
+		ContainerCount:   0,
+		AllocatedRAMMB:   0,
+		DockerSocketPath: "/var/run/docker.sock",
+		SSHUser:          "root",
+		CreatedAt:        time.Now(),
+		Labels: map[string]string{
+			"type":        "cloud",
+			"managed_by":  "payperplay",
+			"status":      "provisioning", // Special label to indicate provisioning in progress
+		},
+		HourlyCostEUR: 0,
+	}
+
+	// Register placeholder immediately BEFORE starting slow Hetzner API calls
+	p.nodeRegistry.RegisterNode(placeholderNode)
+
+	logger.Info("Placeholder node registered, starting Hetzner provisioning", map[string]interface{}{
+		"placeholder_id": placeholderID,
+		"server_type":    serverType,
+	})
+
 	// Get Ubuntu 22.04 image ID from Hetzner API
 	imageID, err := p.cloudProvider.GetUbuntuImage("22.04")
 	if err != nil {
+		// Cleanup: Remove placeholder on failure
+		p.nodeRegistry.UnregisterNode(placeholderID)
 		return nil, fmt.Errorf("failed to get Ubuntu image: %w", err)
 	}
 
@@ -61,9 +97,11 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		SSHKeys: []string{p.sshKeyName},
 	}
 
-	// Create server via cloud provider
+	// Create server via cloud provider (THIS TAKES ~20 SECONDS!)
 	server, err := p.cloudProvider.CreateServer(spec)
 	if err != nil {
+		// Cleanup: Remove placeholder on failure
+		p.nodeRegistry.UnregisterNode(placeholderID)
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
@@ -74,7 +112,8 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 
 	// Wait for server to be ready
 	if err := p.cloudProvider.WaitForServerReady(server.ID, 5*time.Minute); err != nil {
-		// Cleanup on failure
+		// Cleanup on failure: Remove placeholder AND delete Hetzner server
+		p.nodeRegistry.UnregisterNode(placeholderID)
 		p.cloudProvider.DeleteServer(server.ID)
 		return nil, fmt.Errorf("server failed to become ready: %w", err)
 	}
@@ -94,9 +133,17 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		}
 	}
 
-	// Create Node object IMMEDIATELY (before waiting for Cloud-Init)
-	// FIX: Register node as unhealthy FIRST to prevent duplicate provisioning
-	cfg := config.AppConfig
+	// Server successfully created! Now replace placeholder with real node
+	// Remove placeholder first
+	p.nodeRegistry.UnregisterNode(placeholderID)
+
+	logger.Info("Hetzner server created, replacing placeholder with real node", map[string]interface{}{
+		"placeholder_id": placeholderID,
+		"server_id":      server.ID,
+		"ip":             server.IPAddress,
+	})
+
+	// Create real Node object with Hetzner server details
 	node := &Node{
 		ID:               server.ID,
 		Hostname:         server.Name,
@@ -121,8 +168,7 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	// Calculate intelligent system reserve for cloud node (3-tier strategy)
 	node.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
 
-	// CRITICAL: Register node IMMEDIATELY as unhealthy to prevent duplicate provisioning
-	// This ensures Reactive Policy sees "Worker-Node exists (but unhealthy)" and doesn't provision duplicates
+	// Register real node as unhealthy (will become healthy after Cloud-Init)
 	p.nodeRegistry.RegisterNode(node)
 
 	logger.Info("Node registered as unhealthy, waiting for Cloud-Init", map[string]interface{}{
