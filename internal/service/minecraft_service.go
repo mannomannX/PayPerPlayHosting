@@ -256,8 +256,12 @@ func (s *MinecraftService) CreateServer(
 	// Publish event
 	events.PublishServerCreated(server.ID, server.OwnerID, string(server.ServerType))
 
-	// Trigger immediate scaling check to provision capacity if needed
+	// Add server to queue and trigger immediate scaling check
 	if s.conductor != nil {
+		// Enqueue the server - Conductor will assign it to a node when capacity is available
+		s.conductor.EnqueueServer(server.ID, server.Name, server.RAMMb, server.OwnerID)
+
+		// Trigger immediate scaling check to provision capacity if needed
 		s.conductor.TriggerScalingCheck()
 	}
 
