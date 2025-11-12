@@ -137,6 +137,21 @@ func (c *Conductor) Start() {
 	go c.cpuMetricsWorker()
 	logger.Info("CPU metrics worker started (60-second intervals)", nil)
 
+	// CRITICAL: Sync existing Worker-Nodes from Hetzner on startup (prevents duplicate provisioning loop)
+	logger.Debug("Checking Worker-Node sync conditions", map[string]interface{}{
+		"scaling_engine_nil": c.ScalingEngine == nil,
+		"cloud_provider_nil": c.CloudProvider == nil,
+	})
+	if c.ScalingEngine != nil && c.CloudProvider != nil {
+		go c.syncExistingWorkerNodes()
+		logger.Info("Worker-Node sync started (recovers nodes from Hetzner API)", nil)
+	} else {
+		logger.Warn("Worker-Node sync skipped", map[string]interface{}{
+			"scaling_engine_nil": c.ScalingEngine == nil,
+			"cloud_provider_nil": c.CloudProvider == nil,
+		})
+	}
+
 	logger.Info("Conductor Core started successfully", nil)
 }
 
@@ -1193,6 +1208,131 @@ func (c *Conductor) collectCPUMetrics() {
 			"node_id":           node.ID,
 			"cpu_usage_percent": cpuUsage,
 		})
+	}
+}
+
+// syncExistingWorkerNodes queries Hetzner API and registers all existing Worker-Nodes
+// CRITICAL: Prevents infinite provisioning loop by recovering nodes after container restart
+func (c *Conductor) syncExistingWorkerNodes() {
+	logger.Info("WORKER-NODE-SYNC: Starting Worker-Node synchronization from Hetzner API", nil)
+
+	// Query Hetzner for all PayPerPlay-managed cloud nodes
+	labels := map[string]string{
+		"managed_by": "payperplay",
+		"type":       "cloud",
+	}
+
+	servers, err := c.CloudProvider.ListServers(labels)
+	if err != nil {
+		logger.Error("WORKER-NODE-SYNC: Failed to list servers from Hetzner", err, map[string]interface{}{
+			"labels": labels,
+		})
+		return
+	}
+
+	if len(servers) == 0 {
+		logger.Info("WORKER-NODE-SYNC: No existing Worker-Nodes found at Hetzner", nil)
+		return
+	}
+
+	logger.Info("WORKER-NODE-SYNC: Found existing Worker-Nodes", map[string]interface{}{
+		"count": len(servers),
+	})
+
+	cfg := config.AppConfig
+	recoveredCount := 0
+	skippedCount := 0
+
+	for _, server := range servers {
+		// Check if node is already registered (might happen if sync runs multiple times)
+		if _, exists := c.NodeRegistry.GetNode(server.ID); exists {
+			logger.Debug("WORKER-NODE-SYNC: Node already registered, skipping", map[string]interface{}{
+				"node_id":   server.ID,
+				"node_name": server.Name,
+			})
+			skippedCount++
+			continue
+		}
+
+		// Get server type info for correct RAM values
+		serverTypeInfo, err := c.ScalingEngine.vmProvisioner.getServerTypeInfo(server.Type)
+		if err != nil {
+			logger.Warn("WORKER-NODE-SYNC: Failed to get server type info, using fallback", map[string]interface{}{
+				"server_id":   server.ID,
+				"server_type": server.Type,
+				"error":       err.Error(),
+			})
+			serverTypeInfo = &cloud.ServerType{
+				Name:  server.Type,
+				RAMMB: 4096, // Fallback
+				Cores: 2,
+			}
+		}
+
+		// Create Node object (matching VMProvisioner.ProvisionNode logic)
+		node := &Node{
+			ID:               server.ID,
+			Hostname:         server.Name,
+			IPAddress:        server.IPAddress,
+			Type:             "cloud",
+			TotalRAMMB:       serverTypeInfo.RAMMB,
+			TotalCPUCores:    serverTypeInfo.Cores,
+			Status:           NodeStatusHealthy,
+			LastHealthCheck:  time.Now(),
+			ContainerCount:   0,
+			AllocatedRAMMB:   0,
+			DockerSocketPath: "/var/run/docker.sock",
+			SSHUser:          "root",
+			CreatedAt:        time.Now(), // We don't have the original creation time
+			Labels: map[string]string{
+				"type":       "cloud",
+				"managed_by": "payperplay",
+			},
+			HourlyCostEUR:     server.HourlyCostEUR,
+			CloudProviderID:   server.ID,
+			IsSystemNode:      false, // Worker-Nodes are not system nodes
+		}
+
+		// Calculate system reserve (matching VMProvisioner logic)
+		node.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
+
+		// Register node in NodeRegistry
+		c.NodeRegistry.RegisterNode(node)
+
+		logger.Info("WORKER-NODE-SYNC: Worker-Node recovered and registered", map[string]interface{}{
+			"node_id":            node.ID,
+			"node_name":          node.Hostname,
+			"ip":                 node.IPAddress,
+			"server_type":        server.Type,
+			"total_ram_mb":       node.TotalRAMMB,
+			"system_reserved_mb": node.SystemReservedRAMMB,
+			"usable_ram_mb":      node.UsableRAMMB(),
+			"cpu_cores":          node.TotalCPUCores,
+			"cost_eur_hr":        node.HourlyCostEUR,
+		})
+
+		// Publish events (matching VMProvisioner logic)
+		events.PublishNodeAdded(node.ID, node.Type)
+		provider := "hetzner"
+		location := "nbg1"
+		if loc, ok := node.Labels["location"]; ok {
+			location = loc
+		}
+		events.PublishNodeCreated(node.ID, node.Type, provider, location, string(node.Status), node.IPAddress, node.TotalRAMMB, node.UsableRAMMB(), node.IsSystemNode, node.CreatedAt)
+
+		recoveredCount++
+	}
+
+	logger.Info("WORKER-NODE-SYNC: Worker-Node synchronization completed", map[string]interface{}{
+		"recovered": recoveredCount,
+		"skipped":   skippedCount,
+		"total":     len(servers),
+	})
+
+	// After recovering nodes, trigger scaling check to assign queued servers
+	if recoveredCount > 0 {
+		logger.Info("WORKER-NODE-SYNC: Triggering scaling check to assign queued servers", nil)
+		c.TriggerScalingCheck()
 	}
 }
 
