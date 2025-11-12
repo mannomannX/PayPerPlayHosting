@@ -66,8 +66,30 @@ func (h *HealthChecker) performHealthCheck() {
 	nodes := h.nodeRegistry.GetAllNodes()
 
 	for _, node := range nodes {
+		oldStatus := node.Status
 		status := h.checkNodeHealth(node)
 		h.nodeRegistry.UpdateNodeStatus(node.ID, status)
+
+		// LOG STATUS CHANGES (not just debug!)
+		if oldStatus != status {
+			if status == NodeStatusUnhealthy {
+				logger.Warn("Node became UNHEALTHY", map[string]interface{}{
+					"node_id":     node.ID,
+					"hostname":    node.Hostname,
+					"ip":          node.IPAddress,
+					"old_status":  oldStatus,
+					"new_status":  status,
+					"type":        node.Type,
+				})
+			} else {
+				logger.Info("Node status changed", map[string]interface{}{
+					"node_id":     node.ID,
+					"hostname":    node.Hostname,
+					"old_status":  oldStatus,
+					"new_status":  status,
+				})
+			}
+		}
 
 		if status == NodeStatusHealthy {
 			// Sync actual containers from Docker to prevent ghost containers
