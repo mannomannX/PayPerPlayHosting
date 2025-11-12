@@ -40,6 +40,12 @@ func (r *ServerRepository) FindByOwner(ownerID string) ([]models.MinecraftServer
 	return servers, err
 }
 
+func (r *ServerRepository) FindByStatus(status string) ([]models.MinecraftServer, error) {
+	var servers []models.MinecraftServer
+	err := r.db.Where("status = ?", status).Find(&servers).Error
+	return servers, err
+}
+
 func (r *ServerRepository) FindByPort(port int) (*models.MinecraftServer, error) {
 	var server models.MinecraftServer
 	// Use Unscoped() to check for soft-deleted servers blocking ports
