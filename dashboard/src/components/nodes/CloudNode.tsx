@@ -15,6 +15,7 @@ interface CloudNodeProps {
     cpuUsagePercent?: number;
     status: string;
     ipAddress: string;
+    isSystemNode: boolean;
     containers: Array<{
       server_id: string;
       server_name: string;
@@ -110,10 +111,10 @@ export const CloudNode = ({ data }: CloudNodeProps) => {
         )}
       </div>
 
-      {/* Container List */}
-      {data.containers.length > 0 && (
+      {/* Container List - Only show for Worker Nodes */}
+      {!data.isSystemNode && data.containers.length > 0 && (
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '8px' }}>
-          <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Active Servers:</div>
+          <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Assigned MC Servers:</div>
           <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
             {data.containers.map((container) => (
               <div
@@ -133,6 +134,28 @@ export const CloudNode = ({ data }: CloudNodeProps) => {
                 <span style={{ opacity: 0.7 }}>{container.ram_mb}MB</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* System Node Badge */}
+      {data.isSystemNode && (
+        <div
+          style={{
+            marginTop: '8px',
+            padding: '6px 8px',
+            background: 'rgba(239, 68, 68, 0.2)',
+            borderRadius: '6px',
+            fontSize: '10px',
+            fontWeight: 'bold',
+            color: '#fca5a5',
+            textAlign: 'center',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+          }}
+        >
+          🔒 SYSTEM NODE
+          <div style={{ fontSize: '9px', marginTop: '2px', opacity: 0.8 }}>
+            Infrastructure only
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -69,6 +70,9 @@ func (h *HealthChecker) performHealthCheck() {
 		h.nodeRegistry.UpdateNodeStatus(node.ID, status)
 
 		if status == NodeStatusHealthy {
+			// Sync actual containers from Docker to prevent ghost containers
+			h.syncContainersFromNode(node)
+
 			// Update resource allocation from container registry
 			containerCount, allocatedRAMMB := h.containerRegistry.GetNodeAllocation(node.ID)
 			h.nodeRegistry.UpdateNodeResources(node.ID, containerCount, allocatedRAMMB)
@@ -255,4 +259,106 @@ func (h *HealthChecker) checkRemoteNodeResources(ctx context.Context, remoteNode
 // This is a helper method that uses the remoteClient's SSH infrastructure
 func (h *HealthChecker) executeRemoteCommand(ctx context.Context, remoteNode *docker.RemoteNode, command string) (string, error) {
 	return h.remoteClient.ExecuteSSHCommand(ctx, remoteNode, command)
+}
+
+// syncContainersFromNode fetches actual containers from Docker and syncs with the registry
+// This prevents ghost containers by removing entries that no longer exist
+func (h *HealthChecker) syncContainersFromNode(node *Node) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Determine if node is local or remote
+	isLocal := node.Type == "local" || node.IPAddress == "" || node.IPAddress == "localhost" || node.IPAddress == "127.0.0.1"
+
+	var actualContainerIDs map[string]bool
+	var err error
+
+	if isLocal {
+		actualContainerIDs, err = h.getLocalContainerIDs(ctx)
+	} else {
+		actualContainerIDs, err = h.getRemoteContainerIDs(ctx, node)
+	}
+
+	if err != nil {
+		logger.Warn("Failed to sync containers from node", map[string]interface{}{
+			"node_id": node.ID,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	// Sync with container registry
+	h.containerRegistry.SyncNodeContainers(node.ID, actualContainerIDs)
+}
+
+// getLocalContainerIDs fetches all mc-* container IDs from the local Docker daemon
+func (h *HealthChecker) getLocalContainerIDs(ctx context.Context) (map[string]bool, error) {
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	defer dockerClient.Close()
+
+	// List all mc-* containers (including stopped ones)
+	containers, err := dockerClient.ContainerList(ctx, container.ListOptions{
+		All: true, // Include stopped containers
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	// Build map of container IDs
+	containerIDs := make(map[string]bool)
+	for _, container := range containers {
+		// Only include mc-* containers
+		for _, name := range container.Names {
+			if strings.HasPrefix(name, "/mc-") || strings.HasPrefix(name, "mc-") {
+				containerIDs[container.ID] = true
+				break
+			}
+		}
+	}
+
+	logger.Debug("Local container sync", map[string]interface{}{
+		"total_containers": len(containerIDs),
+	})
+
+	return containerIDs, nil
+}
+
+// getRemoteContainerIDs fetches all mc-* container IDs from a remote node via SSH
+func (h *HealthChecker) getRemoteContainerIDs(ctx context.Context, node *Node) (map[string]bool, error) {
+	if h.remoteClient == nil {
+		return nil, fmt.Errorf("remote client not configured")
+	}
+
+	remoteNode := &docker.RemoteNode{
+		ID:        node.ID,
+		IPAddress: node.IPAddress,
+		SSHUser:   node.SSHUser,
+	}
+
+	// Execute: docker ps -a --filter "name=mc-" --format "{{.ID}}"
+	cmd := `docker ps -a --filter "name=mc-" --format "{{.ID}}"`
+	output, err := h.remoteClient.ExecuteSSHCommand(ctx, remoteNode, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	// Parse container IDs from output
+	containerIDs := make(map[string]bool)
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		containerID := strings.TrimSpace(line)
+		if containerID != "" {
+			containerIDs[containerID] = true
+		}
+	}
+
+	logger.Debug("Remote container sync", map[string]interface{}{
+		"node_id":          node.ID,
+		"total_containers": len(containerIDs),
+	})
+
+	return containerIDs, nil
 }

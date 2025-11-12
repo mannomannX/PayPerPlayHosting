@@ -268,3 +268,40 @@ func (r *ContainerRegistry) GetStaleContainers(staleDuration time.Duration) []*C
 
 	return stale
 }
+
+// SyncNodeContainers synchronizes the registry with actual containers running on a node
+// This prevents ghost containers by removing entries that no longer exist in Docker
+// actualContainerIDs: List of container IDs actually running on the node (from docker ps -a)
+func (r *ContainerRegistry) SyncNodeContainers(nodeID string, actualContainerIDs map[string]bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	removed := 0
+	for serverID, container := range r.containers {
+		if container.NodeID != nodeID {
+			continue // Not on this node
+		}
+
+		// Check if container still exists in Docker
+		if !actualContainerIDs[container.ContainerID] {
+			// Container no longer exists, remove from registry
+			delete(r.containers, serverID)
+			removed++
+
+			logger.Info("Ghost container removed from registry", map[string]interface{}{
+				"server_id":    serverID,
+				"container_id": container.ContainerID,
+				"node_id":      nodeID,
+			})
+		}
+	}
+
+	if removed > 0 {
+		logger.Info("Container sync completed", map[string]interface{}{
+			"node_id":         nodeID,
+			"removed_ghosts":  removed,
+			"active_on_node":  len(actualContainerIDs),
+			"registry_total":  len(r.containers),
+		})
+	}
+}
