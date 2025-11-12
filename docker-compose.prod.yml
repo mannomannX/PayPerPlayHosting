@@ -36,6 +36,7 @@ services:
       - ./minecraft/servers:/app/minecraft/servers  # Minecraft servers data
       - ./backups:/app/backups                # Server backups
       - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for managing containers
+      - /root/.ssh:/root/.ssh:ro              # SSH keys for remote node access (read-only)
     environment:
       # Application
       - APP_NAME=PayPerPlay
