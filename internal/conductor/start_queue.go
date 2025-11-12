@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -54,6 +55,10 @@ func (q *StartQueue) Enqueue(server *QueuedServer) {
 		"queue_position": len(q.queue),
 		"queued_at":      server.QueuedAt,
 	})
+
+	// Publish queue update events
+	events.PublishServerQueued(server.ServerID, server.ServerName, server.RequiredRAMMB, len(q.queue))
+	events.PublishQueueUpdated(len(q.queue), q.queue)
 }
 
 // Dequeue removes and returns the next server from the queue
@@ -74,6 +79,10 @@ func (q *StartQueue) Dequeue() *QueuedServer {
 		"server_name":     server.ServerName,
 		"queue_remaining": len(q.queue),
 	})
+
+	// Publish queue update events
+	events.PublishServerDequeued(server.ServerID, server.ServerName)
+	events.PublishQueueUpdated(len(q.queue), q.queue)
 
 	return server
 }
@@ -102,6 +111,11 @@ func (q *StartQueue) Remove(serverID string) bool {
 				"server_id":   serverID,
 				"server_name": server.ServerName,
 			})
+
+			// Publish queue update events
+			events.PublishServerDequeued(server.ServerID, server.ServerName)
+			events.PublishQueueUpdated(len(q.queue), q.queue)
+
 			return true
 		}
 	}

@@ -334,3 +334,57 @@ func PublishVelocityStats(totalPlayers, totalServers int, serverStats []map[stri
 
 	DashboardEventPublisher.PublishEvent("stats.velocity", data)
 }
+
+// PublishQueueUpdated publishes a deployment queue update event
+func PublishQueueUpdated(queueSize int, servers interface{}) {
+	if DashboardEventPublisher == nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"queue_size": queueSize,
+		"servers":    servers,
+	}
+
+	DashboardEventPublisher.PublishEvent("queue.updated", data)
+	logger.Debug("Dashboard event published: queue.updated", map[string]interface{}{
+		"queue_size": queueSize,
+	})
+}
+
+// PublishServerQueued publishes a server queued event
+func PublishServerQueued(serverID, serverName string, ramMb, position int) {
+	if DashboardEventPublisher == nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"server_id":   serverID,
+		"server_name": serverName,
+		"ram_mb":      ramMb,
+		"position":    position,
+	}
+
+	DashboardEventPublisher.PublishEvent("queue.server_added", data)
+	logger.Info("Dashboard event published: queue.server_added", map[string]interface{}{
+		"server_id": serverID,
+		"position":  position,
+	})
+}
+
+// PublishServerDequeued publishes a server dequeued event
+func PublishServerDequeued(serverID, serverName string) {
+	if DashboardEventPublisher == nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"server_id":   serverID,
+		"server_name": serverName,
+	}
+
+	DashboardEventPublisher.PublishEvent("queue.server_removed", data)
+	logger.Info("Dashboard event published: queue.server_removed", map[string]interface{}{
+		"server_id": serverID,
+	})
+}

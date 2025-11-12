@@ -57,6 +57,20 @@ interface FleetStats {
   free_ram_mb: number;
   capacity_percent: number;
   total_servers: number;
+  queue_size?: number;
+}
+
+interface QueuedServer {
+  ServerID: string;
+  ServerName: string;
+  RequiredRAMMB: number;
+  QueuedAt: string;
+  UserID: string;
+}
+
+interface QueueInfo {
+  queue_size: number;
+  servers: QueuedServer[];
 }
 
 interface DashboardState {
@@ -64,6 +78,7 @@ interface DashboardState {
   edges: Edge[];
   migrations: Map<string, MigrationOperation>;
   fleetStats: FleetStats | null;
+  queueInfo: QueueInfo | null;
   connected: boolean;
   lastUpdate: Date | null;
 
@@ -75,9 +90,11 @@ interface DashboardState {
   removeNode: (nodeId: string) => void;
   addContainer: (event: ContainerCreatedEvent) => void;
   removeContainer: (serverId: string) => void;
+  updateContainerStatus: (serverId: string, status: string) => void;
   startMigration: (event: MigrationStartedEvent) => void;
   updateMigration: (event: MigrationEvent) => void;
   updateFleetStats: (event: FleetStatsEvent) => void;
+  updateQueue: (queueData: any) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -85,6 +102,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   edges: [],
   migrations: new Map(),
   fleetStats: null,
+  queueInfo: null,
   connected: false,
   lastUpdate: null,
 
@@ -106,6 +124,9 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       case 'container.created':
         get().addContainer(data as ContainerCreatedEvent);
         break;
+      case 'container.status_changed':
+        get().updateContainerStatus(data.server_id, data.status);
+        break;
       case 'container.removed':
         get().removeContainer(data.server_id);
         break;
@@ -120,6 +141,11 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       case 'stats.fleet':
         get().updateFleetStats(data as FleetStatsEvent);
         break;
+      case 'queue.updated':
+      case 'queue.server_added':
+      case 'queue.server_removed':
+        get().updateQueue(data);
+        break;
       default:
         console.log('[Store] Unhandled event type:', type);
     }
@@ -131,13 +157,26 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const nodeExists = get().nodes.some((n) => n.id === event.node_id);
     if (nodeExists) return;
 
+    // Calculate position based on node type to avoid overlaps
+    const currentNodes = get().nodes;
+    const tier = event.node_id.includes('proxy') ? 'proxy' : event.node_id.includes('local') || event.node_id.includes('control') ? 'control' : 'workload';
+    const typeCount = currentNodes.filter(n => {
+      const nTier = n.id.includes('proxy') ? 'proxy' : n.id.includes('local') || n.id.includes('control') ? 'control' : 'workload';
+      return nTier === tier;
+    }).length;
+
+    // Position nodes in tiers (left to right: control, proxy, workload)
+    let x = 200; // Control plane
+    if (tier === 'proxy') x = 600; // Proxy layer
+    if (tier === 'workload') x = 1000; // Workload layer
+
+    // Stack nodes vertically within the same tier
+    const y = 200 + (typeCount * 250);
+
     const newNode: DashboardNode = {
       id: event.node_id,
       type: event.node_type === 'velocity' ? 'velocityNode' : event.node_type === 'dedicated' ? 'dedicatedNode' : 'cloudNode',
-      position: {
-        x: Math.random() * 500 + 100,
-        y: Math.random() * 300 + 100,
-      },
+      position: { x, y },
       data: {
         label: event.node_type.toUpperCase(),
         type: event.node_type,
@@ -216,6 +255,20 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         data: {
           ...node.data,
           containers: node.data.containers.filter((c) => c.server_id !== serverId),
+        },
+      })),
+    });
+  },
+
+  updateContainerStatus: (serverId: string, status: string) => {
+    set({
+      nodes: get().nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          containers: node.data.containers.map((c) =>
+            c.server_id === serverId ? { ...c, status } : c
+          ),
         },
       })),
     });
@@ -302,5 +355,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
   updateFleetStats: (event: FleetStatsEvent) => {
     set({ fleetStats: event });
+  },
+
+  updateQueue: (queueData: any) => {
+    set({
+      queueInfo: {
+        queue_size: queueData.queue_size || 0,
+        servers: queueData.servers || [],
+      },
+    });
   },
 }));

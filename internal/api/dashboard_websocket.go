@@ -233,15 +233,31 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 				Type:      "container.created",
 				Timestamp: time.Now(),
 				Data: map[string]interface{}{
-					"server_id":   container.ServerID,
-					"server_name": container.ServerName,
-					"node_id":     container.NodeID,
-					"ram_mb":      container.RAMMb,
-					"status":      container.Status,
+					"server_id":    container.ServerID,
+					"server_name":  container.ServerName,
+					"container_id": container.ContainerID,
+					"node_id":      container.NodeID,
+					"ram_mb":       container.RAMMb,
+					"status":       string(container.Status),
+					"port":         container.DockerPort,
 				},
 			}
 			ws.sendToClient(client, event)
 		}
+	}
+
+	// Send deployment queue
+	if ws.conductor.StartQueue != nil {
+		queuedServers := ws.conductor.StartQueue.GetAll()
+		queueEvent := DashboardEvent{
+			Type:      "queue.updated",
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"queue_size": len(queuedServers),
+				"servers":    queuedServers,
+			},
+		}
+		ws.sendToClient(client, queueEvent)
 	}
 
 	// Send current fleet stats
@@ -295,6 +311,7 @@ func (ws *DashboardWebSocket) broadcastFleetStats() {
 			"free_ram_mb":      stats.AvailableRAMMB,
 			"capacity_percent": capacityPercent,
 			"total_servers":    stats.TotalContainers,
+			"queue_size":       ws.conductor.StartQueue.Size(),
 		},
 	}
 	ws.broadcast <- event
