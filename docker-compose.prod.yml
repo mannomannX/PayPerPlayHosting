@@ -57,6 +57,10 @@ services:
       - DEFAULT_IDLE_TIMEOUT=300
       - MC_PORT_START=25566  # Start at 25566 (25565 reserved for Velocity proxy)
       - MC_PORT_END=25665
+      - CONTROL_PLANE_IP=91.98.202.235  # Public IP for Velocity to connect to Minecraft servers
+
+      # 3-Tier Architecture: Velocity Proxy Layer (Tier 2)
+      - VELOCITY_API_URL=http://91.98.232.193:8080  # Velocity Remote API URL
 
       # Billing rates (EUR/hour)
       - RATE_2GB=0.10
@@ -65,7 +69,7 @@ services:
       - RATE_16GB=0.80
 
       # B5 Auto-Scaling (Hetzner Cloud)
-      - HETZNER_CLOUD_TOKEN=${HETZNER_CLOUD_TOKEN:-}
+      - HETZNER_CLOUD_TOKEN=${HETZNER_CLOUD_TOKEN:-5cFmHcMq3tUj8lKDtpMJCDP4lbKnDuR9FQuGTyYQf0QAI6lium4GigSbUUCGjg65}
       - HETZNER_SSH_KEY_NAME=${HETZNER_SSH_KEY_NAME:-payperplay-main}
       - SCALING_ENABLED=${SCALING_ENABLED:-true}
       - SCALING_CHECK_INTERVAL=2m
@@ -89,26 +93,27 @@ services:
       retries: 3
       start_period: 40s
 
-  # Nginx Reverse Proxy (optional for HTTPS)
-  nginx:
-    image: nginx:alpine
-    container_name: payperplay-nginx
+  # Dashboard with Nginx (serves frontend + API reverse proxy)
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: payperplay-dashboard
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
     networks:
       - payperplay-network
     depends_on:
-      - payperplay
+      payperplay:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
 networks:
   payperplay-network:
