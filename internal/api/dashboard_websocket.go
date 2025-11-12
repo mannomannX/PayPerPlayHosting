@@ -26,6 +26,8 @@ type DashboardWebSocket struct {
 	conductor     *conductor.Conductor
 	clients       map[*websocket.Conn]bool
 	clientsMutex  sync.RWMutex
+	clientWriters map[*websocket.Conn]*sync.Mutex // Mutex per client to prevent concurrent writes
+	writersMutex  sync.Mutex
 	broadcast     chan DashboardEvent
 	register      chan *websocket.Conn
 	unregister    chan *websocket.Conn
@@ -42,12 +44,13 @@ type DashboardEvent struct {
 // NewDashboardWebSocket creates a new dashboard WebSocket manager
 func NewDashboardWebSocket(conductor *conductor.Conductor) *DashboardWebSocket {
 	return &DashboardWebSocket{
-		conductor:    conductor,
-		clients:      make(map[*websocket.Conn]bool),
-		broadcast:    make(chan DashboardEvent, 256),
-		register:     make(chan *websocket.Conn),
-		unregister:   make(chan *websocket.Conn),
-		shutdownChan: make(chan struct{}),
+		conductor:     conductor,
+		clients:       make(map[*websocket.Conn]bool),
+		clientWriters: make(map[*websocket.Conn]*sync.Mutex),
+		broadcast:     make(chan DashboardEvent, 256),
+		register:      make(chan *websocket.Conn),
+		unregister:    make(chan *websocket.Conn),
+		shutdownChan:  make(chan struct{}),
 	}
 }
 
@@ -66,6 +69,11 @@ func (ws *DashboardWebSocket) Run() {
 			ws.clients[client] = true
 			ws.clientsMutex.Unlock()
 
+			// Create write mutex for this client
+			ws.writersMutex.Lock()
+			ws.clientWriters[client] = &sync.Mutex{}
+			ws.writersMutex.Unlock()
+
 			logger.Info("DashboardWebSocket: Client connected", map[string]interface{}{
 				"total_clients": len(ws.clients),
 			})
@@ -80,6 +88,11 @@ func (ws *DashboardWebSocket) Run() {
 				client.Close()
 			}
 			ws.clientsMutex.Unlock()
+
+			// Remove write mutex for this client
+			ws.writersMutex.Lock()
+			delete(ws.clientWriters, client)
+			ws.writersMutex.Unlock()
 
 			logger.Info("DashboardWebSocket: Client disconnected", map[string]interface{}{
 				"total_clients": len(ws.clients),
@@ -142,7 +155,21 @@ func (ws *DashboardWebSocket) handleClientMessages(conn *websocket.Conn) {
 		for {
 			select {
 			case <-pingTicker.C:
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				// Use mutex to prevent concurrent writes
+				ws.writersMutex.Lock()
+				writeMutex, exists := ws.clientWriters[conn]
+				ws.writersMutex.Unlock()
+
+				if !exists {
+					return // Client disconnected
+				}
+
+				writeMutex.Lock()
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				err := conn.WriteMessage(websocket.PingMessage, nil)
+				writeMutex.Unlock()
+
+				if err != nil {
 					return
 				}
 			}
@@ -163,8 +190,21 @@ func (ws *DashboardWebSocket) handleClientMessages(conn *websocket.Conn) {
 	}
 }
 
-// sendToClient sends an event to a specific client
+// sendToClient sends an event to a specific client (thread-safe)
 func (ws *DashboardWebSocket) sendToClient(client *websocket.Conn, event DashboardEvent) {
+	// Get the write mutex for this client
+	ws.writersMutex.Lock()
+	writeMutex, exists := ws.clientWriters[client]
+	ws.writersMutex.Unlock()
+
+	if !exists {
+		return // Client already disconnected
+	}
+
+	// Lock this client's write mutex to prevent concurrent writes
+	writeMutex.Lock()
+	defer writeMutex.Unlock()
+
 	client.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := client.WriteJSON(event); err != nil {
 		logger.Info("DashboardWebSocket: Failed to send message", map[string]interface{}{
