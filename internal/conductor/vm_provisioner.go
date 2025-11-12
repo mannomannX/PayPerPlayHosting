@@ -74,14 +74,17 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	}
 
 	// Get server type info for resource allocation
-	serverTypeInfo, err := p.cloudProvider.GetServerType(server.Type)
+	// Note: GetServerType(name) fails with 404, so we get all types and find the right one
+	serverTypeInfo, err := p.getServerTypeInfo(server.Type)
 	if err != nil {
 		logger.Warn("Failed to get server type info", map[string]interface{}{
-			"error": err.Error(),
+			"server_type": server.Type,
+			"error":       err.Error(),
 		})
 		serverTypeInfo = &cloud.ServerType{
-			RAMMB:  4096, // Default to 4GB
-			Cores:  2,    // Default to 2 cores
+			Name:   server.Type,
+			RAMMB:  4096, // Fallback default
+			Cores:  2,
 		}
 	}
 
@@ -344,4 +347,23 @@ func (p *VMProvisioner) ProvisionNodeFromSnapshot(snapshotID string, serverType 
 	events.PublishNodeAdded(node.ID, "cloud-from-snapshot")
 
 	return node, nil
+}
+
+// getServerTypeInfo gets server type info from cloud provider by searching all types
+// This is needed because GetServerType(name) fails with 404 (Hetzner API expects ID, not name)
+func (p *VMProvisioner) getServerTypeInfo(typeName string) (*cloud.ServerType, error) {
+	// Get all server types from API
+	allTypes, err := p.cloudProvider.GetServerTypes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get server types: %w", err)
+	}
+
+	// Find the matching type by name
+	for _, st := range allTypes {
+		if st.Name == typeName {
+			return st, nil
+		}
+	}
+
+	return nil, fmt.Errorf("server type %s not found", typeName)
 }
