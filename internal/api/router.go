@@ -262,9 +262,6 @@ func SetupRouter(
 			}
 		}
 
-		// Dashboard WebSocket (public for now - TODO: add admin auth later)
-		api.GET("/admin/dashboard/stream", dashboardWsHandler.HandleConnection)
-
 		// Admin endpoints
 		admin := api.Group("/admin")
 		{
@@ -331,6 +328,9 @@ func SetupRouter(
 		velocity.POST("/start", velocityHandler.StartVelocity)
 		velocity.POST("/stop", velocityHandler.StopVelocity)
 	}
+
+	// Dashboard WebSocket (public - no auth for now, TODO: add admin auth)
+	router.GET("/api/admin/dashboard/stream", dashboardWsHandler.HandleConnection)
 
 	// Serve static files and frontend (we'll add this later)
 	router.Static("/static", "./web/static")
