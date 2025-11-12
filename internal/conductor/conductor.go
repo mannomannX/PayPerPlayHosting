@@ -344,8 +344,8 @@ func (c *Conductor) SyncQueuedServers(serverRepo interface{}) {
 		serverName := server.FieldByName("Name").String()
 		ownerID := server.FieldByName("OwnerID").String()
 
-		// Get RAM via GetRAMMb() method
-		getRamMethod := serversVal.Index(i).MethodByName("GetRAMMb")
+		// Get RAM via GetRAMMb() method (need Addr() for pointer receiver)
+		getRamMethod := serversVal.Index(i).Addr().MethodByName("GetRAMMb")
 		if !getRamMethod.IsValid() {
 			logger.Warn("QUEUE_SYNC: Server missing GetRAMMb method", map[string]interface{}{
 				"server_id": serverID[:8],
