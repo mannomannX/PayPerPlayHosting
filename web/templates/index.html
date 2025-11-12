@@ -405,6 +405,9 @@
                                                 'bg-yellow-600': server.RAMTier == 'custom'
                                             }" class="px-2 py-0.5 rounded text-xs font-semibold uppercase" x-text="getPlanDisplayName(server.Plan || 'payperplay')"></span>
                                         </span>
+                                        <span x-show="adminMode && server.ActualRAMMB > 0" class="text-blue-400" :title="'Booked: ' + (server.RAMMb / 1024).toFixed(1) + ' GB | Actual: ' + (server.ActualRAMMB / 1024).toFixed(2) + ' GB | System overhead: ' + ((server.RAMMb - server.ActualRAMMB) / 1024).toFixed(2) + ' GB'">
+                                            💾 <span x-text="(server.ActualRAMMB / 1024).toFixed(2)"></span> GB actual
+                                        </span>
                                         <span>Port: <span x-text="server.Port"></span></span>
                                         <span x-show="adminMode" class="text-yellow-400">Owner: <span x-text="server.OwnerID"></span></span>
                                     </div>
@@ -891,7 +894,13 @@
                                         <option value="8192">8 GB</option>
                                         <option value="16384">16 GB</option>
                                     </select>
-                                    <p class="text-xs text-gray-400 mt-1">Current: <span x-text="detailsModal.server?.RAMMb / 1024"></span> GB</p>
+                                    <p class="text-xs text-gray-400 mt-1">
+                                        Booked: <span x-text="detailsModal.server?.RAMMb / 1024"></span> GB
+                                        <span x-show="detailsModal.server?.ActualRAMMB > 0" class="text-blue-400">
+                                            | Actual: <span x-text="(detailsModal.server?.ActualRAMMB / 1024).toFixed(2)"></span> GB
+                                            | System: <span x-text="((detailsModal.server?.RAMMb - detailsModal.server?.ActualRAMMB) / 1024).toFixed(2)"></span> GB (<span x-text="(((detailsModal.server?.RAMMb - detailsModal.server?.ActualRAMMB) / detailsModal.server?.RAMMb) * 100).toFixed(1)"></span>% overhead)
+                                        </span>
+                                    </p>
                                 </div>
 
                                 <!-- Minecraft Version -->
