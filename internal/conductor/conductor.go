@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"time"
 
+	dockerclient "github.com/docker/docker/client"
 	"github.com/payperplay/hosting/internal/cloud"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
@@ -102,6 +103,11 @@ func (c *Conductor) Start() {
 
 	// Bootstrap: Register the current node (localhost)
 	c.bootstrapLocalNode()
+
+	// Bootstrap: Register proxy node if configured (Tier 2 - Proxy Layer)
+	if c.RemoteClient != nil {
+		c.bootstrapProxyNode()
+	}
 
 	// Start scaling engine if initialized
 	if c.ScalingEngine != nil {
@@ -284,24 +290,31 @@ func (c *Conductor) Stop() {
 }
 
 // bootstrapLocalNode registers the local Docker host as a node
+// Auto-detects system resources using Docker API
 func (c *Conductor) bootstrapLocalNode() {
-	// TODO: Auto-detect system resources using Docker API or /proc/meminfo
-	// For now, using a conservative estimate based on actual system capacity
 	cfg := config.AppConfig
+
+	// Auto-detect system resources via Docker API
+	totalRAMMB, totalCPU := c.detectSystemResources()
 
 	localNode := &Node{
 		ID:               "local-node",
 		Hostname:         "localhost",
 		IPAddress:        "127.0.0.1",
 		Type:             "dedicated",
-		TotalRAMMB:       3500, // ~3.5GB - conservative estimate for 3.7GB system
-		TotalCPUCores:    2,    // Adjust based on actual server
+		TotalRAMMB:       totalRAMMB,
+		TotalCPUCores:    totalCPU,
 		Status:           NodeStatusUnknown,
 		LastHealthCheck:  time.Now(),
 		ContainerCount:   0,
 		AllocatedRAMMB:   0,
 		DockerSocketPath: "/var/run/docker.sock",
 		SSHUser:          "root",
+		Labels: map[string]string{
+			"provider": "hetzner",
+			"location": "nbg1",
+			"tier":     "control-plane",
+		},
 	}
 
 	// Calculate intelligent system reserve (3-tier strategy)
@@ -309,13 +322,158 @@ func (c *Conductor) bootstrapLocalNode() {
 
 	c.NodeRegistry.RegisterNode(localNode)
 
-	logger.Info("Local node registered with intelligent system reserve", map[string]interface{}{
+	// Publish node created event for dashboard
+	events.PublishNodeCreated(
+		localNode.ID,
+		localNode.Type,
+		"hetzner",
+		"nbg1",
+		string(localNode.Status),
+		localNode.IPAddress,
+		localNode.TotalRAMMB,
+		localNode.UsableRAMMB(),
+		localNode.CreatedAt,
+	)
+
+	logger.Info("Local node registered with auto-detected resources", map[string]interface{}{
 		"node_id":              localNode.ID,
 		"total_ram_mb":         localNode.TotalRAMMB,
 		"system_reserved_mb":   localNode.SystemReservedRAMMB,
 		"usable_ram_mb":        localNode.UsableRAMMB(),
 		"total_cpu":            localNode.TotalCPUCores,
 		"reservation_strategy": "3-tier intelligent",
+		"detection_method":     "docker-api",
+	})
+}
+
+// detectSystemResources auto-detects total RAM and CPU cores using Docker API
+// Returns (totalRAMMB, totalCPUCores)
+func (c *Conductor) detectSystemResources() (int, int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Create temporary Docker client for resource detection
+	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	if err != nil {
+		logger.Warn("Failed to create Docker client for resource detection, using fallback values", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return 3500, 2 // Fallback to conservative estimate
+	}
+	defer cli.Close()
+
+	info, err := cli.Info(ctx)
+	if err != nil {
+		logger.Warn("Failed to get Docker info for resource detection, using fallback values", map[string]interface{}{
+			"error": err.Error(),
+		})
+		return 3500, 2 // Fallback to conservative estimate
+	}
+
+	// Convert bytes to MB
+	totalRAMMB := int(info.MemTotal / 1024 / 1024)
+	totalCPU := info.NCPU
+
+	logger.Info("Auto-detected system resources via Docker API", map[string]interface{}{
+		"total_ram_mb":   totalRAMMB,
+		"total_cpu":      totalCPU,
+		"os_type":        info.OSType,
+		"architecture":   info.Architecture,
+		"docker_version": info.ServerVersion,
+	})
+
+	return totalRAMMB, totalCPU
+}
+
+// bootstrapProxyNode registers the proxy node (Tier 2 - Proxy Layer) if configured
+// Auto-detects resources via SSH + Docker API
+func (c *Conductor) bootstrapProxyNode() {
+	cfg := config.AppConfig
+
+	// Skip if proxy node IP not configured
+	if cfg.ProxyNodeIP == "" {
+		logger.Info("Proxy node not configured, skipping registration", nil)
+		return
+	}
+
+	// Skip if no remote client
+	if c.RemoteClient == nil {
+		logger.Warn("RemoteDockerClient not available, cannot register proxy node", nil)
+		return
+	}
+
+	logger.Info("Registering proxy node (Tier 2)", map[string]interface{}{
+		"ip_address": cfg.ProxyNodeIP,
+		"ssh_user":   cfg.ProxyNodeSSHUser,
+	})
+
+	// Build RemoteNode struct for SSH operations
+	remoteNode := &docker.RemoteNode{
+		ID:        "proxy-node",
+		IPAddress: cfg.ProxyNodeIP,
+		SSHUser:   cfg.ProxyNodeSSHUser,
+	}
+
+	// Auto-detect system resources via SSH + Docker API
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	totalRAMMB, totalCPU, err := c.RemoteClient.GetSystemResources(ctx, remoteNode)
+	if err != nil {
+		logger.Error("Failed to detect proxy node resources, skipping registration", err, map[string]interface{}{
+			"node_ip": cfg.ProxyNodeIP,
+		})
+		return
+	}
+
+	// Register proxy node
+	proxyNode := &Node{
+		ID:               "proxy-node",
+		Hostname:         "velocity-proxy",
+		IPAddress:        cfg.ProxyNodeIP,
+		Type:             "dedicated",
+		TotalRAMMB:       totalRAMMB,
+		TotalCPUCores:    totalCPU,
+		Status:           NodeStatusUnknown,
+		LastHealthCheck:  time.Now(),
+		ContainerCount:   0,
+		AllocatedRAMMB:   0,
+		DockerSocketPath: "/var/run/docker.sock",
+		SSHUser:          cfg.ProxyNodeSSHUser,
+		Labels: map[string]string{
+			"provider": "hetzner",
+			"location": "nbg1",
+			"tier":     "proxy-layer",
+		},
+	}
+
+	// Calculate intelligent system reserve
+	// Proxy node needs less reserve than control plane (no DB, no MinecraftService)
+	proxyNode.UpdateSystemReserve(500, 10.0) // 500 MB base + 10% for Velocity proxy
+
+	c.NodeRegistry.RegisterNode(proxyNode)
+
+	// Publish node created event for dashboard
+	events.PublishNodeCreated(
+		proxyNode.ID,
+		proxyNode.Type,
+		"hetzner",
+		"nbg1",
+		string(proxyNode.Status),
+		proxyNode.IPAddress,
+		proxyNode.TotalRAMMB,
+		proxyNode.UsableRAMMB(),
+		proxyNode.CreatedAt,
+	)
+
+	logger.Info("Proxy node registered with auto-detected resources", map[string]interface{}{
+		"node_id":              proxyNode.ID,
+		"total_ram_mb":         proxyNode.TotalRAMMB,
+		"system_reserved_mb":   proxyNode.SystemReservedRAMMB,
+		"usable_ram_mb":        proxyNode.UsableRAMMB(),
+		"total_cpu":            proxyNode.TotalCPUCores,
+		"tier":                 "proxy-layer",
+		"detection_method":     "ssh-docker-api",
 	})
 }
 

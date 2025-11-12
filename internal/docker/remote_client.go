@@ -300,6 +300,42 @@ func (r *RemoteDockerClient) ExecuteSSHCommand(ctx context.Context, node *Remote
 	return r.executeSSHCommand(ctx, node, command)
 }
 
+// GetSystemResources retrieves system resources (RAM, CPU) from a remote node via Docker API
+// Returns (totalRAMMB, totalCPU, error)
+func (r *RemoteDockerClient) GetSystemResources(ctx context.Context, node *RemoteNode) (int, int, error) {
+	// Execute: docker info --format '{{.MemTotal}} {{.NCPU}}'
+	cmd := "docker info --format '{{.MemTotal}} {{.NCPU}}'"
+
+	output, err := r.executeSSHCommand(ctx, node, cmd)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get system resources on node %s: %w", node.ID, err)
+	}
+
+	// Parse output: "4096000000 2"
+	parts := strings.Fields(strings.TrimSpace(output))
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected docker info output format: %s", output)
+	}
+
+	// Parse memory (bytes) and CPU cores
+	var memBytes, cpuCores int64
+	if _, err := fmt.Sscanf(parts[0], "%d", &memBytes); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse memory: %w", err)
+	}
+	if _, err := fmt.Sscanf(parts[1], "%d", &cpuCores); err != nil {
+		return 0, 0, fmt.Errorf("failed to parse CPU cores: %w", err)
+	}
+
+	// Convert bytes to MB
+	totalRAMMB := int(memBytes / 1024 / 1024)
+	totalCPU := int(cpuCores)
+
+	log.Printf("[RemoteDocker] Detected resources on node %s: %d MB RAM, %d CPU cores",
+		node.ID, totalRAMMB, totalCPU)
+
+	return totalRAMMB, totalCPU, nil
+}
+
 // --- PRIVATE HELPER METHODS ---
 
 // buildDockerRunCommand builds a docker run command

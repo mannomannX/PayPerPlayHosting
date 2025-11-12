@@ -192,15 +192,19 @@ export const Dashboard = () => {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span style={{ opacity: 0.8 }}>Total RAM:</span>
+              <span style={{ opacity: 0.8 }} title="Total physical RAM across all nodes">Total RAM:</span>
               <span style={{ fontWeight: 'bold' }}>{(fleetStats.total_ram_mb / 1024).toFixed(1)} GB</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <span style={{ opacity: 0.8 }}>Allocated:</span>
-              <span style={{ fontWeight: 'bold' }}>{(fleetStats.allocated_ram_mb / 1024).toFixed(1)} GB</span>
+              <span style={{ opacity: 0.8 }} title="RAM available for containers (after system reserve)">Usable RAM:</span>
+              <span style={{ fontWeight: 'bold', color: '#3b82f6' }}>{(fleetStats.usable_ram_mb / 1024).toFixed(1)} GB</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <span style={{ opacity: 0.8 }} title="RAM currently allocated to running containers">Allocated:</span>
+              <span style={{ fontWeight: 'bold', color: '#f59e0b' }}>{(fleetStats.allocated_ram_mb / 1024).toFixed(1)} GB</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ opacity: 0.8 }}>Free:</span>
+              <span style={{ opacity: 0.8 }} title="RAM available for new containers">Available:</span>
               <span style={{ fontWeight: 'bold', color: '#10b981' }}>{(fleetStats.free_ram_mb / 1024).toFixed(1)} GB</span>
             </div>
           </div>

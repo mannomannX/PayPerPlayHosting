@@ -79,6 +79,8 @@ type Config struct {
 
 	// 3-Tier Architecture: Velocity Proxy Layer (Tier 2)
 	VelocityAPIURL string // URL to Velocity Remote API (e.g., http://91.98.232.193:8080)
+	ProxyNodeIP    string // IP address of proxy node for resource monitoring (e.g., 91.98.232.193)
+	ProxyNodeSSHUser string // SSH user for proxy node (default: root)
 }
 
 var AppConfig *Config
@@ -144,6 +146,8 @@ func Load() *Config {
 
 		// 3-Tier Architecture: Velocity Proxy Layer (Tier 2)
 		VelocityAPIURL: getEnv("VELOCITY_API_URL", ""),
+		ProxyNodeIP:    getEnv("PROXY_NODE_IP", "91.98.232.193"), // Default to known proxy node
+		ProxyNodeSSHUser: getEnv("PROXY_NODE_SSH_USER", "root"),
 	}
 
 	AppConfig = config
