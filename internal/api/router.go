@@ -262,14 +262,14 @@ func SetupRouter(
 			}
 		}
 
+		// Dashboard WebSocket (public for now - TODO: add admin auth later)
+		api.GET("/admin/dashboard/stream", dashboardWsHandler.HandleConnection)
+
 		// Admin endpoints
 		admin := api.Group("/admin")
 		{
 			admin.GET("/servers", handler.ListAllServers)             // List ALL servers
 			admin.POST("/cleanup", handler.CleanOrphanedServers)      // Clean orphaned servers
-
-			// Dashboard WebSocket (real-time visualization)
-			admin.GET("/dashboard/stream", dashboardWsHandler.HandleConnection)
 		}
 
 		// Global monitoring
