@@ -337,7 +337,7 @@ func (c *Conductor) SyncQueuedServers(serverRepo interface{}) {
 
 	// Iterate over servers
 	for i := 0; i < serversVal.Len(); i++ {
-		server := serversVal.Index(i).Elem() // Elem() to dereference pointer
+		server := serversVal.Index(i)
 
 		// Extract fields
 		serverID := server.FieldByName("ID").String()
