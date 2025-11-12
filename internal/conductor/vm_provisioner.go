@@ -50,7 +50,7 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		Labels: map[string]string{
 			"managed_by": "payperplay",
 			"type":       "cloud", // vs "dedicated"
-			"created_at": time.Now().Format(time.RFC3339),
+			"created_at": fmt.Sprintf("%d", time.Now().Unix()), // Unix timestamp - Hetzner-compliant
 		},
 		SSHKeys: []string{p.sshKeyName},
 	}
@@ -235,7 +235,7 @@ write_files:
     content: |
       NODE_TYPE=cloud
       MANAGED_BY=payperplay
-      PROVISIONED_AT=` + time.Now().Format(time.RFC3339) + `
+      PROVISIONED_AT=` + fmt.Sprintf("%d", time.Now().Unix()) + `
     owner: root:root
     permissions: '0644'
 
@@ -286,7 +286,7 @@ func (p *VMProvisioner) ProvisionNodeFromSnapshot(snapshotID string, serverType 
 			"managed_by":    "payperplay",
 			"type":          "cloud",
 			"from_snapshot": "true",
-			"created_at":    time.Now().Format(time.RFC3339),
+			"created_at":    fmt.Sprintf("%d", time.Now().Unix()), // Unix timestamp - Hetzner-compliant
 		},
 		SSHKeys: []string{p.sshKeyName},
 	}
