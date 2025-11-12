@@ -248,12 +248,17 @@ func (p *ReactivePolicy) getAvailableServerTypes() ([]*cloud.ServerType, error) 
 		}, err
 	}
 
-	// Filter to only x86 CPX-series (shared CPU, regular purpose, non-deprecated)
+	// Filter to only CPX2-series (shared CPU, latest generation)
+	// CPX2 series: cpx12, cpx22, cpx32, cpx42, cpx52, cpx62 (ends with '2')
+	// Exclude old CPX1 series: cpx11, cpx21, cpx31, cpx41, cpx51 (ends with '1')
 	filtered := make([]*cloud.ServerType, 0)
 	for _, st := range serverTypes {
-		// Only use CPX-series (shared x86 for regular workloads)
-		if len(st.Name) >= 3 && st.Name[:3] == "cpx" {
-			filtered = append(filtered, st)
+		// Only use CPX2-series (newer generation with better performance)
+		if len(st.Name) >= 4 && st.Name[:3] == "cpx" {
+			// Check if name ends with '2' (CPX2 generation)
+			if st.Name[len(st.Name)-1] == '2' {
+				filtered = append(filtered, st)
+			}
 		}
 	}
 
