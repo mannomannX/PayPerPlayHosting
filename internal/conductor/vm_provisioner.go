@@ -34,6 +34,12 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		"server_type": serverType,
 	})
 
+	// Get Ubuntu 22.04 image ID from Hetzner API
+	imageID, err := p.cloudProvider.GetUbuntuImage("22.04")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Ubuntu image: %w", err)
+	}
+
 	// Generate unique name
 	nodeName := fmt.Sprintf("payperplay-node-%d", time.Now().Unix())
 
@@ -44,8 +50,8 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	spec := cloud.ServerSpec{
 		Name:      nodeName,
 		Type:      serverType,
-		Image:     "ubuntu-22.04", // LTS version
-		Location:  "nbg1",          // Nuremberg, Germany (default)
+		Image:     imageID, // Ubuntu 22.04 LTS (retrieved from API)
+		Location:  "nbg1",  // Nuremberg, Germany (default)
 		CloudInit: cloudInit,
 		Labels: map[string]string{
 			"managed_by": "payperplay",

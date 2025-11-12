@@ -222,6 +222,37 @@ func (p *HetznerProvider) GetServerTypes() ([]*ServerType, error) {
 	return types, nil
 }
 
+// GetUbuntuImage finds the latest Ubuntu LTS image by version
+func (p *HetznerProvider) GetUbuntuImage(version string) (string, error) {
+	resp, err := p.request("GET", "/images?type=system&architecture=x86", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get images: %w", err)
+	}
+
+	var result struct {
+		Images []struct {
+			ID          int    `json:"id"`
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			OSFlavor    string `json:"os_flavor"`
+			OSVersion   string `json:"os_version"`
+		} `json:"images"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Find Ubuntu image matching version (e.g., "22.04")
+	for _, img := range result.Images {
+		if img.OSFlavor == "ubuntu" && img.OSVersion == version {
+			return fmt.Sprintf("%d", img.ID), nil
+		}
+	}
+
+	return "", fmt.Errorf("ubuntu %s image not found", version)
+}
+
 // GetServerType returns a specific server type by name
 func (p *HetznerProvider) GetServerType(name string) (*ServerType, error) {
 	resp, err := p.request("GET", "/server_types/"+name, nil)

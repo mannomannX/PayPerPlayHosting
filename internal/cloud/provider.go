@@ -15,6 +15,9 @@ type CloudProvider interface {
 	GetServerTypes() ([]*ServerType, error)
 	GetServerType(name string) (*ServerType, error)
 
+	// Images
+	GetUbuntuImage(version string) (string, error) // Returns image ID for Ubuntu version (e.g., "22.04")
+
 	// Health & Status
 	WaitForServerReady(serverID string, timeout time.Duration) error
 	GetServerStatus(serverID string) (ServerStatus, error)
