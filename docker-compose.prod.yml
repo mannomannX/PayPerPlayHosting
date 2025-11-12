@@ -71,7 +71,7 @@ services:
 
       # B5 Auto-Scaling (Hetzner Cloud)
       - HETZNER_CLOUD_TOKEN=${HETZNER_CLOUD_TOKEN:-5cFmHcMq3tUj8lKDtpMJCDP4lbKnDuR9FQuGTyYQf0QAI6lium4GigSbUUCGjg65}
-      - HETZNER_SSH_KEY_NAME=${HETZNER_SSH_KEY_NAME:-payperplay-main}
+      - HETZNER_SSH_KEY_NAME=${HETZNER_SSH_KEY_NAME:-payperplay@hetzner}
       - SCALING_ENABLED=${SCALING_ENABLED:-true}
       - SCALING_CHECK_INTERVAL=2m
       - SCALING_SCALE_UP_THRESHOLD=85.0
