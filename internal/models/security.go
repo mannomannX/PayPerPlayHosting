@@ -106,5 +106,9 @@ func (se *SecurityEvent) BeforeCreate(tx *gorm.DB) error {
 	if se.Timestamp.IsZero() {
 		se.Timestamp = time.Now()
 	}
+	// Ensure Metadata is valid JSON if empty
+	if se.Metadata == "" {
+		se.Metadata = "{}"
+	}
 	return nil
 }
