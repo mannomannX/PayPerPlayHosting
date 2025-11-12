@@ -137,20 +137,9 @@ func (c *Conductor) Start() {
 	go c.cpuMetricsWorker()
 	logger.Info("CPU metrics worker started (60-second intervals)", nil)
 
-	// CRITICAL: Sync existing Worker-Nodes from Hetzner on startup (prevents duplicate provisioning loop)
-	logger.Debug("Checking Worker-Node sync conditions", map[string]interface{}{
-		"scaling_engine_nil": c.ScalingEngine == nil,
-		"cloud_provider_nil": c.CloudProvider == nil,
-	})
-	if c.ScalingEngine != nil && c.CloudProvider != nil {
-		go c.syncExistingWorkerNodes()
-		logger.Info("Worker-Node sync started (recovers nodes from Hetzner API)", nil)
-	} else {
-		logger.Warn("Worker-Node sync skipped", map[string]interface{}{
-			"scaling_engine_nil": c.ScalingEngine == nil,
-			"cloud_provider_nil": c.CloudProvider == nil,
-		})
-	}
+	// NOTE: Worker-Node sync is now called explicitly from main.go AFTER queue sync
+	// This ensures the queue is populated before scaling decisions are made
+	// See cmd/api/main.go for the startup sequence
 
 	logger.Info("Conductor Core started successfully", nil)
 }
@@ -297,7 +286,8 @@ func (c *Conductor) SyncRunningContainers(dockerSvc interface{}, serverRepo inte
 // SyncQueuedServers synchronizes queued servers from database into StartQueue
 // CRITICAL: Prevents queue loss after container restart, ensures Worker-Nodes aren't decommissioned prematurely
 // This must be called from main.go after services are initialized
-func (c *Conductor) SyncQueuedServers(serverRepo interface{}) {
+// If triggerScaling is false, no scaling check will be triggered (useful during startup sequence)
+func (c *Conductor) SyncQueuedServers(serverRepo interface{}, triggerScaling bool) {
 	logger.Info("QUEUE_SYNC: Detecting queued servers from database...", nil)
 
 	// Use reflection to call FindByStatus on serverRepo
@@ -386,8 +376,8 @@ func (c *Conductor) SyncQueuedServers(serverRepo interface{}) {
 		"enqueued": enqueuedCount,
 	})
 
-	// Trigger immediate scaling check to provision capacity for queued servers
-	if enqueuedCount > 0 {
+	// Trigger immediate scaling check to provision capacity for queued servers (only if requested)
+	if triggerScaling && enqueuedCount > 0 {
 		logger.Info("QUEUE_SYNC: Triggering scaling check to provision capacity", nil)
 		c.TriggerScalingCheck()
 	}
@@ -1310,9 +1300,10 @@ func (c *Conductor) collectCPUMetrics() {
 	}
 }
 
-// syncExistingWorkerNodes queries Hetzner API and registers all existing Worker-Nodes
+// SyncExistingWorkerNodes queries Hetzner API and registers all existing Worker-Nodes
 // CRITICAL: Prevents infinite provisioning loop by recovering nodes after container restart
-func (c *Conductor) syncExistingWorkerNodes() {
+// If triggerScaling is false, no scaling check will be triggered (useful during startup sequence)
+func (c *Conductor) SyncExistingWorkerNodes(triggerScaling bool) {
 	logger.Info("WORKER-NODE-SYNC: Starting Worker-Node synchronization from Hetzner API", nil)
 
 	// Query Hetzner for all PayPerPlay-managed cloud nodes
@@ -1428,8 +1419,8 @@ func (c *Conductor) syncExistingWorkerNodes() {
 		"total":     len(servers),
 	})
 
-	// After recovering nodes, trigger scaling check to assign queued servers
-	if recoveredCount > 0 {
+	// After recovering nodes, trigger scaling check to assign queued servers (only if requested)
+	if triggerScaling && recoveredCount > 0 {
 		logger.Info("WORKER-NODE-SYNC: Triggering scaling check to assign queued servers", nil)
 		c.TriggerScalingCheck()
 	}
