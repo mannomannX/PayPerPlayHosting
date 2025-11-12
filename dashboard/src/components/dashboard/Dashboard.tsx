@@ -16,8 +16,8 @@ import { DedicatedNode } from '../nodes/DedicatedNode';
 import { VelocityNode } from '../nodes/VelocityNode';
 import { MigrationEdge } from '../edges/MigrationEdge';
 
-// WebSocket URL - uses current host or fallback to server IP
-const WS_URL = `ws://${window.location.hostname}:8000/api/admin/dashboard/stream`;
+// WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
+const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
 
 export const Dashboard = () => {
   const {
