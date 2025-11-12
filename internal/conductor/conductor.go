@@ -26,13 +26,14 @@ type Conductor struct {
 	NodeRegistry      *NodeRegistry
 	ContainerRegistry *ContainerRegistry
 	HealthChecker     *HealthChecker
-	NodeSelector      *NodeSelector         // Multi-Node: Intelligent node selection for container placement
-	ScalingEngine     *ScalingEngine        // B5 - Auto-Scaling
+	NodeSelector      *NodeSelector              // Multi-Node: Intelligent node selection for container placement
+	ScalingEngine     *ScalingEngine             // B5 - Auto-Scaling
 	RemoteClient      *docker.RemoteDockerClient // For remote node operations (SSH-based)
-	StartQueue        *StartQueue           // Queue for servers waiting for capacity
-	StartedAt         time.Time             // When Conductor started (for startup delay)
-	serverStarter     ServerStarter         // Interface to start servers (injected)
-	stopChan          chan struct{}         // For graceful shutdown of background workers
+	CloudProvider     cloud.CloudProvider        // Cloud provider for metrics (optional)
+	StartQueue        *StartQueue                // Queue for servers waiting for capacity
+	StartedAt         time.Time                  // When Conductor started (for startup delay)
+	serverStarter     ServerStarter              // Interface to start servers (injected)
+	stopChan          chan struct{}              // For graceful shutdown of background workers
 }
 
 // NewConductor creates a new conductor instance
@@ -83,6 +84,9 @@ func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyN
 		return
 	}
 
+	// Store cloud provider for CPU metrics
+	c.CloudProvider = cloudProvider
+
 	vmProvisioner := NewVMProvisioner(cloudProvider, c.NodeRegistry, sshKeyName)
 	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, c.StartQueue, enabled, velocityClient)
 	c.ScalingEngine.SetConductor(c) // Set back-reference for migrations (B8)
@@ -128,6 +132,10 @@ func (c *Conductor) Start() {
 	// Start reservation timeout cleaner (checks every 5 minutes)
 	go c.reservationTimeoutWorker()
 	logger.Info("Reservation timeout worker started (5-minute intervals, 30-minute timeout)", nil)
+
+	// Start CPU metrics collector (checks every 60 seconds)
+	go c.cpuMetricsWorker()
+	logger.Info("CPU metrics worker started (60-second intervals)", nil)
 
 	logger.Info("Conductor Core started successfully", nil)
 }
@@ -1075,6 +1083,78 @@ func (c *Conductor) MigrateServer(serverID, fromNodeID, toNodeID string, velocit
 	events.PublishMigrationCompleted(operationID, serverID)
 
 	return nil
+}
+
+// cpuMetricsWorker collects CPU metrics from cloud nodes every 60 seconds
+// and publishes NodeStatsEvents for dashboard visualization
+func (c *Conductor) cpuMetricsWorker() {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	// Perform initial collection after 10 seconds (let nodes settle)
+	time.Sleep(10 * time.Second)
+	c.collectCPUMetrics()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.collectCPUMetrics()
+		case <-c.stopChan:
+			logger.Info("CPU metrics worker stopped", nil)
+			return
+		}
+	}
+}
+
+// collectCPUMetrics collects CPU usage from all nodes and publishes stats events
+func (c *Conductor) collectCPUMetrics() {
+	nodes := c.NodeRegistry.GetAllNodes()
+
+	for _, node := range nodes {
+		var cpuUsage float64
+
+		// Get CPU metrics based on node type
+		if node.CloudProviderID != "" && c.CloudProvider != nil {
+			// Cloud node - get metrics from Hetzner API
+			cpu, err := c.CloudProvider.GetServerMetrics(node.CloudProviderID)
+			if err != nil {
+				logger.Warn("Failed to get CPU metrics from cloud provider", map[string]interface{}{
+					"node_id": node.ID,
+					"error":   err.Error(),
+				})
+				continue
+			}
+			cpuUsage = cpu
+		} else {
+			// Local/Dedicated node - use Docker stats (TODO: implement local CPU collection)
+			// For now, skip local nodes
+			continue
+		}
+
+		// Update node CPU in registry
+		c.NodeRegistry.UpdateNodeCPU(node.ID, cpuUsage)
+
+		// Publish NodeStatsEvent for dashboard
+		containerCount, allocatedRAM := c.ContainerRegistry.GetNodeAllocation(node.ID)
+		capacityPercent := 0.0
+		if node.UsableRAMMB() > 0 {
+			capacityPercent = (float64(allocatedRAM) / float64(node.UsableRAMMB())) * 100
+		}
+
+		events.PublishNodeStats(
+			node.ID,
+			allocatedRAM,
+			node.AvailableRAMMB(),
+			containerCount,
+			capacityPercent,
+			cpuUsage,
+		)
+
+		logger.Debug("CPU metrics collected", map[string]interface{}{
+			"node_id":           node.ID,
+			"cpu_usage_percent": cpuUsage,
+		})
+	}
 }
 
 // VelocityRemoteClient interface for Velocity integration (dependency injection)

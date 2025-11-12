@@ -103,6 +103,16 @@ func (r *NodeRegistry) UpdateNodeResources(nodeID string, containerCount int, al
 	}
 }
 
+// UpdateNodeCPU updates the CPU usage for a node
+func (r *NodeRegistry) UpdateNodeCPU(nodeID string, cpuUsagePercent float64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if node, exists := r.nodes[nodeID]; exists {
+		node.CPUUsagePercent = cpuUsagePercent
+	}
+}
+
 // RemoveNode removes a node from the registry
 func (r *NodeRegistry) RemoveNode(nodeID string) {
 	r.mu.Lock()

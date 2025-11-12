@@ -22,6 +22,7 @@ interface DashboardNode extends Node {
     freeRAM: number;
     containerCount: number;
     capacityPercent: number;
+    cpuUsagePercent?: number;
     status: string;
     ipAddress: string;
     containers: ContainerInfo[];
@@ -169,6 +170,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
                 freeRAM: event.free_ram_mb,
                 containerCount: event.container_count,
                 capacityPercent: event.capacity_percent,
+                cpuUsagePercent: event.cpu_usage_percent,
               },
             }
           : node

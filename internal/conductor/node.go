@@ -19,6 +19,7 @@ type Node struct {
 	Type                string            `json:"type"` // "dedicated", "cloud", "local", or "spare"
 	TotalRAMMB          int               `json:"total_ram_mb"`
 	TotalCPUCores       int               `json:"total_cpu_cores"`
+	CPUUsagePercent     float64           `json:"cpu_usage_percent"`     // Current CPU usage (0-100%)
 	Status              NodeStatus        `json:"status"`
 	LastHealthCheck     time.Time         `json:"last_health_check"`
 	ContainerCount      int               `json:"container_count"`

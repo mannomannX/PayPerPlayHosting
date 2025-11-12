@@ -31,6 +31,9 @@ type CloudProvider interface {
 
 	// Pricing (for cost tracking)
 	GetServerPricing(serverType string) (*Pricing, error)
+
+	// Metrics (for monitoring)
+	GetServerMetrics(serverID string) (float64, error) // Returns CPU usage percentage
 }
 
 // ServerSpec defines what we want to create

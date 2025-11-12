@@ -12,6 +12,7 @@ interface CloudNodeProps {
     freeRAM: number;
     containerCount: number;
     capacityPercent: number;
+    cpuUsagePercent?: number;
     status: string;
     ipAddress: string;
     containers: Array<{
@@ -92,10 +93,21 @@ export const CloudNode = ({ data }: CloudNodeProps) => {
           <span>Free:</span>
           <span>{data.freeRAM} MB</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
           <span>Containers:</span>
           <span>{data.containerCount}</span>
         </div>
+        {data.cpuUsagePercent !== undefined && (
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span>CPU Usage:</span>
+            <span style={{
+              color: data.cpuUsagePercent > 80 ? '#ef4444' : data.cpuUsagePercent > 60 ? '#f59e0b' : '#10b981',
+              fontWeight: 'bold'
+            }}>
+              {data.cpuUsagePercent.toFixed(1)}%
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Container List */}

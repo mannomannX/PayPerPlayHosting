@@ -143,6 +143,60 @@ func (p *HetznerProvider) GetServer(serverID string) (*Server, error) {
 	return p.convertServer(&result.Server), nil
 }
 
+// GetServerMetrics retrieves CPU, disk, and network metrics for a server
+// Returns average CPU usage percentage over the last 5 minutes
+func (p *HetznerProvider) GetServerMetrics(serverID string) (float64, error) {
+	// Get metrics for the last 5 minutes
+	now := time.Now()
+	start := now.Add(-5 * time.Minute).Unix()
+	end := now.Unix()
+
+	endpoint := fmt.Sprintf("/servers/%s/metrics?type=cpu&start=%d&end=%d", serverID, start, end)
+
+	resp, err := p.request("GET", endpoint, nil)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get server metrics: %w", err)
+	}
+
+	var result struct {
+		Metrics struct {
+			TimeSeries map[string]struct {
+				Values [][]interface{} `json:"values"`
+			} `json:"time_series"`
+		} `json:"metrics"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return 0, fmt.Errorf("failed to parse metrics response: %w", err)
+	}
+
+	// Extract CPU values from time series
+	cpuSeries, exists := result.Metrics.TimeSeries["cpu"]
+	if !exists || len(cpuSeries.Values) == 0 {
+		return 0, nil // No data available
+	}
+
+	// Calculate average CPU usage
+	var totalCPU float64
+	count := 0
+	for _, point := range cpuSeries.Values {
+		if len(point) >= 2 {
+			// point[0] is timestamp, point[1] is CPU value
+			if cpuVal, ok := point[1].(float64); ok {
+				totalCPU += cpuVal
+				count++
+			}
+		}
+	}
+
+	if count == 0 {
+		return 0, nil
+	}
+
+	avgCPU := totalCPU / float64(count)
+	return avgCPU, nil
+}
+
 // ===== Server Types =====
 
 // GetServerTypes returns all available server types

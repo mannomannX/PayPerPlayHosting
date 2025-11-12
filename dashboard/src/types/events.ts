@@ -25,6 +25,7 @@ export interface NodeStatsEvent {
   free_ram_mb: number;
   container_count: number;
   capacity_percent: number;
+  cpu_usage_percent?: number;
 }
 
 export interface NodeRemovedEvent {

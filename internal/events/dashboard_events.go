@@ -61,6 +61,24 @@ func PublishNodeStatsUpdate(nodeID string, usableRAMMB, allocatedRAMMB, freeRAMM
 	DashboardEventPublisher.PublishEvent("node.stats", data)
 }
 
+// PublishNodeStats publishes comprehensive node statistics including CPU metrics
+func PublishNodeStats(nodeID string, allocatedRAMMB, freeRAMMB, containerCount int, capacityPercent, cpuUsagePercent float64) {
+	if DashboardEventPublisher == nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"node_id":           nodeID,
+		"allocated_ram_mb":  allocatedRAMMB,
+		"free_ram_mb":       freeRAMMB,
+		"container_count":   containerCount,
+		"capacity_percent":  capacityPercent,
+		"cpu_usage_percent": cpuUsagePercent,
+	}
+
+	DashboardEventPublisher.PublishEvent("node.stats", data)
+}
+
 // PublishDashboardNodeRemoved publishes a node removal event to dashboard
 func PublishDashboardNodeRemoved(nodeID string, reason string) {
 	if DashboardEventPublisher == nil {
