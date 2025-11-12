@@ -127,9 +127,10 @@ func (p *ConsolidationPolicy) ShouldConsolidate(ctx ScalingContext) (bool, Conso
 	}
 
 	// Check 6: Fleet capacity check (don't consolidate if too full)
+	// PROPORTIONAL OVERHEAD: Check against TotalRAM, not UsableRAM
 	capacityPercent := float64(0)
-	if ctx.FleetStats.UsableRAMMB > 0 {
-		capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.UsableRAMMB)) * 100
+	if ctx.FleetStats.TotalRAMMB > 0 {
+		capacityPercent = (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 	}
 
 	if capacityPercent > p.MaxCapacityPercent {
@@ -292,6 +293,8 @@ func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) Consoli
 	}
 
 	// 3. Calculate perfect packing for standard tiers
+	// PROPORTIONAL OVERHEAD: Use TotalRAM for capacity (16GB = 16384 MB)
+	// System overhead is distributed proportionally across containers, not subtracted from node capacity
 	nodeCapacity := 16384 // cpx42 = 16GB standard worker node (CPX2 series)
 	totalNodesNeeded := 0
 

@@ -14,6 +14,7 @@ import (
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/config"
+	"github.com/payperplay/hosting/pkg/logger"
 )
 
 type MinecraftService struct {
@@ -119,6 +120,10 @@ type ConductorInterface interface {
 
 	// GetRemoteDockerClient returns the RemoteDockerClient for remote node operations
 	GetRemoteDockerClient() *docker.RemoteDockerClient
+
+	// GetNode retrieves node information by nodeID (needed for proportional RAM calculations)
+	// Returns (*conductor.Node, bool) where bool indicates if node exists
+	GetNode(nodeID string) (interface{}, bool)
 }
 
 func NewMinecraftService(
@@ -693,6 +698,47 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 
 	log.Printf("Queued server %s assigned to node %s", server.ID, selectedNodeID)
 
+	// PROPORTIONAL RAM OVERHEAD: Calculate actual RAM allocation based on node's reduction factor
+	if s.conductor != nil {
+		nodeInterface, exists := s.conductor.GetNode(selectedNodeID)
+		if exists {
+			// Type assert to *conductor.Node (via reflection-safe type switch)
+			type NodeWithRAMCalculation interface {
+				CalculateActualRAM(bookedRAMMB int) int
+				GetReductionFactor() float64
+			}
+
+			if node, ok := nodeInterface.(NodeWithRAMCalculation); ok {
+				server.ActualRAMMB = node.CalculateActualRAM(server.RAMMb)
+
+				logger.Info("Container RAM calculated with proportional overhead", map[string]interface{}{
+					"server_id":        server.ID,
+					"booked_ram_mb":    server.RAMMb,
+					"actual_ram_mb":    server.ActualRAMMB,
+					"reduction_factor": node.GetReductionFactor(),
+					"system_share_mb":  server.RAMMb - server.ActualRAMMB,
+					"node_id":          selectedNodeID,
+				})
+
+				// Update database with actual RAM
+				if err := s.repo.Update(server); err != nil {
+					log.Printf("Warning: Failed to update ActualRAMMB for server %s: %v", server.ID, err)
+				}
+			} else {
+				// Fallback: Type assertion failed
+				log.Printf("Warning: Node type assertion failed for %s, using booked RAM as actual", selectedNodeID)
+				server.ActualRAMMB = server.RAMMb
+			}
+		} else {
+			// Fallback: If node not found, use booked RAM (shouldn't happen)
+			log.Printf("Warning: Node %s not found, using booked RAM as actual", selectedNodeID)
+			server.ActualRAMMB = server.RAMMb
+		}
+	} else {
+		// Fallback: If conductor not available, use booked RAM
+		server.ActualRAMMB = server.RAMMb
+	}
+
 	// Wake from sleep if necessary
 	if server.LifecyclePhase == models.PhaseSleep || server.Status == models.StatusSleeping {
 		log.Printf("Waking server %s from sleep phase", serverID)
@@ -712,17 +758,25 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 	}
 
 	// Create container with local/remote routing
+	// PROPORTIONAL OVERHEAD: Use ActualRAMMB for Docker container limits
+	actualRAM := server.ActualRAMMB
+	if actualRAM == 0 {
+		// Fallback to booked RAM if ActualRAM not calculated
+		actualRAM = server.RAMMb
+		log.Printf("Warning: ActualRAMMB not set for server %s, using booked RAM %d MB", server.ID, actualRAM)
+	}
+
 	var containerID string
 	if server.ContainerID == "" || server.ContainerID != "" {
 		// Route container creation based on node type
 		if s.isLocalNode(selectedNodeID) {
 			// LOCAL NODE: Use local dockerService
-			log.Printf("Creating container for queued server %s on LOCAL node", server.ID)
+			log.Printf("Creating container for queued server %s on LOCAL node with %d MB actual RAM", server.ID, actualRAM)
 			containerID, err = s.dockerService.CreateContainer(
 				server.ID,
 				string(server.ServerType),
 				server.MinecraftVersion,
-				server.RAMMb,
+				actualRAM,
 				server.Port,
 				server.MaxPlayers,
 				server.Gamemode,

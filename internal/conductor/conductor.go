@@ -1063,6 +1063,14 @@ func (c *Conductor) SelectNodeForContainerAuto(requiredRAMMB int) (string, error
 	return nodeID, err
 }
 
+// GetNode retrieves node information by nodeID
+// Used for proportional RAM calculations and node capacity checks
+// Returns (interface{}, bool) where interface{} is *Node and bool indicates if node exists
+func (c *Conductor) GetNode(nodeID string) (interface{}, bool) {
+	node, exists := c.NodeRegistry.GetNode(nodeID)
+	return node, exists
+}
+
 // GetRemoteNode builds a RemoteNode struct from a nodeID
 // Returns (RemoteNode, error) - error if node not found or is the local node
 func (c *Conductor) GetRemoteNode(nodeID string) (*docker.RemoteNode, error) {

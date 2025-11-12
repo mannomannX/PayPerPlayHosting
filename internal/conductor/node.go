@@ -160,3 +160,26 @@ func (n *Node) UpdateSystemReserve(baseReserveMB int, reservePercent float64) {
 func (n *Node) IsHealthy() bool {
 	return n.Status == NodeStatusHealthy
 }
+
+// GetReductionFactor returns the proportional RAM reduction factor for containers
+// This factor accounts for system overhead distributed proportionally across all containers
+// Formula: (TotalRAM - SystemReserve) / TotalRAM
+// Example: (8192 - 1228) / 8192 = 0.85 (15% overhead per container)
+func (n *Node) GetReductionFactor() float64 {
+	if n.TotalRAMMB == 0 {
+		return 1.0 // No reduction if no total RAM (shouldn't happen)
+	}
+	return float64(n.TotalRAMMB - n.SystemReservedRAMMB) / float64(n.TotalRAMMB)
+}
+
+// CalculateActualRAM calculates the actual RAM a container receives
+// after proportional system overhead is deducted
+// Example: 4096 MB booked × 0.85 factor = 3482 MB actual
+func (n *Node) CalculateActualRAM(bookedRAMMB int) int {
+	actualRAM := int(float64(bookedRAMMB) * n.GetReductionFactor())
+	// Ensure minimum 512MB even after reduction
+	if actualRAM < 512 {
+		actualRAM = 512
+	}
+	return actualRAM
+}

@@ -12,11 +12,17 @@ import (
 // BuildContainerEnv builds environment variables from a MinecraftServer model
 // These env vars are compatible with itzg/minecraft-server Docker image
 func BuildContainerEnv(server *models.MinecraftServer) []string {
+	// PROPORTIONAL OVERHEAD: Use ActualRAMMB for Docker memory limits
+	actualRAM := server.ActualRAMMB
+	if actualRAM == 0 {
+		actualRAM = server.RAMMb // Fallback to booked RAM
+	}
+
 	env := []string{
 		"EULA=TRUE",
 		fmt.Sprintf("TYPE=%s", getServerTypeEnv(string(server.ServerType))),
 		fmt.Sprintf("VERSION=%s", server.MinecraftVersion),
-		fmt.Sprintf("MEMORY=%dM", server.RAMMb),
+		fmt.Sprintf("MEMORY=%dM", actualRAM),
 		fmt.Sprintf("MAX_PLAYERS=%d", server.MaxPlayers),
 		"ONLINE_MODE=TRUE",
 		"SERVER_NAME=PayPerPlay Server",

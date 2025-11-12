@@ -86,10 +86,16 @@ func (ns *NodeSelector) getCandidates(requiredRAMMB int) []*Node {
 	for _, node := range ns.nodeRegistry.nodes {
 		// Filter criteria:
 		// 1. Node must be healthy
-		// 2. Node must have sufficient available RAM
+		// 2. Node must have sufficient available RAM (checked against TotalRAM for proportional overhead)
 		// 3. Node must NOT be a system node (Control Plane or Proxy)
 		//    - Minecraft servers should only run on worker nodes
-		if node.IsHealthy() && node.AvailableRAMMB() >= requiredRAMMB && !node.IsSystemNode {
+
+		// PROPORTIONAL OVERHEAD: Check against TotalRAM, not UsableRAM
+		// System overhead is now distributed proportionally across all containers
+		// Example: cpx32 (8GB) can fit 2x 4GB bookings, each gets ~3.5GB actual
+		availableRAM := node.TotalRAMMB - node.AllocatedRAMMB
+
+		if node.IsHealthy() && availableRAM >= requiredRAMMB && !node.IsSystemNode {
 			candidates = append(candidates, node)
 		}
 	}
@@ -228,7 +234,9 @@ func (ns *NodeSelector) HasAvailableWorkerNodes() bool {
 
 	for _, node := range ns.nodeRegistry.nodes {
 		// Check if this is a healthy worker node (not a system node) with any available RAM
-		if !node.IsSystemNode && node.IsHealthy() && node.AvailableRAMMB() > 0 {
+		// PROPORTIONAL OVERHEAD: Check against TotalRAM
+		availableRAM := node.TotalRAMMB - node.AllocatedRAMMB
+		if !node.IsSystemNode && node.IsHealthy() && availableRAM > 0 {
 			return true
 		}
 	}

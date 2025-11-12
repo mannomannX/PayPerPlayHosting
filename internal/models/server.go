@@ -54,7 +54,8 @@ type MinecraftServer struct {
 	// Server Configuration
 	ServerType       ServerType `gorm:"not null"`
 	MinecraftVersion string     `gorm:"not null"`
-	RAMMb            int        `gorm:"not null"`
+	RAMMb            int        `gorm:"not null"` // Booked RAM (what customer pays for)
+	ActualRAMMB      int        `gorm:"default:0"` // Actual RAM allocated to container (after proportional overhead deduction)
 	MaxPlayers       int        `gorm:"default:20"`
 	Port             int        `gorm:"unique"`
 
