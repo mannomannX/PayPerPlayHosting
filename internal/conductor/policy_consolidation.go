@@ -200,7 +200,7 @@ func (p *ConsolidationPolicy) calculateOptimalLayout(ctx ScalingContext) Consoli
 	}
 
 	// 3. Calculate perfect packing for standard tiers
-	nodeCapacity := 16384 // cpx41 = 16GB standard worker node
+	nodeCapacity := 16384 // cpx42 = 16GB standard worker node (CPX2 series)
 	totalNodesNeeded := 0
 
 	// Count containers by tier (for perfect packing calculation)

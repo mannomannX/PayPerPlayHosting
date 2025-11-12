@@ -229,22 +229,22 @@ func (p *ReactivePolicy) getAvailableServerTypes() ([]*cloud.ServerType, error) 
 		// Fallback if cloudProvider not available (shouldn't happen)
 		logger.Warn("CloudProvider not available, using fallback server types", nil)
 		return []*cloud.ServerType{
-			{Name: "cpx11", RAMMB: 2048, Cores: 2, HourlyCostEUR: 0.0063},  // NBG1 pricing
-			{Name: "cpx22", RAMMB: 4096, Cores: 2, HourlyCostEUR: 0.0096},  // NBG1 pricing (CPX2 - better value than cpx21)
-			{Name: "cpx32", RAMMB: 8192, Cores: 4, HourlyCostEUR: 0.0168},  // NBG1 pricing (CPX2 - better value than cpx31)
-			{Name: "cpx42", RAMMB: 16384, Cores: 8, HourlyCostEUR: 0.0312}, // NBG1 pricing (CPX2)
+			{Name: "cpx22", RAMMB: 4096, Cores: 2, HourlyCostEUR: 0.0096},   // NBG1 pricing (CPX2 series)
+			{Name: "cpx32", RAMMB: 8192, Cores: 4, HourlyCostEUR: 0.0168},   // NBG1 pricing (CPX2 series)
+			{Name: "cpx42", RAMMB: 16384, Cores: 8, HourlyCostEUR: 0.0312},  // NBG1 pricing (CPX2 series)
+			{Name: "cpx52", RAMMB: 24576, Cores: 16, HourlyCostEUR: 0.0624}, // NBG1 pricing (CPX2 series)
 		}, nil
 	}
 
 	serverTypes, err := p.cloudProvider.GetServerTypes()
 	if err != nil {
 		logger.Error("Failed to fetch server types from Hetzner", err, nil)
-		// Return fallback on error (NBG1 pricing - CPX2 series preferred)
+		// Return fallback on error (NBG1 pricing - CPX2 series)
 		return []*cloud.ServerType{
-			{Name: "cpx11", RAMMB: 2048, Cores: 2, HourlyCostEUR: 0.0063},  // CPX1
-			{Name: "cpx22", RAMMB: 4096, Cores: 2, HourlyCostEUR: 0.0096},  // CPX2 - better value
-			{Name: "cpx32", RAMMB: 8192, Cores: 4, HourlyCostEUR: 0.0168},  // CPX2 - better value
-			{Name: "cpx42", RAMMB: 16384, Cores: 8, HourlyCostEUR: 0.0312}, // CPX2
+			{Name: "cpx22", RAMMB: 4096, Cores: 2, HourlyCostEUR: 0.0096},   // CPX2 series
+			{Name: "cpx32", RAMMB: 8192, Cores: 4, HourlyCostEUR: 0.0168},   // CPX2 series
+			{Name: "cpx42", RAMMB: 16384, Cores: 8, HourlyCostEUR: 0.0312},  // CPX2 series
+			{Name: "cpx52", RAMMB: 24576, Cores: 16, HourlyCostEUR: 0.0624}, // CPX2 series
 		}, err
 	}
 
@@ -280,7 +280,7 @@ func (p *ReactivePolicy) selectServerType(ctx ScalingContext, capacityPercent fl
 	serverTypes, err := p.getAvailableServerTypes()
 	if err != nil || len(serverTypes) == 0 {
 		logger.Warn("Using fallback server type", map[string]interface{}{"error": err})
-		return "cpx21" // Fallback
+		return "cpx22" // Fallback to CPX2 series (4GB)
 	}
 
 	// Filter by configured min/max RAM
@@ -374,7 +374,7 @@ func (p *ReactivePolicy) selectByQueue(ctx ScalingContext, serverTypes []*cloud.
 		return bestType.Name
 	}
 
-	return "cpx41" // Fallback to 16GB standard worker node
+	return "cpx42" // Fallback to CPX2 series (16GB standard worker node)
 }
 
 // selectByCapacity selects node type based on current capacity pressure
@@ -406,7 +406,7 @@ func (p *ReactivePolicy) selectByCapacity(ctx ScalingContext, capacityPercent fl
 // findClosestServerType finds the server type closest to target RAM
 func (p *ReactivePolicy) findClosestServerType(serverTypes []*cloud.ServerType, targetRAM int) string {
 	if len(serverTypes) == 0 {
-		return "cpx41" // Fallback
+		return "cpx42" // Fallback to CPX2 series (16GB)
 	}
 
 	var bestType *cloud.ServerType
