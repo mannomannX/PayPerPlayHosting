@@ -87,12 +87,27 @@ func (ns *NodeSelector) getCandidates(requiredRAMMB int) []*Node {
 		// Filter criteria:
 		// 1. Node must be healthy
 		// 2. Node must have sufficient available RAM
-		if node.IsHealthy() && node.AvailableRAMMB() >= requiredRAMMB {
+		// 3. Node must NOT be a system node (Control Plane or Proxy)
+		//    - Minecraft servers should only run on worker nodes
+		if node.IsHealthy() && node.AvailableRAMMB() >= requiredRAMMB && !ns.isSystemNode(node) {
 			candidates = append(candidates, node)
 		}
 	}
 
 	return candidates
+}
+
+// isSystemNode checks if a node is a system node (Control Plane or Proxy)
+// System nodes are reserved for infrastructure and should not run Minecraft servers
+func (ns *NodeSelector) isSystemNode(node *Node) bool {
+	// Check if node ID contains system node identifiers
+	nodeID := node.ID
+	return nodeID == "local-node" ||
+		   nodeID == "control-plane" ||
+		   nodeID == "proxy-node" ||
+		   (len(nodeID) >= 5 && nodeID[:5] == "local") ||
+		   (len(nodeID) >= 7 && nodeID[:7] == "control") ||
+		   (len(nodeID) >= 5 && nodeID[:5] == "proxy")
 }
 
 // selectBestFit selects the node with the smallest available RAM that still fits

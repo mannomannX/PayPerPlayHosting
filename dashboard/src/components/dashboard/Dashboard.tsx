@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
+import { useState, useRef, useEffect } from 'react';
 
 import { useDashboardStore } from '../../stores/dashboardStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { GridNode } from '../nodes/GridNode';
+import { ManhattanArrow } from '../arrows/ManhattanArrow';
 
 // WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
 const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
@@ -10,12 +12,17 @@ const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
 export const Dashboard = () => {
   const {
     nodes,
+    migrations,
     fleetStats,
     queueInfo,
     connected,
     setConnected,
     handleEvent,
   } = useDashboardStore();
+
+  const [selectedMigration, setSelectedMigration] = useState<string | null>(null);
+  const [nodePositions, setNodePositions] = useState<Map<string, { x: number; y: number; width: number; height: number }>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // WebSocket connection
   useWebSocket({
@@ -25,6 +32,31 @@ export const Dashboard = () => {
     onDisconnect: () => setConnected(false),
     onError: (error) => console.error('[Dashboard] WebSocket error:', error),
   });
+
+  // Calculate node positions for arrow routing
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const positions = new Map<string, { x: number; y: number; width: number; height: number }>();
+    const nodeElements = containerRef.current.querySelectorAll('[data-node-id]');
+
+    nodeElements.forEach((element) => {
+      const nodeId = element.getAttribute('data-node-id');
+      if (!nodeId) return;
+
+      const rect = element.getBoundingClientRect();
+      const containerRect = containerRef.current!.getBoundingClientRect();
+
+      positions.set(nodeId, {
+        x: rect.left - containerRect.left,
+        y: rect.top - containerRect.top,
+        width: rect.width,
+        height: rect.height,
+      });
+    });
+
+    setNodePositions(positions);
+  }, [nodes, migrations]);
 
   // Separate nodes by tier for grid layout
   const controlNodes = nodes.filter(n => n.id.includes('local') || n.id.includes('control'));
@@ -254,28 +286,34 @@ export const Dashboard = () => {
       )}
 
       {/* Grid Layout for Nodes */}
-      <div style={{
-        position: 'absolute',
-        top: '80px',
-        left: '300px',
-        right: queueInfo && queueInfo.queue_size > 0 ? '360px' : '20px',
-        bottom: '20px',
-        padding: '20px',
-        overflowY: 'auto',
-      }}>
+      <div
+        ref={containerRef}
+        style={{
+          position: 'absolute',
+          top: '80px',
+          left: '300px',
+          right: queueInfo && queueInfo.queue_size > 0 ? '360px' : '20px',
+          bottom: '20px',
+          padding: '20px',
+          overflowY: 'auto',
+        }}>
         {/* Tier 1: Control Plane & Proxy */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, 320px)',
-          gap: '20px',
-          marginBottom: '40px',
+          gap: '60px',
+          marginBottom: '80px',
           justifyContent: 'start',
         }}>
           {controlNodes.map(node => (
-            <GridNode key={node.id} node={node} getStatusColor={getStatusColor} />
+            <div key={node.id} data-node-id={node.id}>
+              <GridNode node={node} getStatusColor={getStatusColor} />
+            </div>
           ))}
           {proxyNodes.map(node => (
-            <GridNode key={node.id} node={node} getStatusColor={getStatusColor} />
+            <div key={node.id} data-node-id={node.id}>
+              <GridNode node={node} getStatusColor={getStatusColor} />
+            </div>
           ))}
         </div>
 
@@ -284,7 +322,7 @@ export const Dashboard = () => {
           <div style={{
             height: '2px',
             background: 'linear-gradient(to right, transparent, #334155, transparent)',
-            marginBottom: '30px',
+            marginBottom: '60px',
             position: 'relative',
           }}>
             <div style={{
@@ -307,11 +345,13 @@ export const Dashboard = () => {
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fill, 320px)',
-          gap: '20px',
+          gap: '60px',
           justifyContent: 'start',
         }}>
           {workloadNodes.map(node => (
-            <GridNode key={node.id} node={node} getStatusColor={getStatusColor} />
+            <div key={node.id} data-node-id={node.id}>
+              <GridNode node={node} getStatusColor={getStatusColor} />
+            </div>
           ))}
         </div>
 
@@ -333,6 +373,46 @@ export const Dashboard = () => {
               Waiting for nodes to register...
             </div>
           </div>
+        )}
+
+        {/* SVG Overlay for Migration Arrows */}
+        {migrations.size > 0 && containerRef.current && (
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          >
+            {Array.from(migrations.values()).map((migration) => {
+              const fromNode = nodePositions.get(migration.from_node);
+              const toNode = nodePositions.get(migration.to_node);
+
+              if (!fromNode || !toNode) return null;
+
+              return (
+                <g key={migration.operation_id} style={{ pointerEvents: 'all' }}>
+                  <ManhattanArrow
+                    fromNode={{ id: migration.from_node, ...fromNode }}
+                    toNode={{ id: migration.to_node, ...toNode }}
+                    migration={migration}
+                    isSelected={selectedMigration === migration.operation_id}
+                    onClick={() => {
+                      if (selectedMigration === migration.operation_id) {
+                        setSelectedMigration(null);
+                      } else {
+                        setSelectedMigration(migration.operation_id);
+                      }
+                    }}
+                  />
+                </g>
+              );
+            })}
+          </svg>
         )}
       </div>
 

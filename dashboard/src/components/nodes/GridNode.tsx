@@ -40,8 +40,8 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
 
   const capacityColor = getCapacityColor(data.capacityPercent);
 
-  // Calculate max container slots (usableRAM / 512MB minimum)
-  const maxSlots = Math.floor(data.usableRAM / 512);
+  // Calculate max container slots (usableRAM / 1GB minimum)
+  const maxSlots = Math.floor(data.usableRAM / 1024);
   const containerSlots = Array(maxSlots).fill(null).map((_, i) => data.containers[i] || null);
 
   return (
@@ -49,17 +49,13 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       style={{
-        background: data.type === 'velocity'
-          ? 'linear-gradient(135deg, #0e7490 0%, #0c4a6e 100%)'
-          : data.type === 'cloud'
-          ? 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)'
-          : 'linear-gradient(135deg, #134e4a 0%, #064e3b 100%)',
+        background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
         border: `2px solid ${capacityColor}`,
         borderRadius: '12px',
         padding: '16px',
         width: '300px',
         minHeight: '200px',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.2)',
+        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
         color: 'white',
         position: 'relative',
       }}
@@ -129,10 +125,10 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
           Assigned MC-Servers ({data.containerCount}/{maxSlots}):
         </div>
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(60px, 1fr))',
+          display: 'flex',
+          flexDirection: 'column',
           gap: '4px',
-          maxHeight: '150px',
+          maxHeight: '200px',
           overflowY: 'auto',
         }}>
           {containerSlots.map((container, idx) => (
@@ -140,7 +136,7 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
               key={idx}
               title={container ? `${container.server_name} (${container.ram_mb}MB) - ${container.status}` : 'Empty slot'}
               style={{
-                height: '30px',
+                height: '28px',
                 borderRadius: '4px',
                 background: container
                   ? getStatusColor(container.status)
@@ -148,24 +144,30 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
                 border: container ? 'none' : '1px dashed rgba(255,255,255,0.3)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '8px',
+                justifyContent: 'space-between',
+                padding: '0 8px',
+                fontSize: '9px',
                 fontWeight: 'bold',
                 cursor: container ? 'pointer' : 'default',
                 transition: 'all 0.2s',
               }}
             >
               {container ? (
-                <span style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  padding: '0 4px',
-                }}>
-                  {container.server_name.substring(0, 8)}
-                </span>
+                <>
+                  <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                  }}>
+                    {container.server_name}
+                  </span>
+                  <span style={{ opacity: 0.7, fontSize: '8px', marginLeft: '4px' }}>
+                    {container.ram_mb}MB
+                  </span>
+                </>
               ) : (
-                <span style={{ opacity: 0.5 }}>—</span>
+                <span style={{ opacity: 0.5, textAlign: 'center', width: '100%' }}>—</span>
               )}
             </div>
           ))}
