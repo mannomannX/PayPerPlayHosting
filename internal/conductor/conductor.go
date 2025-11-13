@@ -715,6 +715,7 @@ func (c *Conductor) AtomicReserveStartSlot(serverID, serverName string, ramMB in
 		Status:     "reserving", // Special status for pending assignment
 	}
 	reservation.LastSeenAt = time.Now()
+	// Direct map access is OK here because we hold the lock (line 691)
 	c.ContainerRegistry.containers[serverID] = reservation
 
 	logger.Info("CPU-GUARD: Start slot reserved atomically", map[string]interface{}{
@@ -906,6 +907,12 @@ func (c *Conductor) ProcessStartQueue() {
 				"server_id": server.ServerID,
 			})
 		}
+
+		// CRITICAL: Break after starting ONE server to prevent endless loop
+		// The goroutine above is async and may re-queue the server if CPU-GUARD blocks
+		// If we continue looping, we'll immediately dequeue the same server again → endless loop
+		// The Periodic Worker (30s) will call ProcessStartQueue() again for the next server
+		break
 	}
 }
 
