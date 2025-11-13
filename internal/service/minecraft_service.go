@@ -1465,6 +1465,65 @@ func (s *MinecraftService) UpgradeServerRAM(serverID string, newRAMMB int) error
 	return nil
 }
 
+// ServerConnectionInfo holds the connection information for a running server
+type ServerConnectionInfo struct {
+	ServerID         string `json:"server_id"`
+	Name             string `json:"name"`
+	Status           string `json:"status"`
+	IPAddress        string `json:"ip_address,omitempty"`
+	Port             int    `json:"port"`
+	ConnectionString string `json:"connection_string,omitempty"` // "IP:Port" - only for running servers
+	NodeID           string `json:"node_id,omitempty"`
+	MinecraftVersion string `json:"minecraft_version"`
+	ServerType       string `json:"server_type"`
+	RAMMb            int    `json:"ram_mb"`
+}
+
+// GetServerConnectionInfo returns the connection information for a server
+// This is used by clients to determine how to connect to a Minecraft server
+func (s *MinecraftService) GetServerConnectionInfo(serverID string) (*ServerConnectionInfo, error) {
+	// Get server from database
+	server, err := s.repo.FindByID(serverID)
+	if err != nil {
+		return nil, fmt.Errorf("server not found: %w", err)
+	}
+
+	// Build basic info
+	info := &ServerConnectionInfo{
+		ServerID:         server.ID,
+		Name:             server.Name,
+		Status:           string(server.Status),
+		Port:             server.Port,
+		MinecraftVersion: server.MinecraftVersion,
+		ServerType:       string(server.ServerType),
+		RAMMb:            server.RAMMb,
+	}
+
+	// Only add connection info for running servers
+	if server.Status != models.StatusRunning {
+		return info, nil // Return partial info (no IP/connection string)
+	}
+
+	// Get node info from Conductor
+	if server.NodeID == "" {
+		return nil, fmt.Errorf("server is running but has no node assigned (invalid state)")
+	}
+
+	info.NodeID = server.NodeID
+
+	// Get node IP address
+	remoteNode, err := s.conductor.GetRemoteNode(server.NodeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node info: %w", err)
+	}
+
+	// Add connection details
+	info.IPAddress = remoteNode.IPAddress
+	info.ConnectionString = fmt.Sprintf("%s:%d", remoteNode.IPAddress, server.Port)
+
+	return info, nil
+}
+
 // isLocalNode checks if a node ID represents the local Docker daemon
 // Returns true if nodeID is "local-node" or empty (backward compatibility)
 func (s *MinecraftService) isLocalNode(nodeID string) bool {

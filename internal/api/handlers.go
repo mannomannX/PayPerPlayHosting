@@ -111,6 +111,20 @@ func (h *Handler) GetServer(c *gin.Context) {
 	c.JSON(http.StatusOK, server)
 }
 
+// GetServerConnectionInfo handles GET /api/servers/:id/connection
+// Returns IP address and port for connecting to a running Minecraft server
+func (h *Handler) GetServerConnectionInfo(c *gin.Context) {
+	serverID := c.Param("id")
+
+	info, err := h.mcService.GetServerConnectionInfo(serverID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, info)
+}
+
 // StartServer handles POST /api/servers/:id/start
 func (h *Handler) StartServer(c *gin.Context) {
 	serverID := c.Param("id")
