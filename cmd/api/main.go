@@ -268,12 +268,16 @@ func main() {
 		logger.Info("Restoring worker nodes from Hetzner Cloud...", nil)
 		cond.SyncExistingWorkerNodes(false) // Don't trigger scaling yet
 		logger.Info("Worker node restoration completed", nil)
+
+		// CRITICAL: Sync running containers from remote worker nodes
+		// This must happen immediately after node restoration to prevent capacity errors
+		logger.Info("Syncing containers from remote worker nodes...", nil)
+		cond.SyncRemoteNodeContainers(serverRepo)
+		logger.Info("Remote container sync completed", nil)
 	}
 
 	// NOTE: No immediate scaling check after startup to prevent race conditions
-	// The Health Checker will sync containers from remote nodes (runs every 10s)
 	// The Scaling Engine will run normally (every 2 minutes)
-	// This prevents nodes from being decommissioned before their containers are discovered
 
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)

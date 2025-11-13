@@ -1508,6 +1508,151 @@ func (c *Conductor) SyncExistingWorkerNodes(triggerScaling bool) {
 	}
 }
 
+// SyncRemoteNodeContainers syncs running containers from all remote worker nodes
+// Called after worker node sync to immediately discover containers on remote nodes
+// Prevents capacity calculation errors after backend restarts
+func (c *Conductor) SyncRemoteNodeContainers(serverRepo interface{}) {
+	logger.Info("CONTAINER-SYNC: Detecting running containers on remote worker nodes...", nil)
+
+	if c.RemoteClient == nil {
+		logger.Warn("CONTAINER-SYNC: RemoteClient not initialized, skipping remote sync", nil)
+		return
+	}
+
+	// Get all registered nodes
+	c.NodeRegistry.mu.RLock()
+	nodes := make([]*Node, 0, len(c.NodeRegistry.nodes))
+	for _, node := range c.NodeRegistry.nodes {
+		nodes = append(nodes, node)
+	}
+	c.NodeRegistry.mu.RUnlock()
+
+	syncedCount := 0
+	totalRAM := 0
+
+	// Iterate through all nodes and sync containers
+	for _, node := range nodes {
+		// Skip system nodes (local-node, proxy-node)
+		if node.IsSystemNode {
+			continue
+		}
+
+		// Skip unhealthy nodes
+		if node.Status != NodeStatusHealthy {
+			logger.Info("CONTAINER-SYNC: Skipping unhealthy node", map[string]interface{}{
+				"node_id": node.ID,
+				"status":  node.Status,
+			})
+			continue
+		}
+
+		// List containers on this remote node
+		ctx := context.Background()
+		remoteNode := &docker.RemoteNode{
+			ID:        node.ID,
+			IPAddress: node.IPAddress,
+			SSHUser:   node.SSHUser,
+		}
+
+		containers, err := c.RemoteClient.ListRunningContainers(ctx, remoteNode)
+		if err != nil {
+			logger.Warn("CONTAINER-SYNC: Failed to list containers on node", map[string]interface{}{
+				"node_id": node.ID,
+				"error":   err.Error(),
+			})
+			continue
+		}
+
+		if len(containers) == 0 {
+			logger.Info("CONTAINER-SYNC: No containers on node", map[string]interface{}{
+				"node_id": node.ID,
+			})
+			continue
+		}
+
+		logger.Info("CONTAINER-SYNC: Found containers on node", map[string]interface{}{
+			"node_id": node.ID,
+			"count":   len(containers),
+		})
+
+		// Sync each container
+		for _, container := range containers {
+			// Look up server in database to get RAM allocation
+			serverVal := reflect.ValueOf(serverRepo)
+			findMethod := serverVal.MethodByName("FindByID")
+			if !findMethod.IsValid() {
+				logger.Error("CONTAINER-SYNC: Repository missing FindByID method", nil, nil)
+				continue
+			}
+
+			findResults := findMethod.Call([]reflect.Value{reflect.ValueOf(container.ServerID)})
+			if len(findResults) != 2 || !findResults[1].IsNil() {
+				logger.Warn("CONTAINER-SYNC: Container found but server not in DB", map[string]interface{}{
+					"container": container.ContainerID[:12],
+					"server_id": container.ServerID[:8],
+					"node_id":   node.ID,
+				})
+				continue
+			}
+
+			server := findResults[0]
+			if server.IsNil() {
+				continue
+			}
+
+			// Get RAM allocation
+			getRamMethod := server.MethodByName("GetRAMMb")
+			if !getRamMethod.IsValid() {
+				continue
+			}
+
+			ramResults := getRamMethod.Call(nil)
+			if len(ramResults) != 1 {
+				continue
+			}
+
+			ramMB := int(ramResults[0].Int())
+
+			// Register container in Container Registry
+			containerInfo := &ContainerInfo{
+				ContainerID: container.ContainerID,
+				ServerID:    container.ServerID,
+				NodeID:      node.ID,
+				RAMMb:       ramMB,
+				Status:      "running",
+			}
+			c.ContainerRegistry.RegisterContainer(containerInfo)
+
+			// Update node's RAM allocation
+			c.NodeRegistry.mu.Lock()
+			if n, exists := c.NodeRegistry.nodes[node.ID]; exists {
+				n.AllocatedRAMMB += ramMB
+				n.ContainerCount++
+			}
+			c.NodeRegistry.mu.Unlock()
+
+			totalRAM += ramMB
+			syncedCount++
+
+			logger.Info("CONTAINER-SYNC: Container synced", map[string]interface{}{
+				"container": container.ContainerID[:12],
+				"server":    container.ServerID[:8],
+				"node_id":   node.ID,
+				"ram_mb":    ramMB,
+			})
+		}
+	}
+
+	if syncedCount > 0 {
+		logger.Info("CONTAINER-SYNC: Remote container synchronization completed", map[string]interface{}{
+			"synced_containers": syncedCount,
+			"total_ram_mb":      totalRAM,
+		})
+	} else {
+		logger.Info("CONTAINER-SYNC: No containers found on remote nodes (clean state)", nil)
+	}
+}
+
 // VelocityRemoteClient interface for Velocity integration (dependency injection)
 type VelocityRemoteClient interface {
 	RegisterServer(name, address string) error
