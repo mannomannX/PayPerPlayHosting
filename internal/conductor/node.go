@@ -41,10 +41,12 @@ type Node struct {
 	CloudProviderID       string            `json:"cloud_provider_id"` // External provider ID (e.g., Hetzner server ID)
 }
 
-// UsableRAMMB returns the maximum RAM available for containers (Total - System Reserve)
-// This is the "capacity" that can be allocated to containers
+// UsableRAMMB returns the maximum RAM available for BOOKING
+// PROPORTIONAL OVERHEAD MODEL: Returns TotalRAM (100% bookable!)
+// SystemReserved is a FIXED budget (12.5%), not subtracted from bookable capacity
+// Containers get (100% - SystemOverhead%) of booked RAM via ReductionFactor
 func (n *Node) UsableRAMMB() int {
-	return n.TotalRAMMB - n.SystemReservedRAMMB
+	return n.TotalRAMMB // Voll buchbar!
 }
 
 // AvailableRAMMB returns the currently available RAM for NEW containers
@@ -111,38 +113,19 @@ func (n *Node) CanBeConsolidated(minUptime time.Duration, minIdleTime time.Durat
 	return true
 }
 
-// CalculateSystemReserve calculates the intelligent system reserve for this node
-// Uses 3-tier strategy:
-// - Dedicated nodes (< 8GB): Fixed base + dynamic scaling
-// - Cloud nodes (>= 8GB): Percentage-based (15% minimum)
-// - Dynamic: +50MB per 10 containers (for Containerd shims)
+// CalculateSystemReserve calculates system overhead as a FIXED percentage of TotalRAM
+// PROPORTIONAL OVERHEAD MODEL: System gets a fixed budget (e.g. 12.5% = 1/8)
+// Example: 8GB Node → 1GB System Budget (containers give up 12.5% of their booked RAM)
+// The reservePercent parameter should match (1 - ReductionFactor)
 func (n *Node) CalculateSystemReserve(baseReserveMB int, reservePercent float64) int {
-	const (
-		smallNodeThreshold = 8192 // 8GB in MB
-		mbPerTenContainers = 50   // 50MB per 10 containers
-	)
+	// Simple percentage-based calculation for ALL nodes
+	// reservePercent = 12.5% means containers get 87.5% of booked RAM
+	reserve := int(float64(n.TotalRAMMB) * (reservePercent / 100.0))
 
-	var reserve int
-
-	if n.TotalRAMMB < smallNodeThreshold {
-		// Small/Dedicated nodes: Fixed base + dynamic scaling
-		reserve = baseReserveMB
-
-		// Add dynamic reserve based on container count (50MB per 10 containers)
-		if n.ContainerCount > 0 {
-			dynamicReserve := (n.ContainerCount / 10) * mbPerTenContainers
-			reserve += dynamicReserve
-		}
-	} else {
-		// Large/Cloud nodes: Percentage-based
-		percentReserve := int(float64(n.TotalRAMMB) * (reservePercent / 100.0))
-
-		// Use the larger of: base reserve OR percentage reserve
-		if percentReserve > baseReserveMB {
-			reserve = percentReserve
-		} else {
-			reserve = baseReserveMB
-		}
+	// Minimum 256MB system reserve for very small nodes
+	const minSystemReserve = 256
+	if reserve < minSystemReserve {
+		reserve = minSystemReserve
 	}
 
 	// Safety check: Reserve cannot exceed 50% of total RAM

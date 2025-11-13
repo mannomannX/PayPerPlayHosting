@@ -167,10 +167,12 @@ func Load() *Config {
 		ConsolidationMaxCapacity:  getEnvFloat("CONSOLIDATION_MAX_CAPACITY", 70.0),
 		AllowMigrationWithPlayers: getEnvBool("ALLOW_MIGRATION_WITH_PLAYERS", false),
 
-		// System Resource Reservation (3-tier intelligent reservation)
-		SystemReservedRAMMB:      getEnvInt("SYSTEM_RESERVED_RAM_MB", 1000),       // 1GB base reserve
-		SystemReservedCPUCores:   getEnvFloat("SYSTEM_RESERVED_CPU_CORES", 0.5),   // 0.5 cores for system
-		SystemReservedRAMPercent: getEnvFloat("SYSTEM_RESERVED_RAM_PERCENT", 15.0), // 15% for cloud nodes
+		// System Resource Reservation (Proportional Overhead Model)
+		// SYSTEM_RESERVED_RAM_PERCENT = System overhead (default 12.5% = 1/8)
+		// Containers get (100% - 12.5%) = 87.5% of booked RAM
+		SystemReservedRAMMB:      getEnvInt("SYSTEM_RESERVED_RAM_MB", 1000),        // Unused in new model
+		SystemReservedCPUCores:   getEnvFloat("SYSTEM_RESERVED_CPU_CORES", 0.5),    // 0.5 cores for system
+		SystemReservedRAMPercent: getEnvFloat("SYSTEM_RESERVED_RAM_PERCENT", 12.5), // 12.5% system overhead (1/8)
 
 		// 3-Tier Architecture: Velocity Proxy Layer (Tier 2)
 		VelocityAPIURL: getEnv("VELOCITY_API_URL", ""),
