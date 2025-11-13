@@ -1,6 +1,7 @@
 package conductor
 
 import (
+	"github.com/payperplay/hosting/internal/audit"
 	"context"
 	"fmt"
 	"reflect"
@@ -36,6 +37,7 @@ type Conductor struct {
 	serverStarter     ServerStarter              // Interface to start servers (injected)
 	nodeRepo          NodeRepositoryInterface    // For persisting nodes to database
 	stopChan          chan struct{}              // For graceful shutdown of background workers
+	AuditLog          *audit.AuditLogger // Audit log for tracking destructive actions
 }
 
 // NodeRepositoryInterface defines the interface for node persistence
@@ -90,6 +92,7 @@ func NewConductor(healthCheckInterval time.Duration, sshKeyPath string) *Conduct
 		DebugLogBuffer:    debugLogBuffer,
 		StartedAt:         time.Now(), // Track startup time for delay
 		stopChan:          make(chan struct{}),
+		AuditLog:          audit.NewAuditLogger(1000), // Keep last 1000 audit entries
 	}
 }
 

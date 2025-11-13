@@ -436,7 +436,7 @@ func (e *ScalingEngine) scaleDown(rec ScaleRecommendation) error {
 	}
 
 	// Decommission the node
-	if err := e.vmProvisioner.DecommissionNode(nodeToRemove.ID); err != nil {
+	if err := e.vmProvisioner.DecommissionNode(nodeToRemove.ID, "reactive_policy"); err != nil {
 		logger.Error("Failed to decommission node", err, map[string]interface{}{
 			"node_id": nodeToRemove.ID,
 		})
@@ -559,7 +559,7 @@ func (e *ScalingEngine) executeConsolidation(plan ConsolidationPlan) error {
 			"node_id": nodeID,
 		})
 
-		if err := e.vmProvisioner.DecommissionNode(nodeID); err != nil {
+		if err := e.vmProvisioner.DecommissionNode(nodeID, "consolidation_policy"); err != nil {
 			logger.Error("Failed to decommission node", err, map[string]interface{}{
 				"node_id": nodeID,
 			})

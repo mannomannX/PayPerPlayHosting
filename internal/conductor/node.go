@@ -21,7 +21,10 @@ type Node struct {
 	TotalRAMMB          int               `json:"total_ram_mb"`
 	TotalCPUCores       int               `json:"total_cpu_cores"`
 	CPUUsagePercent     float64           `json:"cpu_usage_percent"`     // Current CPU usage (0-100%)
-	Status              NodeStatus        `json:"status"`
+	Status              NodeStatus        `json:"status"`                // DEPRECATED: Use HealthStatus instead
+	LifecycleState      NodeLifecycleState `json:"lifecycle_state"`      // Lifecycle stage (provisioning, ready, active, etc.)
+	HealthStatus        HealthStatus      `json:"health_status"`         // Health status (healthy, unhealthy, unknown)
+	Metrics             NodeLifecycleMetrics `json:"metrics"`            // Lifecycle metrics and tracking
 	LastHealthCheck     time.Time         `json:"last_health_check"`
 	ContainerCount      int               `json:"container_count"`
 	AllocatedRAMMB      int               `json:"allocated_ram_mb"`

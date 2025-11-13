@@ -13,6 +13,7 @@ import (
 // VMProvisioner handles automated VM provisioning and setup
 type VMProvisioner struct {
 	cloudProvider  cloud.CloudProvider
+	conductor *Conductor // Reference to parent conductor for audit logging
 	nodeRegistry   *NodeRegistry
 	debugLogBuffer *DebugLogBuffer
 	sshKeyName     string // SSH key configured in cloud provider
@@ -255,38 +256,121 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	return node, nil
 }
 
-// DecommissionNode removes a cloud node
-func (p *VMProvisioner) DecommissionNode(nodeID string) error {
-	logger.Info("Decommissioning node", map[string]interface{}{
-		"node_id": nodeID,
+// DecommissionNode removes a cloud node with safety checks
+func (p *VMProvisioner) DecommissionNode(nodeID string, decisionBy string) error {
+	logger.Info("Attempting to decommission node", map[string]interface{}{
+		"node_id":     nodeID,
+		"decision_by": decisionBy,
 	})
 
 	// Get node from registry
 	node, exists := p.nodeRegistry.GetNode(nodeID)
 	if !exists {
-		return fmt.Errorf("node not found: %s", nodeID)
+		err := fmt.Errorf("node not found: %s", nodeID)
+		if p.conductor != nil && p.conductor.AuditLog != nil {
+			p.conductor.AuditLog.RecordNodeDecommission(nodeID, "node_not_found", decisionBy, nil, "failed", err)
+		}
+		return err
 	}
 
 	// Only decommission cloud nodes (never dedicated nodes)
 	if node.Type != "cloud" {
-		return fmt.Errorf("cannot decommission dedicated node: %s", nodeID)
+		err := fmt.Errorf("cannot decommission dedicated node: %s", nodeID)
+		if p.conductor != nil && p.conductor.AuditLog != nil {
+			p.conductor.AuditLog.RecordNodeDecommission(nodeID, "not_cloud_node", decisionBy, map[string]interface{}{"type": node.Type}, "rejected", err)
+		}
+		return err
 	}
 
-	// Check if node has containers
-	if node.ContainerCount > 0 {
-		return fmt.Errorf("cannot decommission node with active containers: %s (count: %d)", nodeID, node.ContainerCount)
+	// CRITICAL: Safety check using new lifecycle system
+	canDecommission, reason := node.CanBeDecommissioned()
+	if !canDecommission {
+		err := fmt.Errorf("safety check failed: %s", reason)
+
+		// Audit log the rejection
+		if p.conductor != nil && p.conductor.AuditLog != nil {
+			snapshot := map[string]interface{}{
+				"lifecycle_state":       node.LifecycleState,
+				"health_status":         node.HealthStatus,
+				"container_count":       node.ContainerCount,
+				"allocated_ram_mb":      node.AllocatedRAMMB,
+				"total_containers_ever": node.Metrics.TotalContainersEver,
+				"age_minutes":           time.Since(node.CreatedAt).Minutes(),
+			}
+			if node.Metrics.InitializedAt != nil {
+				snapshot["initialized_age_minutes"] = time.Since(*node.Metrics.InitializedAt).Minutes()
+			}
+
+			p.conductor.AuditLog.RecordNodeDecommission(nodeID, reason, decisionBy, snapshot, "rejected", err)
+		}
+
+		logger.Warn("Decommission rejected by safety check", map[string]interface{}{
+			"node_id": nodeID,
+			"reason":  reason,
+			"lifecycle_state": node.LifecycleState,
+			"containers": node.ContainerCount,
+		})
+
+		return err
+	}
+
+	// Capture state snapshot for audit log
+	stateSnapshot := map[string]interface{}{
+		"lifecycle_state":       node.LifecycleState,
+		"health_status":         node.HealthStatus,
+		"container_count":       node.ContainerCount,
+		"allocated_ram_mb":      node.AllocatedRAMMB,
+		"total_containers_ever": node.Metrics.TotalContainersEver,
+		"age_minutes":           time.Since(node.CreatedAt).Minutes(),
+		"hourly_cost_eur":       node.HourlyCostEUR,
+	}
+	if node.Metrics.FirstContainerAt != nil {
+		stateSnapshot["first_container_at"] = node.Metrics.FirstContainerAt
+	}
+	if node.Metrics.LastContainerAt != nil {
+		stateSnapshot["last_container_at"] = node.Metrics.LastContainerAt
+		stateSnapshot["idle_minutes"] = time.Since(*node.Metrics.LastContainerAt).Minutes()
+	}
+
+	// Transition to draining state before decommission
+	if err := node.TransitionLifecycleState(NodeStateDraining, "decommission_requested"); err != nil {
+		logger.Warn("Failed to transition to draining state", map[string]interface{}{
+			"node_id": nodeID,
+			"error":   err.Error(),
+		})
+		// Continue anyway - not critical
 	}
 
 	// Delete server via cloud provider
 	if err := p.cloudProvider.DeleteServer(nodeID); err != nil {
-		return fmt.Errorf("failed to delete server: %w", err)
+		deleteErr := fmt.Errorf("failed to delete server: %w", err)
+		if p.conductor != nil && p.conductor.AuditLog != nil {
+			p.conductor.AuditLog.RecordNodeDecommission(nodeID, reason, decisionBy, stateSnapshot, "failed", deleteErr)
+		}
+		return deleteErr
+	}
+
+	// Transition to decommissioned state
+	if err := node.TransitionLifecycleState(NodeStateDecommissioned, "hetzner_delete_success"); err != nil {
+		logger.Warn("Failed to transition to decommissioned state", map[string]interface{}{
+			"node_id": nodeID,
+			"error":   err.Error(),
+		})
 	}
 
 	// Unregister from NodeRegistry
 	p.nodeRegistry.UnregisterNode(nodeID)
 
+	// Audit log success
+	if p.conductor != nil && p.conductor.AuditLog != nil {
+		p.conductor.AuditLog.RecordNodeDecommission(nodeID, reason, decisionBy, stateSnapshot, "success", nil)
+	}
+
 	logger.Info("Node decommissioned successfully", map[string]interface{}{
-		"node_id": nodeID,
+		"node_id":     nodeID,
+		"reason":      reason,
+		"decision_by": decisionBy,
+		"cost_saved":  fmt.Sprintf("€%.4f/hour", node.HourlyCostEUR),
 	})
 
 	// Publish event
