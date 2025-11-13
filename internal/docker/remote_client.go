@@ -49,23 +49,47 @@ func (r *RemoteDockerClient) StartContainer(
 	// Build docker run command
 	cmd := r.buildDockerRunCommand(containerName, imageName, env, portBindings, binds, ramMB)
 
-	// Execute command via SSH
-	output, err := r.executeSSHCommand(ctx, node, cmd)
+	// Log the SSH command for debugging (truncate env vars for security)
+	log.Printf("[RemoteDocker] Executing docker run on node %s for container %s", node.ID, containerName)
+
+	// Execute command via SSH with timeout context
+	// Add 120-second timeout for container creation (allows time for image pull)
+	cmdCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	defer cancel()
+
+	output, err := r.executeSSHCommand(cmdCtx, node, cmd)
 	if err != nil {
-		return "", fmt.Errorf("failed to start container on node %s: %w (output: %s)", node.ID, err, output)
+		log.Printf("[RemoteDocker] ERROR: Failed to start container %s on node %s: %v", containerName, node.ID, err)
+		return "", fmt.Errorf("failed to start container on node %s: %w", node.ID, err)
 	}
 
 	// Docker run returns container ID (first line of output)
 	// CRITICAL FIX: If image needs to be pulled, docker outputs pull progress on subsequent lines
 	// We only want the container ID from the first line to avoid varchar(128) database errors
 	output = strings.TrimSpace(output)
-	lines := strings.Split(output, "\n")
-	containerID := strings.TrimSpace(lines[0])
-	if containerID == "" {
-		return "", fmt.Errorf("no container ID returned from docker run")
+
+	// Validate output is not empty
+	if output == "" {
+		log.Printf("[RemoteDocker] ERROR: Empty output from docker run on node %s for container %s", node.ID, containerName)
+		return "", fmt.Errorf("no output returned from docker run command on node %s", node.ID)
 	}
 
-	log.Printf("[RemoteDocker] Started container %s on node %s (ID: %s)", containerName, node.ID, containerID[:12])
+	lines := strings.Split(output, "\n")
+	containerID := strings.TrimSpace(lines[0])
+
+	// Validate container ID format (should be hex string)
+	if containerID == "" {
+		log.Printf("[RemoteDocker] ERROR: First line of output is empty. Full output (%d lines): %s", len(lines), output)
+		return "", fmt.Errorf("no container ID returned from docker run on node %s (got %d lines of output)", node.ID, len(lines))
+	}
+
+	// Validate containerID looks like a Docker ID (at least 12 hex chars)
+	if len(containerID) < 12 {
+		log.Printf("[RemoteDocker] ERROR: Container ID too short (%d chars): '%s'. Full output: %s", len(containerID), containerID, output)
+		return "", fmt.Errorf("invalid container ID format from docker run on node %s: '%s' (expected at least 12 hex characters)", node.ID, containerID)
+	}
+
+	log.Printf("[RemoteDocker] SUCCESS: Started container %s on node %s (ID: %s)", containerName, node.ID, containerID[:12])
 	return containerID, nil
 }
 
@@ -423,13 +447,29 @@ func (r *RemoteDockerClient) executeSSHCommand(ctx context.Context, node *Remote
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 
-	// Execute command
-	err = session.Run(command)
-	if err != nil {
-		return stdout.String() + stderr.String(), fmt.Errorf("command failed: %w", err)
-	}
+	// Execute command with context timeout
+	// Use a channel to handle command execution with context cancellation
+	done := make(chan error, 1)
+	go func() {
+		done <- session.Run(command)
+	}()
 
-	return stdout.String() + stderr.String(), nil
+	// Wait for command to complete or context to be cancelled
+	select {
+	case <-ctx.Done():
+		// Context cancelled (timeout or manual cancellation)
+		session.Signal(ssh.SIGKILL) // Try to kill the remote process
+		session.Close()              // Close the session
+		output := stdout.String() + stderr.String()
+		return output, fmt.Errorf("command timeout/cancelled: %w (partial output: %s)", ctx.Err(), output)
+	case err := <-done:
+		// Command completed
+		output := stdout.String() + stderr.String()
+		if err != nil {
+			return output, fmt.Errorf("command failed: %w (output: %s)", err, output)
+		}
+		return output, nil
+	}
 }
 
 // loadSSHKey loads the SSH private key from disk
