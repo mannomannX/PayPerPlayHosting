@@ -898,8 +898,9 @@ func (c *Conductor) ProcessStartQueue() {
 					logger.Error("Failed to start queued server", err, map[string]interface{}{
 						"server_id": serverID,
 					})
-					// Re-queue the server for retry
-					c.StartQueue.Enqueue(server)
+					// NOTE: StartServerFromQueue() has ALREADY re-enqueued the server if needed
+					// DO NOT re-queue here again, as it would trigger another ProcessStartQueue() cycle
+					// This was causing the endless loop - double enqueue → double ProcessStartQueue() calls
 				}
 			}(server.ServerID)
 		} else {
