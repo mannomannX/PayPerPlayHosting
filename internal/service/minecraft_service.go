@@ -1037,16 +1037,16 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		// REMOTE: Stop container via SSH on remote worker node
 		log.Printf("Stopping remote container %s on node %s", server.ContainerID, nodeID)
 
-		// Create remote node reference
-		ctx := context.Background()
-		remoteNode := &docker.RemoteNode{
-			ID:        nodeID,
-			IPAddress: "", // Will be looked up by RemoteClient
-			SSHUser:   "root",
+		// Get remote node info with IP address from Conductor
+		remoteNode, err := s.conductor.GetRemoteNode(nodeID)
+		if err != nil {
+			log.Printf("ERROR: Failed to get remote node %s: %v", nodeID, err)
+			stopErr = fmt.Errorf("failed to get remote node: %w", err)
+		} else {
+			// Stop container via remote client
+			ctx := context.Background()
+			stopErr = s.conductor.GetRemoteDockerClient().StopContainer(ctx, remoteNode, server.ContainerID, 30)
 		}
-
-		// Stop container via remote client
-		stopErr = s.conductor.GetRemoteDockerClient().StopContainer(ctx, remoteNode, server.ContainerID, 30)
 		if stopErr != nil {
 			log.Printf("ERROR: Failed to stop remote container %s on node %s: %v", server.ContainerID, nodeID, stopErr)
 		} else {
@@ -1160,14 +1160,14 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 		var removeErr error
 		if isRemote && s.conductor != nil && s.conductor.GetRemoteDockerClient() != nil {
 			// REMOTE: Remove container via SSH on remote worker node
-			ctx := context.Background()
-			remoteNode := &docker.RemoteNode{
-				ID:        nodeID,
-				IPAddress: "", // Will be looked up by RemoteClient
-				SSHUser:   "root",
+			remoteNode, err := s.conductor.GetRemoteNode(nodeID)
+			if err != nil {
+				log.Printf("ERROR: Failed to get remote node %s: %v", nodeID, err)
+				removeErr = fmt.Errorf("failed to get remote node: %w", err)
+			} else {
+				ctx := context.Background()
+				removeErr = s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, remoteNode, server.ContainerID, true)
 			}
-
-			removeErr = s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, remoteNode, server.ContainerID, true)
 			if removeErr != nil {
 				log.Printf("Warning: failed to remove remote container %s on node %s: %v", server.ContainerID, nodeID, removeErr)
 			} else {
