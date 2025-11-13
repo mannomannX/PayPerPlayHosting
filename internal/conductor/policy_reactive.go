@@ -131,7 +131,7 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 
 	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 
-	logger.Info("ReactivePolicy: Capacity check", map[string]interface{}{
+	logger.Debug("ReactivePolicy: Capacity check", map[string]interface{}{
 		"capacity_percent":      capacityPercent,
 		"scale_up_threshold":    p.ScaleUpThreshold,
 		"allocated_ram_mb":      ctx.FleetStats.AllocatedRAMMB,
