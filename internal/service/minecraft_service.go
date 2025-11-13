@@ -1023,11 +1023,48 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		return err
 	}
 
-	// Stop container
-	if err := s.dockerService.StopContainer(server.ContainerID, 30); err != nil {
+	// Stop container (MULTI-NODE: Support both local and remote containers)
+	// Determine if container is on remote node or local node
+	nodeID := server.NodeID
+	if nodeID == "" {
+		nodeID = "local-node" // Fallback for legacy servers
+	}
+
+	isRemote := nodeID != "local-node"
+
+	var stopErr error
+	if isRemote && s.conductor != nil && s.conductor.GetRemoteDockerClient() != nil {
+		// REMOTE: Stop container via SSH on remote worker node
+		log.Printf("Stopping remote container %s on node %s", server.ContainerID, nodeID)
+
+		// Create remote node reference
+		ctx := context.Background()
+		remoteNode := &docker.RemoteNode{
+			ID:        nodeID,
+			IPAddress: "", // Will be looked up by RemoteClient
+			SSHUser:   "root",
+		}
+
+		// Stop container via remote client
+		stopErr = s.conductor.GetRemoteDockerClient().StopContainer(ctx, remoteNode, server.ContainerID, 30)
+		if stopErr != nil {
+			log.Printf("ERROR: Failed to stop remote container %s on node %s: %v", server.ContainerID, nodeID, stopErr)
+		} else {
+			log.Printf("Remote container %s stopped successfully on node %s", server.ContainerID, nodeID)
+		}
+	} else {
+		// LOCAL: Stop container via local Docker daemon
+		log.Printf("Stopping local container %s", server.ContainerID)
+		stopErr = s.dockerService.StopContainer(server.ContainerID, 30)
+		if stopErr != nil {
+			log.Printf("ERROR: Failed to stop local container %s: %v", server.ContainerID, stopErr)
+		}
+	}
+
+	if stopErr != nil {
 		server.Status = models.StatusError
 		s.repo.Update(server)
-		return fmt.Errorf("failed to stop container: %w", err)
+		return fmt.Errorf("failed to stop container: %w", stopErr)
 	}
 
 	// Update status
@@ -1109,13 +1146,41 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 		}
 	}
 
-	// Remove container
+	// Remove container (MULTI-NODE: Support both local and remote containers)
 	if server.ContainerID != "" {
-		log.Printf("Removing container %s", server.ContainerID)
-		if err := s.dockerService.RemoveContainer(server.ContainerID, true); err != nil {
-			log.Printf("Warning: failed to remove container: %v", err)
+		nodeID := server.NodeID
+		if nodeID == "" {
+			nodeID = "local-node" // Fallback for legacy servers
+		}
+
+		isRemote := nodeID != "local-node"
+
+		log.Printf("Removing container %s from node %s", server.ContainerID, nodeID)
+
+		var removeErr error
+		if isRemote && s.conductor != nil && s.conductor.GetRemoteDockerClient() != nil {
+			// REMOTE: Remove container via SSH on remote worker node
+			ctx := context.Background()
+			remoteNode := &docker.RemoteNode{
+				ID:        nodeID,
+				IPAddress: "", // Will be looked up by RemoteClient
+				SSHUser:   "root",
+			}
+
+			removeErr = s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, remoteNode, server.ContainerID, true)
+			if removeErr != nil {
+				log.Printf("Warning: failed to remove remote container %s on node %s: %v", server.ContainerID, nodeID, removeErr)
+			} else {
+				log.Printf("Remote container %s removed successfully from node %s", server.ContainerID, nodeID)
+			}
 		} else {
-			log.Printf("Container %s removed successfully", server.ContainerID)
+			// LOCAL: Remove container via local Docker daemon
+			removeErr = s.dockerService.RemoveContainer(server.ContainerID, true)
+			if removeErr != nil {
+				log.Printf("Warning: failed to remove local container %s: %v", server.ContainerID, removeErr)
+			} else {
+				log.Printf("Container %s removed successfully", server.ContainerID)
+			}
 		}
 	}
 
