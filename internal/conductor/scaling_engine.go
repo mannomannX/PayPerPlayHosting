@@ -174,7 +174,7 @@ func (e *ScalingEngine) evaluateScaling() {
 	// Build current context
 	ctx := e.buildScalingContext()
 
-	logger.Debug("Evaluating scaling", map[string]interface{}{
+	logger.Info("Evaluating scaling", map[string]interface{}{
 		"total_ram_mb":     ctx.FleetStats.TotalRAMMB,
 		"allocated_ram_mb": ctx.FleetStats.AllocatedRAMMB,
 		"capacity_percent": func() float64 {
@@ -185,6 +185,8 @@ func (e *ScalingEngine) evaluateScaling() {
 		}(),
 		"dedicated_nodes": len(ctx.DedicatedNodes),
 		"cloud_nodes":     len(ctx.CloudNodes),
+		"queued_servers":  ctx.QueuedServerCount,
+		"worker_nodes":    len(ctx.WorkerNodes),
 	})
 
 	// Ask all policies (in priority order) if we should scale UP
