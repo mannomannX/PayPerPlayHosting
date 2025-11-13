@@ -24,7 +24,12 @@
       "Bash(md5sum:*)",
       "Bash(npm run build:*)",
       "Bash(tar:*)",
-      "Bash(scp:*)"
+      "Bash(scp:*)",
+      "Bash(/tmp/hetzner_servers.json)",
+      "Bash(python3:*)",
+      "Bash(/tmp/conductor_status.json)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiNTdmZGY5NDMtMDRjZC00YzQ0LTk5ZDgtOWU4MTQzN2JmMTgzIiwiZW1haWwiOiJhZG1pbkB0ZXN0LmxvY2FsIiwiaXNfYWRtaW4iOnRydWUsImlzcyI6InBheXBlcnBsYXkiLCJleHAiOjE3NjM1MzE2ODMsImlhdCI6MTc2MjkyNjg4M30.tP6rd0q8qh98vwxKL5MGcO5DPh9psfWj5QZKCvlqf0U\")",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

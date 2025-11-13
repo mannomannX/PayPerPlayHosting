@@ -270,10 +270,10 @@ func main() {
 		logger.Info("Worker node restoration completed", nil)
 	}
 
-	// Trigger scaling check for queued servers
-	logger.Info("Triggering initial scaling check...", nil)
-	cond.TriggerScalingCheck()
-	logger.Info("Initial scaling check triggered", nil)
+	// NOTE: No immediate scaling check after startup to prevent race conditions
+	// The Health Checker will sync containers from remote nodes (runs every 10s)
+	// The Scaling Engine will run normally (every 2 minutes)
+	// This prevents nodes from being decommissioned before their containers are discovered
 
 	// Initialize API handlers
 	authHandler := api.NewAuthHandler(authService)

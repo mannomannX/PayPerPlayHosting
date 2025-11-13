@@ -149,8 +149,9 @@ func (e *ScalingEngine) runLoop() {
 	ticker := time.NewTicker(e.checkInterval)
 	defer ticker.Stop()
 
-	// Run immediately on start
-	e.evaluateScaling()
+	// NOTE: Do NOT run immediately on start to prevent race conditions
+	// Give the system time to sync container state, queue state, and node state
+	// before making scaling decisions that could decommission nodes
 
 	for {
 		select {

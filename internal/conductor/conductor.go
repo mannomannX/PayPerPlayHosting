@@ -34,7 +34,18 @@ type Conductor struct {
 	DebugLogBuffer    *DebugLogBuffer            // Buffer for dashboard debug console
 	StartedAt         time.Time                  // When Conductor started (for startup delay)
 	serverStarter     ServerStarter              // Interface to start servers (injected)
+	nodeRepo          NodeRepositoryInterface    // For persisting nodes to database
 	stopChan          chan struct{}              // For graceful shutdown of background workers
+}
+
+// NodeRepositoryInterface defines the interface for node persistence
+// This allows for dependency injection and easier testing
+type NodeRepositoryInterface interface {
+	Create(node interface{}) error
+	FindByID(id string) (interface{}, error)
+	FindAll() (interface{}, error)
+	Update(node interface{}) error
+	UpsertNode(node interface{}) error
 }
 
 // NewConductor creates a new conductor instance
