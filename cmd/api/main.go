@@ -262,8 +262,13 @@ func main() {
 	cond.SyncQueuedServers(serverRepo, false) // Don't trigger scaling yet
 	logger.Info("Queue sync completed", nil)
 
-	// NOTE: Worker-Node sync REMOVED - nodes are registered via ProvisionNode, not recovered
-	// This prevents node churn during container restarts
+	// CRITICAL: Restore worker nodes from Hetzner Cloud (prevents node loss after restarts)
+	// Only syncs Hetzner Cloud worker nodes (cpx/cax), not dedicated servers
+	if cond.CloudProvider != nil {
+		logger.Info("Restoring worker nodes from Hetzner Cloud...", nil)
+		cond.SyncExistingWorkerNodes(false) // Don't trigger scaling yet
+		logger.Info("Worker node restoration completed", nil)
+	}
 
 	// Trigger scaling check for queued servers
 	logger.Info("Triggering initial scaling check...", nil)
