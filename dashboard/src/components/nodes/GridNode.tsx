@@ -41,10 +41,6 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
 
   const capacityColor = getCapacityColor(data.capacityPercent);
 
-  // Calculate max container slots (usableRAM / 1GB minimum)
-  const maxSlots = Math.floor(data.usableRAM / 1024);
-  const containerSlots = Array(maxSlots).fill(null).map((_, i) => data.containers[i] || null);
-
   return (
     <motion.div
       initial={{ scale: 0, opacity: 0 }}
