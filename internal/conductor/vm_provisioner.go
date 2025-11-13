@@ -297,6 +297,10 @@ func (p *VMProvisioner) DecommissionNode(nodeID string) error {
 
 // generateCloudInit generates the Cloud-Init script for VM setup
 func (p *VMProvisioner) generateCloudInit() string {
+	// CRITICAL: Add conductor's public SSH key to allow health checks
+	// This is read from /root/.ssh/id_rsa.pub on the conductor node
+	conductorPubKey := "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDfaN2p3gNtatuhvad5b6JVkr05UVmELZl9KzI84Q/8xQQxOmmSI4N7Vy48n03t9xJlbbztyXa2aE1loxZ3GxKdh9kokyavvDxSB7UebeZTOH/A/UkOiruh9Nq47rACtvTgFS/QNRe4IfeswSHsRcAWVALz5rkZ53FfLd9JwgHwazeBf6avT5fcRxJ5NdQ8iDTtvuKZ81mwRoDVq4Q61uy5NGdeILDfWxUqX3N0WXOSmbEO0LqPsp4fb6I1GyT/9C/rC3JNrb2iD51AtAlAoMKg8y1dzyvJHh1TSBL6xPn0EavyzqFLW0ignvX8aLwKB0NIwrPsbEgOgqKknbBlsudAJxic/wS1mSjDjJl8SDY1VaDJo9n0uW4T2KyvPEovsCOyXFXd5Vnl/VQ4YdmdInuM+27+CnD1RGOJhuOA1TXvG2DIGzZe81adTCZS+kZwE7d6E2JCnYBpurUTZfsQVNJVy0+SjnoDlT0qnS1I+Mx361e6+YSFvJAPGDOF7jdUlK4Jwi0sz4zIWgOKGjpA8uITaXN/Qkv8M2v3FJ3EHeijxKPo/5W0nrJXyfMcn+qewuywuLSSjsphr1oy3+nVKIBJghmjvaeE4GAaXdbgHQEQ9E/+Azdk49ipiSsGfBytLXTIOlh4QjXzeQNxSn8i4FfjFJ9xHAquKNUBGsrv9nAcfQ== payperplay-conductor"
+
 	return `#cloud-config
 package_update: true
 package_upgrade: true
@@ -306,6 +310,10 @@ packages:
   - docker-compose
   - curl
   - git
+
+# CRITICAL: Add conductor's SSH public key for health checks
+ssh_authorized_keys:
+  - ` + conductorPubKey + `
 
 runcmd:
   # Enable and start Docker
@@ -332,9 +340,8 @@ runcmd:
   # Download and install PayPerPlay Agent (TODO: implement)
   # - curl -sSL https://install.payperplay.host/agent.sh | bash
 
-  # Configure firewall (allow Docker + SSH)
+  # Configure firewall (allow SSH + Minecraft ports)
   - ufw allow 22/tcp
-  - ufw allow 2375/tcp  # Docker API (for remote management)
   - ufw allow 25565/tcp # Minecraft default port
   - ufw allow 25565-25600/tcp # Minecraft port range
   - ufw --force enable
