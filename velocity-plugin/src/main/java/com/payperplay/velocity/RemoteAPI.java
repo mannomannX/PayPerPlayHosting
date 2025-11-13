@@ -19,7 +19,6 @@ import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -242,10 +241,10 @@ public class RemoteAPI {
     public void onPlayerConnect(ServerPreConnectEvent event) {
         // Only handle initial connections (when player joins proxy)
         // ServerPreConnectEvent fires for both initial connections and server switches
-        Optional<RegisteredServer> previousServer = event.getPreviousServer();
+        RegisteredServer previousServer = event.getPreviousServer();
 
         // If player is switching between servers, don't interfere
-        if (previousServer.isPresent()) {
+        if (previousServer != null) {
             logger.debug("Player {} switching servers, not routing", event.getPlayer().getUsername());
             return;
         }
