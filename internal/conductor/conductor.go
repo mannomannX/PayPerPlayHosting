@@ -788,8 +788,10 @@ func (c *Conductor) EnqueueServer(serverID, serverName string, requiredRAMMB int
 		"queue_position": c.StartQueue.GetPosition(serverID),
 	})
 
-	// Trigger queue processing (will check if scaling needed)
-	go c.ProcessStartQueue()
+	// NOTE: DO NOT automatically trigger ProcessStartQueue() here!
+	// This was causing endless cascade - every re-queue triggered a new ProcessStartQueue()
+	// The Periodic Worker (30s) will process the queue, or explicit TriggerScalingCheck()
+	// Removing this fixes the endless loop: EnqueueServer → ProcessStartQueue → EnqueueServer → ...
 }
 
 // IsServerQueued checks if a server is currently in the start queue
