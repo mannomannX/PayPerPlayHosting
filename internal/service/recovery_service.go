@@ -23,6 +23,7 @@ type RecoveryService struct {
 	dockerService *docker.DockerService
 	cfg           *config.Config
 	wsHub         WebSocketHubInterface
+	conductor     ConductorInterface  // For multi-node support
 	recoveryQueue chan *models.MinecraftServer
 	stopChan      chan struct{}
 }
@@ -45,6 +46,11 @@ func NewRecoveryService(
 // SetWebSocketHub sets the WebSocket hub for real-time updates
 func (s *RecoveryService) SetWebSocketHub(wsHub WebSocketHubInterface) {
 	s.wsHub = wsHub
+}
+
+// SetConductor sets the conductor for multi-node support
+func (s *RecoveryService) SetConductor(conductor ConductorInterface) {
+	s.conductor = conductor
 }
 
 // Start starts the recovery service
@@ -564,6 +570,12 @@ func (s *RecoveryService) CheckAndRecoverCrashedServers() error {
 
 		// Check if container exists and its state
 		if server.ContainerID == "" {
+			continue
+		}
+
+		// MULTI-NODE FIX: Skip remote containers - they're monitored by health checker
+		// Local Docker client cannot inspect containers on remote nodes
+		if !s.isLocalNode(server.NodeID) {
 			continue
 		}
 
