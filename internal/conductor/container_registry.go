@@ -2,6 +2,7 @@ package conductor
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -339,7 +340,18 @@ func (r *ContainerRegistry) SyncNodeContainers(nodeID string, actualContainerIDs
 		}
 
 		// Check if container still exists in Docker
-		if !actualContainerIDs[container.ContainerID] {
+		// actualContainerIDs may contain short IDs (12 chars) or full IDs (64 chars)
+		// We need to match by prefix to handle both cases
+		containerExists := false
+		for actualID := range actualContainerIDs {
+			// Check exact match OR prefix match (for short ID vs full ID)
+			if actualID == container.ContainerID || strings.HasPrefix(container.ContainerID, actualID) {
+				containerExists = true
+				break
+			}
+		}
+
+		if !containerExists {
 			// Container no longer exists, remove from registry
 			delete(r.containers, serverID)
 			removed++
