@@ -2,7 +2,7 @@ package com.payperplay.velocity;
 
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
-import com.velocitypowered.api.event.player.ServerPreConnectEvent;
+import com.velocitypowered.api.event.player.PlayerChooseInitialServerEvent;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
 import com.velocitypowered.api.plugin.Plugin;
@@ -235,38 +235,23 @@ public class RemoteAPI {
 
     /**
      * Handle player initial connection - route to first available server
-     * This is triggered when a player first connects to the proxy (not when switching servers)
+     * This event fires when a player connects and Velocity needs to choose their initial server
      */
     @Subscribe
-    public void onPlayerConnect(ServerPreConnectEvent event) {
-        // Only handle initial connections (when player joins proxy)
-        // ServerPreConnectEvent fires for both initial connections and server switches
-        RegisteredServer previousServer = event.getPreviousServer();
-
-        // If player is switching between servers, don't interfere
-        if (previousServer != null) {
-            logger.debug("Player {} switching servers, not routing", event.getPlayer().getUsername());
-            return;
-        }
-
+    public void onPlayerChooseInitialServer(PlayerChooseInitialServerEvent event) {
         // Get all registered servers
         List<RegisteredServer> availableServers = server.getAllServers().stream()
-            .filter(s -> !s.getPlayersConnected().isEmpty() || true) // Include all servers for now
             .collect(Collectors.toList());
 
         if (availableServers.isEmpty()) {
             logger.warn("Player {} tried to connect but no servers are registered", event.getPlayer().getUsername());
-            event.setResult(ServerPreConnectEvent.ServerResult.denied());
-            event.getPlayer().disconnect(
-                Component.text("No servers available. Please try again later.")
-                    .color(NamedTextColor.RED)
-            );
+            // No servers available - player will be disconnected by Velocity
             return;
         }
 
         // Route to first available server
         RegisteredServer targetServer = availableServers.get(0);
-        event.setResult(ServerPreConnectEvent.ServerResult.allowed(targetServer));
+        event.setInitialServer(targetServer);
 
         logger.info("Routing player {} to server {}",
             event.getPlayer().getUsername(),
