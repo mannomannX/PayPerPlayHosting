@@ -965,8 +965,8 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 			containerID,
 			selectedNodeID,
 			server.RAMMb,
-			dockerPort,
-			server.Port,
+			server.Port, // DockerPort = same as MinecraftPort (1:1 port mapping)
+			server.Port, // MinecraftPort
 			"running",
 		)
 
