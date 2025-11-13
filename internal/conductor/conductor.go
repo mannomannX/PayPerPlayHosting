@@ -571,6 +571,7 @@ func (c *Conductor) bootstrapProxyNode() {
 	}
 
 	// Register proxy node
+	proxyNow := time.Now()
 	proxyNode := &Node{
 		ID:               "proxy-node",
 		Hostname:         "velocity-proxy",
@@ -578,7 +579,17 @@ func (c *Conductor) bootstrapProxyNode() {
 		Type:             "dedicated",
 		TotalRAMMB:       totalRAMMB,
 		TotalCPUCores:    totalCPU,
-		Status:           NodeStatusUnknown,
+		Status:           NodeStatusUnknown,  // DEPRECATED - use HealthStatus
+		LifecycleState:   NodeStateActive,    // System nodes start as active
+		HealthStatus:     HealthStatusHealthy,
+		Metrics: NodeLifecycleMetrics{
+			ProvisionedAt:       proxyNow,
+			InitializedAt:       &proxyNow,
+			FirstContainerAt:    nil,
+			LastContainerAt:     nil,
+			TotalContainersEver: 0,
+			CurrentContainers:   0,
+		},
 		LastHealthCheck:  time.Now(),
 		ContainerCount:   0,
 		AllocatedRAMMB:   0,
