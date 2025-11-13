@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -112,6 +113,10 @@ func (r *ContainerRegistry) RemoveContainer(serverID string) {
 	}
 
 	nodeID := container.NodeID
+
+	// Publish container removed event to dashboard
+	events.PublishContainerRemoved(serverID, container.ServerName, nodeID, "container_stopped")
+
 	delete(r.containers, serverID)
 
 	// Track container lifecycle on node

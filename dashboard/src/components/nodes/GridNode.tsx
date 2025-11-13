@@ -139,7 +139,7 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
       {/* Container Slots */}
       <div style={{ marginTop: '12px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '12px' }}>
         <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>
-          Assigned MC-Servers ({data.containerCount}/{maxSlots}):
+          MC-Containers ({data.containers.length}):
         </div>
         <div style={{
           display: 'flex',
@@ -148,46 +148,95 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
           maxHeight: '200px',
           overflowY: 'auto',
         }}>
-          {containerSlots.map((container, idx) => (
-            <div
-              key={idx}
-              title={container ? `${container.server_name} (${container.ram_mb}MB) - ${container.status}` : 'Empty slot'}
-              style={{
-                height: '28px',
-                borderRadius: '4px',
-                background: container
-                  ? getStatusColor(container.status)
-                  : 'rgba(255,255,255,0.1)',
-                border: container ? 'none' : '1px dashed rgba(255,255,255,0.3)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '0 8px',
-                fontSize: '9px',
-                fontWeight: 'bold',
-                cursor: container ? 'pointer' : 'default',
-                transition: 'all 0.2s',
-              }}
-            >
-              {container ? (
-                <>
-                  <span style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1,
-                  }}>
-                    {container.server_name}
-                  </span>
-                  <span style={{ opacity: 0.7, fontSize: '8px', marginLeft: '4px' }}>
-                    {container.ram_mb}MB
-                  </span>
-                </>
-              ) : (
-                <span style={{ opacity: 0.5, textAlign: 'center', width: '100%' }}>—</span>
-              )}
+          {data.containers.length === 0 ? (
+            <div style={{
+              height: '32px',
+              borderRadius: '4px',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px dashed rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '10px',
+              color: 'rgba(255,255,255,0.5)',
+            }}>
+              No containers
             </div>
-          ))}
+          ) : (
+            data.containers.map((container, idx) => {
+              // Calculate height based on RAM (min 24px, max 60px, proportional to RAM)
+              const ramGB = container.ram_mb / 1024;
+              const baseHeight = 24;
+              const heightPerGB = 8;
+              const containerHeight = Math.min(60, Math.max(baseHeight, baseHeight + (ramGB * heightPerGB)));
+
+              return (
+                <motion.div
+                  key={container.server_id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  title={`${container.server_name}\n${(container.ram_mb / 1024).toFixed(1)} GB RAM\nStatus: ${container.status}`}
+                  style={{
+                    height: `${containerHeight}px`,
+                    borderRadius: '6px',
+                    background: getStatusColor(container.status),
+                    border: 'none',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    padding: '0 10px',
+                    fontSize: '9px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                  }}
+                  whileHover={{
+                    scale: 1.02,
+                    boxShadow: '0 4px 8px rgba(0,0,0,0.4)',
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    width: '100%',
+                  }}>
+                    <span style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      flex: 1,
+                      fontSize: '10px',
+                    }}>
+                      {container.server_name}
+                    </span>
+                    <span style={{
+                      opacity: 0.9,
+                      fontSize: '9px',
+                      marginLeft: '6px',
+                      background: 'rgba(0,0,0,0.2)',
+                      padding: '2px 5px',
+                      borderRadius: '3px',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {(container.ram_mb / 1024).toFixed(1)}GB
+                    </span>
+                  </div>
+                  {containerHeight > 35 && (
+                    <div style={{
+                      fontSize: '7px',
+                      opacity: 0.7,
+                      marginTop: '2px',
+                    }}>
+                      {container.status.toUpperCase()}
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })
+          )}
         </div>
       </div>
 
