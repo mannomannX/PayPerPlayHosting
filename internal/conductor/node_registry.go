@@ -262,6 +262,26 @@ func (r *NodeRegistry) GetFleetStats() FleetStats {
 	stats := FleetStats{}
 
 	for _, node := range r.nodes {
+		// CRITICAL FIX: Skip system nodes (local-node, proxy-node) for capacity calculations!
+		// System nodes don't host Minecraft containers, so they shouldn't be counted in fleet capacity.
+		// This was causing the Scaling Engine to think there was plenty of capacity when worker nodes were full.
+		// Example: Worker node 8192 MB full + System nodes 7628 MB empty = 51% capacity (WRONG!)
+		// Should be: Worker node 8192/8192 MB = 100% capacity → triggers scale-up
+		if node.IsSystemNode {
+			// Still count system nodes in total node count, but skip capacity calculations
+			stats.TotalNodes++
+			if node.Type == "dedicated" {
+				stats.DedicatedNodes++
+			}
+			if node.IsHealthy() {
+				stats.HealthyNodes++
+			} else {
+				stats.UnhealthyNodes++
+			}
+			continue // Skip capacity calculations for system nodes
+		}
+
+		// Worker nodes (non-system): count everything for capacity planning
 		stats.TotalNodes++
 		stats.TotalRAMMB += node.TotalRAMMB
 		stats.SystemReservedRAMMB += node.SystemReservedRAMMB

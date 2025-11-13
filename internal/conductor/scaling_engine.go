@@ -296,7 +296,9 @@ func (e *ScalingEngine) buildScalingContext() ScalingContext {
 
 	var dedicatedNodes, cloudNodes, workerNodes []*Node
 	for _, node := range nodes {
-		if node.Type == "dedicated" {
+		// CRITICAL FIX: Only count NON-SYSTEM dedicated nodes for capacity planning
+		// System nodes (local-node, proxy-node) don't host Minecraft containers
+		if node.Type == "dedicated" && !node.IsSystemNode {
 			dedicatedNodes = append(dedicatedNodes, node)
 		} else if node.Type == "cloud" {
 			cloudNodes = append(cloudNodes, node)
