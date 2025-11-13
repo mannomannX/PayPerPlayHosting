@@ -31,6 +31,7 @@ type Conductor struct {
 	RemoteClient      *docker.RemoteDockerClient // For remote node operations (SSH-based)
 	CloudProvider     cloud.CloudProvider        // Cloud provider for metrics (optional)
 	StartQueue        *StartQueue                // Queue for servers waiting for capacity
+	DebugLogBuffer    *DebugLogBuffer            // Buffer for dashboard debug console
 	StartedAt         time.Time                  // When Conductor started (for startup delay)
 	serverStarter     ServerStarter              // Interface to start servers (injected)
 	stopChan          chan struct{}              // For graceful shutdown of background workers
@@ -63,7 +64,8 @@ func NewConductor(healthCheckInterval time.Duration, sshKeyPath string) *Conduct
 		}
 	}
 
-	healthChecker := NewHealthChecker(nodeRegistry, containerRegistry, remoteClient, healthCheckInterval)
+	debugLogBuffer := NewDebugLogBuffer(200) // Keep last 200 debug events
+	healthChecker := NewHealthChecker(nodeRegistry, containerRegistry, remoteClient, debugLogBuffer, healthCheckInterval)
 	nodeSelector := NewNodeSelector(nodeRegistry)
 
 	return &Conductor{
@@ -74,6 +76,7 @@ func NewConductor(healthCheckInterval time.Duration, sshKeyPath string) *Conduct
 		RemoteClient:      remoteClient,
 		ScalingEngine:     nil, // Initialized later with cloud provider
 		StartQueue:        NewStartQueue(),
+		DebugLogBuffer:    debugLogBuffer,
 		StartedAt:         time.Now(), // Track startup time for delay
 		stopChan:          make(chan struct{}),
 	}
@@ -90,8 +93,8 @@ func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyN
 	// Store cloud provider for CPU metrics
 	c.CloudProvider = cloudProvider
 
-	vmProvisioner := NewVMProvisioner(cloudProvider, c.NodeRegistry, sshKeyName)
-	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, c.StartQueue, enabled, velocityClient)
+	vmProvisioner := NewVMProvisioner(cloudProvider, c.NodeRegistry, c.DebugLogBuffer, sshKeyName)
+	c.ScalingEngine = NewScalingEngine(cloudProvider, vmProvisioner, c.NodeRegistry, c.StartQueue, c.DebugLogBuffer, enabled, velocityClient)
 	c.ScalingEngine.SetConductor(c) // Set back-reference for migrations (B8)
 
 	logger.Info("Scaling engine initialized", map[string]interface{}{

@@ -18,7 +18,10 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(scp /c/Users/Robin/Desktop/PayPerPlayHosting/payperplay-NEW root@91.98.202.235:/root/PayPerPlayHosting/)"
+      "Bash(scp /c/Users/Robin/Desktop/PayPerPlayHosting/payperplay-NEW root@91.98.202.235:/root/PayPerPlayHosting/)",
+      "Bash(git restore:*)",
+      "Bash(tree:*)",
+      "Bash(md5sum:*)"
     ],
     "deny": [],
     "ask": []

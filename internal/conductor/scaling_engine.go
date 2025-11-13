@@ -20,6 +20,7 @@ type ScalingEngine struct {
 	startQueue     *StartQueue // Queue for servers waiting for capacity
 	conductor      *Conductor  // Back-reference for migrations (B8)
 	velocityClient interface{} // For Velocity-aware migrations (can be nil or *velocity.RemoteVelocityClient)
+	debugLogBuffer *DebugLogBuffer
 	enabled        bool
 	checkInterval  time.Duration
 	stopChan       chan struct{}
@@ -31,6 +32,7 @@ func NewScalingEngine(
 	vmProvisioner *VMProvisioner,
 	nodeRegistry *NodeRegistry,
 	startQueue *StartQueue,
+	debugLogBuffer *DebugLogBuffer,
 	enabled bool,
 	velocityClient VelocityClient,
 ) *ScalingEngine {
@@ -42,13 +44,14 @@ func NewScalingEngine(
 		startQueue:     startQueue,
 		conductor:      nil, // Set later via SetConductor()
 		velocityClient: velocityClient,
+		debugLogBuffer: debugLogBuffer,
 		enabled:        enabled,
 		checkInterval:  2 * time.Minute, // Check every 2 minutes
 		stopChan:       make(chan struct{}),
 	}
 
 	// Register default policies
-	engine.RegisterPolicy(NewReactivePolicy(cloudProvider))
+	engine.RegisterPolicy(NewReactivePolicy(cloudProvider, debugLogBuffer))
 	// TODO B6: engine.RegisterPolicy(NewSparePoolPolicy())
 	// TODO B7: engine.RegisterPolicy(NewPredictivePolicy())
 
@@ -186,14 +189,20 @@ func (e *ScalingEngine) evaluateScaling() {
 	// Ask all policies (in priority order) if we should scale UP
 	for _, policy := range e.policies {
 		if shouldScale, recommendation := policy.ShouldScaleUp(ctx); shouldScale {
-			logger.Info("Scale UP decision", map[string]interface{}{
+			fields := map[string]interface{}{
 				"policy":      policy.Name(),
 				"action":      recommendation.Action,
 				"server_type": recommendation.ServerType,
 				"count":       recommendation.Count,
 				"reason":      recommendation.Reason,
 				"urgency":     recommendation.Urgency,
-			})
+			}
+			logger.Info("Scale UP decision", fields)
+
+			// Add to debug log buffer for dashboard
+			if e.conductor != nil && e.conductor.DebugLogBuffer != nil {
+				e.conductor.DebugLogBuffer.Add("INFO", fmt.Sprintf("Scale UP: %s (%s)", recommendation.Reason, recommendation.ServerType), fields)
+			}
 
 			// Publish scaling decision event
 			capacityPercent := 0.0
@@ -217,12 +226,18 @@ func (e *ScalingEngine) evaluateScaling() {
 	// Ask all policies if we should scale DOWN
 	for _, policy := range e.policies {
 		if shouldScale, recommendation := policy.ShouldScaleDown(ctx); shouldScale {
-			logger.Info("Scale DOWN decision", map[string]interface{}{
+			fields := map[string]interface{}{
 				"policy": policy.Name(),
 				"action": recommendation.Action,
 				"count":  recommendation.Count,
 				"reason": recommendation.Reason,
-			})
+			}
+			logger.Info("Scale DOWN decision", fields)
+
+			// Add to debug log buffer for dashboard
+			if e.conductor != nil && e.conductor.DebugLogBuffer != nil {
+				e.conductor.DebugLogBuffer.Add("INFO", fmt.Sprintf("Scale DOWN: %s (count: %d)", recommendation.Reason, recommendation.Count), fields)
+			}
 
 			// Publish scaling decision event
 			capacityPercent := 0.0

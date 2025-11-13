@@ -62,3 +62,25 @@ func (h *ConductorHandler) GetContainers(c *gin.Context) {
 		"data":   containers,
 	})
 }
+
+// GetDebugLogs returns recent debug log entries for the dashboard console
+// GET /conductor/debug-logs
+func (h *ConductorHandler) GetDebugLogs(c *gin.Context) {
+	logs := h.conductor.DebugLogBuffer.GetAll()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "ok",
+		"data":   logs,
+	})
+}
+
+// ClearDebugLogs clears all debug log entries
+// DELETE /conductor/debug-logs
+func (h *ConductorHandler) ClearDebugLogs(c *gin.Context) {
+	h.conductor.DebugLogBuffer.Clear()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "ok",
+		"message": "Debug logs cleared",
+	})
+}

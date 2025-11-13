@@ -177,6 +177,40 @@
                 </div>
             </div>
 
+            <!-- Debug Console (only shown when admin mode is on) -->
+            <div x-show="adminMode" class="bg-gray-800 rounded-lg p-4 mb-8">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-gray-300">🐛 Debug Console</h3>
+                    <div class="flex gap-2">
+                        <button @click="clearDebugLogs()"
+                                class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm transition">
+                            Clear Logs
+                        </button>
+                        <button @click="debugLogsEnabled = !debugLogsEnabled"
+                                :class="debugLogsEnabled ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'"
+                                class="px-3 py-1 rounded text-sm transition">
+                            <span x-text="debugLogsEnabled ? '▶ Live' : '⏸ Paused'"></span>
+                        </button>
+                    </div>
+                </div>
+                <div class="bg-gray-900 rounded p-3 h-64 overflow-y-auto font-mono text-xs" id="debug-console-output">
+                    <template x-for="log in debugLogs" :key="log.timestamp">
+                        <div class="mb-2 flex gap-2">
+                            <span class="text-gray-500" x-text="new Date(log.timestamp).toLocaleTimeString()"></span>
+                            <span :class="{
+                                'text-blue-400': log.level == 'INFO',
+                                'text-yellow-400': log.level == 'WARN',
+                                'text-red-400': log.level == 'ERROR'
+                            }" x-text="log.level"></span>
+                            <span class="text-gray-300" x-text="log.message"></span>
+                        </div>
+                    </template>
+                    <div x-show="debugLogs.length === 0" class="text-gray-500 text-center mt-8">
+                        No debug logs yet. Scaling decisions and node health changes will appear here.
+                    </div>
+                </div>
+            </div>
+
             <!-- Create Server Form -->
             <div class="bg-gray-800 rounded-lg p-6 mb-8">
                 <div class="flex items-center justify-between mb-4">
@@ -2182,6 +2216,12 @@
                 loading: true,
                 adminMode: false,  // Admin toggle for debugging
                 showCustomRamInput: false,  // Show custom RAM input
+
+                // Debug console state
+                debugLogs: [],
+                debugLogsEnabled: true,
+                debugLogsInterval: null,
+
                 newServer: {
                     name: '',
                     server_type: 'paper',
@@ -2249,6 +2289,9 @@
 
                     // Start connection monitoring
                     this.startConnectionMonitoring();
+
+                    // Start debug logs polling (fetch every 3 seconds)
+                    this.startDebugLogsPolling();
                 },
 
                 async handleOAuthCallback(provider, code, state) {
@@ -3453,6 +3496,52 @@
 
                     const version = this.configForm.minecraft_version || '1.8.9';
                     return window.VersionFeatures.isSimulationDistanceSupported(version);
+                },
+
+                // Debug Console methods
+                startDebugLogsPolling() {
+                    // Fetch immediately
+                    this.fetchDebugLogs();
+
+                    // Poll every 3 seconds (only when enabled)
+                    this.debugLogsInterval = setInterval(() => {
+                        if (this.debugLogsEnabled) {
+                            this.fetchDebugLogs();
+                        }
+                    }, 3000);
+                },
+
+                async fetchDebugLogs() {
+                    if (!this.adminMode) return; // Only fetch when admin mode is on
+
+                    try {
+                        const response = await this.apiCall('/conductor/debug-logs');
+                        if (response.ok) {
+                            const logs = await response.json();
+                            this.debugLogs = logs || [];
+
+                            // Auto-scroll to bottom if console is visible
+                            this.$nextTick(() => {
+                                const console = document.getElementById('debug-console-output');
+                                if (console && this.debugLogsEnabled) {
+                                    console.scrollTop = console.scrollHeight;
+                                }
+                            });
+                        }
+                    } catch (error) {
+                        console.error('Failed to fetch debug logs:', error);
+                    }
+                },
+
+                async clearDebugLogs() {
+                    try {
+                        const response = await this.apiCall('/conductor/debug-logs', { method: 'DELETE' });
+                        if (response.ok) {
+                            this.debugLogs = [];
+                        }
+                    } catch (error) {
+                        console.error('Failed to clear debug logs:', error);
+                    }
                 }
             }
         }

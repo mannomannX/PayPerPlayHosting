@@ -12,19 +12,21 @@ import (
 
 // VMProvisioner handles automated VM provisioning and setup
 type VMProvisioner struct {
-	cloudProvider cloud.CloudProvider
-	nodeRegistry  *NodeRegistry
-	sshKeyName    string // SSH key configured in cloud provider
-	agentVersion  string // PayPerPlay agent version to install
+	cloudProvider  cloud.CloudProvider
+	nodeRegistry   *NodeRegistry
+	debugLogBuffer *DebugLogBuffer
+	sshKeyName     string // SSH key configured in cloud provider
+	agentVersion   string // PayPerPlay agent version to install
 }
 
 // NewVMProvisioner creates a new VM provisioner
-func NewVMProvisioner(cloudProvider cloud.CloudProvider, nodeRegistry *NodeRegistry, sshKeyName string) *VMProvisioner {
+func NewVMProvisioner(cloudProvider cloud.CloudProvider, nodeRegistry *NodeRegistry, debugLogBuffer *DebugLogBuffer, sshKeyName string) *VMProvisioner {
 	return &VMProvisioner{
-		cloudProvider: cloudProvider,
-		nodeRegistry:  nodeRegistry,
-		sshKeyName:    sshKeyName,
-		agentVersion:  "latest", // TODO: Make configurable
+		cloudProvider:  cloudProvider,
+		nodeRegistry:   nodeRegistry,
+		debugLogBuffer: debugLogBuffer,
+		sshKeyName:     sshKeyName,
+		agentVersion:   "latest", // TODO: Make configurable
 	}
 }
 
@@ -83,10 +85,16 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	// Register placeholder immediately BEFORE starting slow Hetzner API calls
 	p.nodeRegistry.RegisterNode(placeholderNode)
 
-	logger.Info("Placeholder node registered, starting Hetzner provisioning", map[string]interface{}{
+	fields := map[string]interface{}{
 		"placeholder_id": placeholderID,
 		"server_type":    serverType,
-	})
+	}
+	logger.Info("Placeholder node registered, starting Hetzner provisioning", fields)
+
+	// Add to debug log buffer for dashboard
+	if p.debugLogBuffer != nil {
+		p.debugLogBuffer.Add("INFO", fmt.Sprintf("Provisioning Worker-Node (%s)", serverType), fields)
+	}
 
 	// Get Ubuntu 22.04 image ID from Hetzner API
 	imageID, err := p.cloudProvider.GetUbuntuImage("22.04")
@@ -157,11 +165,17 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	// Remove placeholder first
 	p.nodeRegistry.UnregisterNode(placeholderID)
 
-	logger.Info("Hetzner server created, replacing placeholder with real node", map[string]interface{}{
+	fields2 := map[string]interface{}{
 		"placeholder_id": placeholderID,
 		"server_id":      server.ID,
 		"ip":             server.IPAddress,
-	})
+	}
+	logger.Info("Hetzner server created, replacing placeholder with real node", fields2)
+
+	// Add to debug log buffer for dashboard
+	if p.debugLogBuffer != nil {
+		p.debugLogBuffer.Add("INFO", fmt.Sprintf("Worker-Node created: %s (%s)", server.IPAddress, server.Name), fields2)
+	}
 
 	// Create real Node object with Hetzner server details
 	node := &Node{

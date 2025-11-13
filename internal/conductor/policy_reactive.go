@@ -26,10 +26,13 @@ type ReactivePolicy struct {
 	serverTypeCache []*cloud.ServerType
 	cacheExpiry     time.Time
 	cacheMutex      sync.RWMutex
+
+	// Debug logging for dashboard console
+	debugLogBuffer *DebugLogBuffer
 }
 
 // NewReactivePolicy creates a new reactive scaling policy
-func NewReactivePolicy(cloudProvider cloud.CloudProvider) *ReactivePolicy {
+func NewReactivePolicy(cloudProvider cloud.CloudProvider, debugLogBuffer *DebugLogBuffer) *ReactivePolicy {
 	return &ReactivePolicy{
 		ScaleUpThreshold:   85.0,              // Scale up at 85% capacity
 		ScaleDownThreshold: 30.0,              // Scale down below 30% capacity
@@ -41,6 +44,7 @@ func NewReactivePolicy(cloudProvider cloud.CloudProvider) *ReactivePolicy {
 		cloudProvider:      cloudProvider,
 		serverTypeCache:    nil,
 		cacheExpiry:        time.Time{},
+		debugLogBuffer:     debugLogBuffer,
 	}
 }
 
@@ -72,6 +76,15 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 		p.lastScaleAction = time.Now()
 		p.lastScaleType = ScaleActionScaleUp
 
+		// Log to debug console
+		if p.debugLogBuffer != nil {
+			p.debugLogBuffer.Add("INFO", fmt.Sprintf("QUEUE-TRIGGER: Provisioning %s for %d queued server(s)", serverType, ctx.QueuedServerCount), map[string]interface{}{
+				"queued_servers": ctx.QueuedServerCount,
+				"server_type":    serverType,
+				"reason":         "no_worker_nodes",
+			})
+		}
+
 		return true, ScaleRecommendation{
 			Action:     ScaleActionScaleUp,
 			ServerType: serverType,
@@ -96,6 +109,15 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 			"current_nodes": len(ctx.CloudNodes),
 			"max_nodes":     p.MaxCloudNodes,
 		})
+
+		// Log to debug console
+		if p.debugLogBuffer != nil {
+			p.debugLogBuffer.Add("WARN", fmt.Sprintf("Max cloud nodes reached (%d/%d) - cannot scale up", len(ctx.CloudNodes), p.MaxCloudNodes), map[string]interface{}{
+				"current_nodes": len(ctx.CloudNodes),
+				"max_nodes":     p.MaxCloudNodes,
+			})
+		}
+
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
@@ -126,6 +148,18 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 
 		p.lastScaleAction = time.Now()
 		p.lastScaleType = ScaleActionScaleUp
+
+		// Log to debug console
+		if p.debugLogBuffer != nil {
+			p.debugLogBuffer.Add("INFO", fmt.Sprintf("CAPACITY-TRIGGER: Scale UP to %s (%.1f%% > %.1f%%)", serverType, capacityPercent, p.ScaleUpThreshold), map[string]interface{}{
+				"capacity_percent":  capacityPercent,
+				"threshold":         p.ScaleUpThreshold,
+				"server_type":       serverType,
+				"urgency":           urgency,
+				"allocated_ram_mb":  ctx.FleetStats.AllocatedRAMMB,
+				"total_ram_mb":      ctx.FleetStats.TotalRAMMB,
+			})
+		}
 
 		return true, ScaleRecommendation{
 			Action:     ScaleActionScaleUp,
@@ -183,6 +217,17 @@ func (p *ReactivePolicy) ShouldScaleDown(ctx ScalingContext) (bool, ScaleRecomme
 
 		p.lastScaleAction = time.Now()
 		p.lastScaleType = ScaleActionScaleDown
+
+		// Log to debug console
+		if p.debugLogBuffer != nil {
+			p.debugLogBuffer.Add("INFO", fmt.Sprintf("CAPACITY-TRIGGER: Scale DOWN (%.1f%% < %.1f%%)", capacityPercent, p.ScaleDownThreshold), map[string]interface{}{
+				"capacity_percent": capacityPercent,
+				"threshold":        p.ScaleDownThreshold,
+				"cloud_nodes":      len(ctx.CloudNodes),
+				"allocated_ram_mb": ctx.FleetStats.AllocatedRAMMB,
+				"total_ram_mb":     ctx.FleetStats.TotalRAMMB,
+			})
+		}
 
 		return true, ScaleRecommendation{
 			Action:     ScaleActionScaleDown,

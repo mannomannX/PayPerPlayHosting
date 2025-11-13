@@ -83,6 +83,8 @@ func SetupRouter(
 		conductor.GET("/fleet", conductorHandler.GetFleetStats)
 		conductor.GET("/nodes", conductorHandler.GetNodes)
 		conductor.GET("/containers", conductorHandler.GetContainers)
+		conductor.GET("/debug-logs", conductorHandler.GetDebugLogs)
+		conductor.DELETE("/debug-logs", conductorHandler.ClearDebugLogs)
 	}
 
 	// WebSocket endpoint (no auth required for MVP)

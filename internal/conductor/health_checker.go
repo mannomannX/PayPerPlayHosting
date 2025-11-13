@@ -18,16 +18,18 @@ type HealthChecker struct {
 	nodeRegistry      *NodeRegistry
 	containerRegistry *ContainerRegistry
 	remoteClient      *docker.RemoteDockerClient
+	debugLogBuffer    *DebugLogBuffer
 	interval          time.Duration
 	stopChan          chan struct{}
 }
 
 // NewHealthChecker creates a new health checker
-func NewHealthChecker(nodeRegistry *NodeRegistry, containerRegistry *ContainerRegistry, remoteClient *docker.RemoteDockerClient, interval time.Duration) *HealthChecker {
+func NewHealthChecker(nodeRegistry *NodeRegistry, containerRegistry *ContainerRegistry, remoteClient *docker.RemoteDockerClient, debugLogBuffer *DebugLogBuffer, interval time.Duration) *HealthChecker {
 	return &HealthChecker{
 		nodeRegistry:      nodeRegistry,
 		containerRegistry: containerRegistry,
 		remoteClient:      remoteClient,
+		debugLogBuffer:    debugLogBuffer,
 		interval:          interval,
 		stopChan:          make(chan struct{}),
 	}
@@ -73,21 +75,33 @@ func (h *HealthChecker) performHealthCheck() {
 		// LOG STATUS CHANGES (not just debug!)
 		if oldStatus != status {
 			if status == NodeStatusUnhealthy {
-				logger.Warn("Node became UNHEALTHY", map[string]interface{}{
+				fields := map[string]interface{}{
 					"node_id":     node.ID,
 					"hostname":    node.Hostname,
 					"ip":          node.IPAddress,
 					"old_status":  oldStatus,
 					"new_status":  status,
 					"type":        node.Type,
-				})
+				}
+				logger.Warn("Node became UNHEALTHY", fields)
+
+				// Add to debug log buffer for dashboard
+				if h.debugLogBuffer != nil {
+					h.debugLogBuffer.Add("WARN", fmt.Sprintf("Node %s became UNHEALTHY (%s)", node.Hostname, node.IPAddress), fields)
+				}
 			} else {
-				logger.Info("Node status changed", map[string]interface{}{
+				fields := map[string]interface{}{
 					"node_id":     node.ID,
 					"hostname":    node.Hostname,
 					"old_status":  oldStatus,
 					"new_status":  status,
-				})
+				}
+				logger.Info("Node status changed", fields)
+
+				// Add to debug log buffer for dashboard
+				if h.debugLogBuffer != nil {
+					h.debugLogBuffer.Add("INFO", fmt.Sprintf("Node %s status: %s → %s", node.Hostname, oldStatus, status), fields)
+				}
 			}
 		}
 
