@@ -460,7 +460,8 @@ func (c *Conductor) bootstrapLocalNode() {
 		},
 	}
 
-	// Calculate intelligent system reserve (3-tier strategy)
+	// Calculate proportional system reserve (same as worker nodes for consistency)
+	// PROPORTIONAL OVERHEAD MODEL: Control plane also uses 12.5% (1/8) system budget
 	localNode.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
 
 	c.NodeRegistry.RegisterNode(localNode)
@@ -602,9 +603,9 @@ func (c *Conductor) bootstrapProxyNode() {
 		},
 	}
 
-	// Calculate intelligent system reserve
-	// Proxy node needs less reserve than control plane (no DB, no MinecraftService)
-	proxyNode.UpdateSystemReserve(500, 10.0) // 500 MB base + 10% for Velocity proxy
+	// Calculate proportional system reserve (same as worker nodes for consistency)
+	// PROPORTIONAL OVERHEAD MODEL: Proxy layer also uses 12.5% (1/8) system budget
+	proxyNode.UpdateSystemReserve(cfg.SystemReservedRAMMB, cfg.SystemReservedRAMPercent)
 
 	c.NodeRegistry.RegisterNode(proxyNode)
 
