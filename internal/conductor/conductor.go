@@ -790,10 +790,11 @@ func (c *Conductor) ProcessStartQueue() {
 		}
 
 		// CRITICAL: Check capacity ONLY on Worker Nodes (MC servers cannot run on System nodes)
+		// ONLY count HEALTHY nodes! Unhealthy nodes cannot accept containers
 		workerNodeRAM := 0
 		workerNodeCount := 0
 		for _, node := range c.NodeRegistry.GetAllNodes() {
-			if !node.IsSystemNode {
+			if !node.IsSystemNode && node.Status == NodeStatusHealthy {
 				workerNodeRAM += node.AvailableRAMMB()
 				workerNodeCount++
 			}

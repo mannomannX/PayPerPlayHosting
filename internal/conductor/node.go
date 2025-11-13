@@ -45,10 +45,10 @@ func (n *Node) UsableRAMMB() int {
 }
 
 // AvailableRAMMB returns the currently available RAM for NEW containers
-// This accounts for system reserve AND already allocated RAM
+// PROPORTIONAL OVERHEAD SYSTEM: Uses TotalRAM (not UsableRAM!)
+// Containers get ActualRAM (less), but capacity planning uses TotalRAM
 func (n *Node) AvailableRAMMB() int {
-	usable := n.UsableRAMMB()
-	available := usable - n.AllocatedRAMMB
+	available := n.TotalRAMMB - n.AllocatedRAMMB
 	if available < 0 {
 		return 0
 	}

@@ -22,7 +22,9 @@
       "Bash(git restore:*)",
       "Bash(tree:*)",
       "Bash(md5sum:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(tar:*)",
+      "Bash(scp:*)"
     ],
     "deny": [],
     "ask": []
