@@ -55,8 +55,12 @@ func (r *RemoteDockerClient) StartContainer(
 		return "", fmt.Errorf("failed to start container on node %s: %w (output: %s)", node.ID, err, output)
 	}
 
-	// Docker run returns container ID
-	containerID := strings.TrimSpace(output)
+	// Docker run returns container ID (first line of output)
+	// CRITICAL FIX: If image needs to be pulled, docker outputs pull progress on subsequent lines
+	// We only want the container ID from the first line to avoid varchar(128) database errors
+	output = strings.TrimSpace(output)
+	lines := strings.Split(output, "\n")
+	containerID := strings.TrimSpace(lines[0])
 	if containerID == "" {
 		return "", fmt.Errorf("no container ID returned from docker run")
 	}
