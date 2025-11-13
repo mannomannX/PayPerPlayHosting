@@ -179,6 +179,7 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	}
 
 	// Create real Node object with Hetzner server details
+	now := time.Now()
 	node := &Node{
 		ID:               server.ID,
 		Hostname:         server.Name,
@@ -186,13 +187,23 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		Type:             "cloud", // vs "dedicated"
 		TotalRAMMB:       serverTypeInfo.RAMMB,
 		TotalCPUCores:    serverTypeInfo.Cores,
-		Status:           NodeStatusUnhealthy, // Unhealthy until Cloud-Init completes
-		LastHealthCheck:  time.Now(),
+		Status:           NodeStatusUnhealthy, // DEPRECATED - use HealthStatus
+		LifecycleState:   NodeStateProvisioning, // NEW: Start in provisioning state
+		HealthStatus:     HealthStatusUnknown,   // NEW: Unknown until health checked
+		Metrics: NodeLifecycleMetrics{
+			ProvisionedAt:       now,
+			InitializedAt:       nil, // Set when Cloud-Init completes
+			FirstContainerAt:    nil,
+			LastContainerAt:     nil,
+			TotalContainersEver: 0,
+			CurrentContainers:   0,
+		},
+		LastHealthCheck:  now,
 		ContainerCount:   0,
 		AllocatedRAMMB:   0,
 		DockerSocketPath: "/var/run/docker.sock",
 		SSHUser:          "root",
-		CreatedAt:        time.Now(),
+		CreatedAt:        now,
 		Labels: map[string]string{
 			"type":       "cloud",
 			"managed_by": "payperplay",
@@ -220,9 +231,16 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 	})
 	time.Sleep(2 * time.Minute) // Cloud-Init typically takes 1-2 minutes
 
-	// Mark node as healthy now that Cloud-Init is complete
-	node.Status = NodeStatusHealthy
-	node.LastHealthCheck = time.Now()
+	// Mark node as ready now that Cloud-Init is complete
+	initTime := time.Now()
+	node.Status = NodeStatusHealthy // DEPRECATED
+	node.HealthStatus = HealthStatusHealthy
+	node.LastHealthCheck = initTime
+	node.Metrics.InitializedAt = &initTime
+
+	// Transition from provisioning → initializing → ready
+	node.TransitionLifecycleState(NodeStateInitializing, "cloud_init_started")
+	node.TransitionLifecycleState(NodeStateReady, "cloud_init_completed")
 
 	// Re-register node to ensure status update is reflected in registry
 	// (Even though we store pointers, explicit re-registration ensures consistency)
@@ -516,6 +534,7 @@ func (p *VMProvisioner) ProvisionNodeFromSnapshot(snapshotID string, serverType 
 	}
 
 	// Create Node
+	now := time.Now()
 	node := &Node{
 		ID:               server.ID,
 		Hostname:         server.Name,
@@ -523,13 +542,23 @@ func (p *VMProvisioner) ProvisionNodeFromSnapshot(snapshotID string, serverType 
 		Type:             "cloud",
 		TotalRAMMB:       serverTypeInfo.RAMMB,
 		TotalCPUCores:    serverTypeInfo.Cores,
-		Status:           NodeStatusHealthy,
-		LastHealthCheck:  time.Now(),
+		Status:           NodeStatusHealthy, // DEPRECATED
+		LifecycleState:   NodeStateReady,    // NEW: Snapshot nodes start as ready (already initialized)
+		HealthStatus:     HealthStatusHealthy, // NEW: Healthy from snapshot
+		Metrics: NodeLifecycleMetrics{
+			ProvisionedAt:       now,
+			InitializedAt:       &now, // Snapshot is pre-initialized
+			FirstContainerAt:    nil,
+			LastContainerAt:     nil,
+			TotalContainersEver: 0,
+			CurrentContainers:   0,
+		},
+		LastHealthCheck:  now,
 		ContainerCount:   0,
 		AllocatedRAMMB:   0,
 		DockerSocketPath: "/var/run/docker.sock",
 		SSHUser:          "root",
-		CreatedAt:        time.Now(),
+		CreatedAt:        now,
 		Labels: map[string]string{
 			"type":          "cloud",
 			"from_snapshot": "true",
