@@ -5,6 +5,7 @@ import { useDashboardStore } from '../../stores/dashboardStore';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { GridNode } from '../nodes/GridNode';
 import { ManhattanArrow } from '../arrows/ManhattanArrow';
+import { DebugConsole } from './DebugConsole';
 
 // WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
 const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
@@ -459,6 +460,9 @@ export const Dashboard = () => {
           </div>
         </div>
       </motion.div>
+
+      {/* Debug Console */}
+      <DebugConsole />
     </div>
   );
 };

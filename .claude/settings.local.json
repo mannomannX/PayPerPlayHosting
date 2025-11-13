@@ -21,7 +21,8 @@
       "Bash(scp /c/Users/Robin/Desktop/PayPerPlayHosting/payperplay-NEW root@91.98.202.235:/root/PayPerPlayHosting/)",
       "Bash(git restore:*)",
       "Bash(tree:*)",
-      "Bash(md5sum:*)"
+      "Bash(md5sum:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []
