@@ -604,9 +604,26 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	// VELOCITY: Register server with Velocity proxy via HTTP API
 	if s.remoteVelocityClient != nil {
 		// Build server address for Velocity to connect to
-		// Format: "host:port" where host is the Control Plane IP and port is the Docker host port
+		// Format: "host:port" where host is the actual Node IP and port is the Docker host port
 		velocityServerName := fmt.Sprintf("mc-%s", server.ID)
-		serverAddress := fmt.Sprintf("%s:%d", s.cfg.ControlPlaneIP, server.Port)
+
+		// Get the actual node IP where the server is running
+		var serverIP string
+		if s.isLocalNode(selectedNodeID) {
+			// Local node: use Control Plane IP
+			serverIP = s.cfg.ControlPlaneIP
+		} else {
+			// Remote node: get node IP from Conductor
+			remoteNode, err := s.conductor.GetRemoteNode(selectedNodeID)
+			if err != nil {
+				log.Printf("Warning: Failed to get node IP for Velocity registration: %v", err)
+				serverIP = s.cfg.ControlPlaneIP // Fallback to Control Plane
+			} else {
+				serverIP = remoteNode.IPAddress
+			}
+		}
+
+		serverAddress := fmt.Sprintf("%s:%d", serverIP, server.Port)
 
 		if err := s.remoteVelocityClient.RegisterServer(velocityServerName, serverAddress); err != nil {
 			log.Printf("Warning: Failed to register server %s with Velocity: %v", server.ID, err)
@@ -980,7 +997,24 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 	// VELOCITY: Register server with Velocity proxy via HTTP API
 	if s.remoteVelocityClient != nil {
 		velocityServerName := fmt.Sprintf("mc-%s", server.ID)
-		serverAddress := fmt.Sprintf("%s:%d", s.cfg.ControlPlaneIP, server.Port)
+
+		// Get the actual node IP where the server is running
+		var serverIP string
+		if s.isLocalNode(selectedNodeID) {
+			// Local node: use Control Plane IP
+			serverIP = s.cfg.ControlPlaneIP
+		} else {
+			// Remote node: get node IP from Conductor
+			remoteNode, err := s.conductor.GetRemoteNode(selectedNodeID)
+			if err != nil {
+				log.Printf("Warning: Failed to get node IP for Velocity registration: %v", err)
+				serverIP = s.cfg.ControlPlaneIP // Fallback to Control Plane
+			} else {
+				serverIP = remoteNode.IPAddress
+			}
+		}
+
+		serverAddress := fmt.Sprintf("%s:%d", serverIP, server.Port)
 
 		if err := s.remoteVelocityClient.RegisterServer(velocityServerName, serverAddress); err != nil {
 			log.Printf("Warning: Failed to register queued server %s with Velocity: %v", server.ID, err)
