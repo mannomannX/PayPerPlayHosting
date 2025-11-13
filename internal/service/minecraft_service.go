@@ -559,9 +559,28 @@ func (s *MinecraftService) StartServer(serverID string) error {
 	// Wait for Minecraft server to be ready before marking as running
 	// This prevents OOM kills when players try to join during startup
 	log.Printf("Waiting for Minecraft server %s to be ready...", server.ID)
-	if err := s.dockerService.WaitForServerReady(server.ContainerID, 60); err != nil {
-		log.Printf("Warning: Minecraft server %s may not be fully ready: %v", server.ID, err)
-		// Continue anyway - server might still work
+
+	// MULTI-NODE FIX: Route readiness check based on node type (local vs remote)
+	if s.isLocalNode(selectedNodeID) {
+		// LOCAL NODE: Use local Docker client
+		if err := s.dockerService.WaitForServerReady(server.ContainerID, 60); err != nil {
+			log.Printf("Warning: Minecraft server %s may not be fully ready: %v", server.ID, err)
+			// Continue anyway - server might still work
+		}
+	} else {
+		// REMOTE NODE: Use RemoteDockerClient with SSH
+		if s.conductor != nil {
+			remoteNode, err := s.conductor.GetRemoteNode(selectedNodeID)
+			if err != nil {
+				log.Printf("Warning: Failed to get remote node for readiness check: %v", err)
+			} else {
+				ctx := context.Background()
+				if err := s.conductor.GetRemoteDockerClient().WaitForServerReady(ctx, remoteNode, server.ContainerID, 60); err != nil {
+					log.Printf("Warning: Remote Minecraft server %s may not be fully ready: %v", server.ID, err)
+					// Continue anyway - server might still work
+				}
+			}
+		}
 	}
 
 	// Update status
@@ -907,8 +926,26 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 
 	// Wait for Minecraft server to be ready
 	log.Printf("Waiting for Minecraft server %s to be ready...", server.ID)
-	if err := s.dockerService.WaitForServerReady(server.ContainerID, 60); err != nil {
-		log.Printf("Warning: Minecraft server %s may not be fully ready: %v", server.ID, err)
+
+	// MULTI-NODE FIX: Route readiness check based on node type (local vs remote)
+	if s.isLocalNode(selectedNodeID) {
+		// LOCAL NODE: Use local Docker client
+		if err := s.dockerService.WaitForServerReady(server.ContainerID, 60); err != nil {
+			log.Printf("Warning: Minecraft server %s may not be fully ready: %v", server.ID, err)
+		}
+	} else {
+		// REMOTE NODE: Use RemoteDockerClient with SSH
+		if s.conductor != nil {
+			remoteNode, err := s.conductor.GetRemoteNode(selectedNodeID)
+			if err != nil {
+				log.Printf("Warning: Failed to get remote node for readiness check: %v", err)
+			} else {
+				ctx := context.Background()
+				if err := s.conductor.GetRemoteDockerClient().WaitForServerReady(ctx, remoteNode, server.ContainerID, 60); err != nil {
+					log.Printf("Warning: Remote Minecraft server %s may not be fully ready: %v", server.ID, err)
+				}
+			}
+		}
 	}
 
 	// Update status
