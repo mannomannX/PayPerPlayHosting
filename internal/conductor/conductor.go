@@ -1,13 +1,14 @@
 package conductor
 
 import (
-	"github.com/payperplay/hosting/internal/audit"
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	dockerclient "github.com/docker/docker/client"
+	"github.com/payperplay/hosting/internal/audit"
 	"github.com/payperplay/hosting/internal/cloud"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
@@ -37,7 +38,8 @@ type Conductor struct {
 	serverStarter     ServerStarter              // Interface to start servers (injected)
 	nodeRepo          NodeRepositoryInterface    // For persisting nodes to database
 	stopChan          chan struct{}              // For graceful shutdown of background workers
-	AuditLog          *audit.AuditLogger // Audit log for tracking destructive actions
+	AuditLog          *audit.AuditLogger         // Audit log for tracking destructive actions
+	queueProcessMu    sync.Mutex                 // Prevents concurrent ProcessStartQueue() calls
 }
 
 // NodeRepositoryInterface defines the interface for node persistence
@@ -689,25 +691,28 @@ func (c *Conductor) AtomicReserveStartSlot(serverID, serverName string, ramMB in
 	c.ContainerRegistry.mu.Lock()
 	defer c.ContainerRegistry.mu.Unlock()
 
-	// Check if another server is already starting
+	// Check if another server is already starting or reserving
+	// We count both "starting" and "reserving" to prevent race conditions
 	startingCount := 0
 	for _, container := range c.ContainerRegistry.containers {
-		if container.Status == "starting" {
+		if container.Status == "starting" || container.Status == "reserving" {
 			startingCount++
 		}
 	}
 
 	if startingCount > 0 {
-		return false // Another server is starting, reject
+		return false // Another server is starting/reserving, reject
 	}
 
 	// Reserve the slot immediately by registering with "starting" status
+	// CPU-GUARD: Create reservation WITHOUT NodeID to avoid ghost containers
+	// Status "reserving" indicates that node assignment is pending
 	reservation := &ContainerInfo{
 		ServerID:   serverID,
 		ServerName: serverName,
-		NodeID:     "local-node",
+		NodeID:     "", // Empty - node not assigned yet (prevents ghost on local-node)
 		RAMMb:      ramMB,
-		Status:     "starting",
+		Status:     "reserving", // Special status for pending assignment
 	}
 	reservation.LastSeenAt = time.Now()
 	c.ContainerRegistry.containers[serverID] = reservation
@@ -811,6 +816,11 @@ func (c *Conductor) RemoveFromQueue(serverID string) {
 // 2. After a new node comes online
 // 3. Periodically by a background worker
 func (c *Conductor) ProcessStartQueue() {
+	// Prevent concurrent processing - only one goroutine processes queue at a time
+	// This prevents race conditions and duplicate server starts
+	c.queueProcessMu.Lock()
+	defer c.queueProcessMu.Unlock()
+
 	if c.StartQueue.Size() == 0 {
 		return // Nothing to process
 	}
@@ -860,6 +870,12 @@ func (c *Conductor) ProcessStartQueue() {
 
 		// We have Worker-Node capacity - dequeue and signal that server can start
 		server := c.StartQueue.Dequeue()
+
+		// Safety check: Dequeue could return nil if queue was emptied by another goroutine
+		if server == nil {
+			logger.Warn("Dequeue returned nil (race condition), breaking queue processing", nil)
+			break
+		}
 
 		logger.Info("Worker-Node capacity available for queued server", map[string]interface{}{
 			"server_id":           server.ServerID,
