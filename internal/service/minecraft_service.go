@@ -957,8 +957,20 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		return err
 	}
 
-	// CPU-GUARD: Update ContainerRegistry status from "starting" to "running"
+	// Register container in ContainerRegistry (for dashboard and tracking)
 	if s.conductor != nil {
+		s.conductor.RegisterContainer(
+			server.ID,
+			server.Name,
+			containerID,
+			selectedNodeID,
+			server.RAMMb,
+			dockerPort,
+			server.Port,
+			"running",
+		)
+
+		// CPU-GUARD: Update ContainerRegistry status from "starting" to "running"
 		s.conductor.UpdateContainerStatus(server.ID, "running")
 
 		// Trigger queue processing - queued servers can now start
