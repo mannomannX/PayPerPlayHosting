@@ -429,6 +429,7 @@ func (c *Conductor) bootstrapLocalNode() {
 	// Auto-detect system resources via Docker API
 	totalRAMMB, totalCPU := c.detectSystemResources()
 
+	now := time.Now()
 	localNode := &Node{
 		ID:               "local-node",
 		Hostname:         "localhost",
@@ -436,7 +437,17 @@ func (c *Conductor) bootstrapLocalNode() {
 		Type:             "dedicated",
 		TotalRAMMB:       totalRAMMB,
 		TotalCPUCores:    totalCPU,
-		Status:           NodeStatusUnknown,
+		Status:           NodeStatusUnknown,  // DEPRECATED - use HealthStatus
+		LifecycleState:   NodeStateActive,    // System nodes start as active
+		HealthStatus:     HealthStatusHealthy,
+		Metrics: NodeLifecycleMetrics{
+			ProvisionedAt:       now,
+			InitializedAt:       &now,
+			FirstContainerAt:    nil,
+			LastContainerAt:     nil,
+			TotalContainersEver: 0,
+			CurrentContainers:   0,
+		},
 		LastHealthCheck:  time.Now(),
 		ContainerCount:   0,
 		AllocatedRAMMB:   0,
@@ -1389,6 +1400,7 @@ func (c *Conductor) SyncExistingWorkerNodes(triggerScaling bool) {
 		}
 
 		// Create Node object (matching VMProvisioner.ProvisionNode logic)
+		now := time.Now()
 		node := &Node{
 			ID:               server.ID,
 			Hostname:         server.Name,
@@ -1396,7 +1408,17 @@ func (c *Conductor) SyncExistingWorkerNodes(triggerScaling bool) {
 			Type:             "cloud",
 			TotalRAMMB:       serverTypeInfo.RAMMB,
 			TotalCPUCores:    serverTypeInfo.Cores,
-			Status:           NodeStatusHealthy,
+			Status:           NodeStatusHealthy,           // DEPRECATED - use HealthStatus
+			LifecycleState:   NodeStateReady,              // Recovered nodes start as ready (unknown history)
+			HealthStatus:     HealthStatusUnknown,         // Will be checked by health checker
+			Metrics: NodeLifecycleMetrics{
+				ProvisionedAt:       now, // Use current time (don't have original creation time)
+				InitializedAt:       &now, // Assume already initialized since it exists
+				FirstContainerAt:    nil,
+				LastContainerAt:     nil,
+				TotalContainersEver: 0,
+				CurrentContainers:   0,
+			},
 			LastHealthCheck:  time.Now(),
 			ContainerCount:   0,
 			AllocatedRAMMB:   0,
