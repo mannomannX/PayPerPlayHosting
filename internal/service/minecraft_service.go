@@ -34,7 +34,7 @@ type WebSocketHubInterface interface {
 
 // DashboardWebSocketInterface defines the methods needed from Dashboard WebSocket
 type DashboardWebSocketInterface interface {
-	BroadcastEvent(eventType string, data interface{})
+	PublishEvent(eventType string, data interface{})
 }
 
 // VelocityServiceInterface defines the methods needed from VelocityService (DEPRECATED)

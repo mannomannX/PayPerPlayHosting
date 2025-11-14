@@ -622,7 +622,7 @@ func (s *MigrationService) broadcastMigrationEvent(eventType string, data map[st
 
 	// Send to Dashboard WebSocket (for real-time dashboard visualization)
 	if s.dashboardWs != nil {
-		s.dashboardWs.BroadcastEvent(eventType, data)
+		s.dashboardWs.PublishEvent(eventType, data)
 	}
 }
 
