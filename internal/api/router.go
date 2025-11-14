@@ -89,6 +89,19 @@ func SetupRouter(
 		conductor.DELETE("/debug-logs", conductorHandler.ClearDebugLogs)
 	}
 
+	// Admin Migration API endpoints (no auth required for dashboard testing)
+	adminMigrations := router.Group("/admin/migrations")
+	{
+		adminMigrations.GET("", migrationHandler.ListMigrations)
+		adminMigrations.POST("", migrationHandler.CreateManualMigration)
+		adminMigrations.GET("/stats", migrationHandler.GetMigrationStats)
+		adminMigrations.GET("/:id", migrationHandler.GetMigration)
+		adminMigrations.POST("/:id/approve", migrationHandler.ApproveMigration)
+		adminMigrations.POST("/:id/schedule", migrationHandler.ScheduleMigration)
+		adminMigrations.POST("/:id/cancel", migrationHandler.CancelMigration)
+		adminMigrations.DELETE("/:id", migrationHandler.DeleteMigration)
+	}
+
 	// WebSocket endpoint (no auth required for MVP)
 	router.GET("/ws", wsHandler.HandleWebSocket)
 	router.GET("/api/ws/stats", wsHandler.GetStats)
@@ -324,20 +337,7 @@ func SetupRouter(
 			costOpt.POST("/analyze", costOptHandler.TriggerAnalysis)
 		}
 
-		// Migration API - Admin only
-		migrations := api.Group("/migrations")
-		{
-			migrations.GET("", migrationHandler.ListMigrations)
-			migrations.POST("", migrationHandler.CreateManualMigration)
-			migrations.GET("/stats", migrationHandler.GetMigrationStats)
-			migrations.GET("/:id", migrationHandler.GetMigration)
-			migrations.POST("/:id/approve", migrationHandler.ApproveMigration)
-			migrations.POST("/:id/schedule", migrationHandler.ScheduleMigration)
-			migrations.POST("/:id/cancel", migrationHandler.CancelMigration)
-			migrations.DELETE("/:id", migrationHandler.DeleteMigration)
-		}
-
-		// Server-specific migration endpoints
+		// Server-specific migration endpoints (require auth)
 		api.GET("/servers/:id/migrations", migrationHandler.GetServerMigrations)
 		api.GET("/servers/:id/migrations/active", migrationHandler.GetActiveMigration)
 	}

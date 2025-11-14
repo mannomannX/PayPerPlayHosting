@@ -51,11 +51,10 @@ export const MigrationPanel = () => {
     setMessage(null);
 
     try {
-      const response = await fetch('/api/migrations', {
+      const response = await fetch('/admin/migrations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          // TODO: Add auth token if required
         },
         body: JSON.stringify({
           server_id: selectedServer.id,
