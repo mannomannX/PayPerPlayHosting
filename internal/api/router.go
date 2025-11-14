@@ -34,6 +34,7 @@ func SetupRouter(
 	marketplaceHandler *MarketplaceHandler,
 	scalingHandler *ScalingHandler,
 	costOptHandler *CostOptimizationHandler,
+	migrationHandler *MigrationHandler,
 	dashboardWsHandler *DashboardWebSocket,
 	cfg *config.Config,
 ) *gin.Engine {
@@ -322,6 +323,23 @@ func SetupRouter(
 			costOpt.GET("/status", costOptHandler.GetStatus)
 			costOpt.POST("/analyze", costOptHandler.TriggerAnalysis)
 		}
+
+		// Migration API - Admin only
+		migrations := api.Group("/migrations")
+		{
+			migrations.GET("", migrationHandler.ListMigrations)
+			migrations.POST("", migrationHandler.CreateManualMigration)
+			migrations.GET("/stats", migrationHandler.GetMigrationStats)
+			migrations.GET("/:id", migrationHandler.GetMigration)
+			migrations.POST("/:id/approve", migrationHandler.ApproveMigration)
+			migrations.POST("/:id/schedule", migrationHandler.ScheduleMigration)
+			migrations.POST("/:id/cancel", migrationHandler.CancelMigration)
+			migrations.DELETE("/:id", migrationHandler.DeleteMigration)
+		}
+
+		// Server-specific migration endpoints
+		api.GET("/servers/:id/migrations", migrationHandler.GetServerMigrations)
+		api.GET("/servers/:id/migrations/active", migrationHandler.GetActiveMigration)
 	}
 
 	// Internal API (for Velocity plugin - NO AUTH required, network isolation)

@@ -105,6 +105,7 @@ func main() {
 	configChangeRepo := repository.NewConfigChangeRepository(db)
 	fileRepo := repository.NewFileRepository(db)
 	pluginRepo := repository.NewPluginRepository(db)
+	migrationRepo := repository.NewMigrationRepository(db)
 
 	// Initialize Email Service (using mock sender for now)
 	// 🚧 TODO: Replace MockEmailSender with ResendEmailSender when ready for production
@@ -286,7 +287,7 @@ func main() {
 	}
 
 	// Initialize Cost-Optimization Service for automatic server placement optimization
-	costOptimizationService := service.NewCostOptimizationService(serverRepo)
+	costOptimizationService := service.NewCostOptimizationService(serverRepo, migrationRepo)
 	costOptimizationService.SetConductor(cond)
 	costOptimizationService.Start()
 	defer costOptimizationService.Stop()
@@ -461,6 +462,9 @@ func main() {
 	// Cost optimization handler for cost analysis and suggestions (B8)
 	costOptHandler := api.NewCostOptimizationHandler(costOptimizationService)
 
+	// Migration handler for server migration management
+	migrationHandler := api.NewMigrationHandler(migrationRepo, serverRepo)
+
 	// Dashboard WebSocket for real-time visualization
 	dashboardWs := api.NewDashboardWebSocket(cond)
 	go dashboardWs.Run()
@@ -471,7 +475,7 @@ func main() {
 	events.DashboardEventPublisher = dashboardWs
 
 	// Setup router
-	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, costOptHandler, dashboardWs, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, costOptHandler, migrationHandler, dashboardWs, cfg)
 
 	// Graceful shutdown
 	go func() {

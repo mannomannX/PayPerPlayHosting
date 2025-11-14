@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/payperplay/hosting/internal/conductor"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
@@ -13,19 +14,20 @@ import (
 
 // CostOptimizationService analyzes server placements and suggests/performs migrations
 type CostOptimizationService struct {
-	serverRepo  *repository.ServerRepository
-	conductor   *conductor.Conductor
+	serverRepo    *repository.ServerRepository
+	migrationRepo *repository.MigrationRepository
+	conductor     *conductor.Conductor
 	checkInterval time.Duration
-	stopChan    chan struct{}
-	wg          sync.WaitGroup
+	stopChan      chan struct{}
+	wg            sync.WaitGroup
 
 	// Minimum savings to trigger migration (EUR/hour)
 	minSavingsThreshold float64
 
 	// Cooldown period after scaling events
-	scalingCooldown time.Duration
+	scalingCooldown  time.Duration
 	lastScalingEvent time.Time
-	cooldownMu      sync.RWMutex
+	cooldownMu       sync.RWMutex
 
 	// Current suggestions
 	currentSuggestions []OptimizationSuggestion
@@ -51,9 +53,11 @@ type OptimizationSuggestion struct {
 // NewCostOptimizationService creates a new cost optimization service
 func NewCostOptimizationService(
 	serverRepo *repository.ServerRepository,
+	migrationRepo *repository.MigrationRepository,
 ) *CostOptimizationService {
 	return &CostOptimizationService{
 		serverRepo:          serverRepo,
+		migrationRepo:       migrationRepo,
 		checkInterval:       2 * time.Hour, // Check every 2 hours
 		minSavingsThreshold: 0.10,          // Minimum €0.10/hour savings
 		scalingCooldown:     2 * time.Hour, // Wait 2h after scaling events
@@ -333,44 +337,135 @@ func (s *CostOptimizationService) canAutoMigrate(server models.MinecraftServer) 
 	return true
 }
 
-// logSuggestion logs a cost optimization suggestion
+// logSuggestion creates a migration record with status "suggested"
 func (s *CostOptimizationService) logSuggestion(suggestion OptimizationSuggestion) {
-	logger.Info("💰 Cost Optimization Suggestion", map[string]interface{}{
+	// Check if a suggestion already exists for this server
+	recent, err := s.migrationRepo.FindRecentMigrationForServer(suggestion.ServerID)
+	if err != nil {
+		logger.Error("Failed to check for recent migration", err, map[string]interface{}{
+			"server_id": suggestion.ServerID,
+		})
+		return
+	}
+
+	// Don't create duplicate suggestions
+	if recent != nil && recent.Status == models.MigrationStatusSuggested {
+		logger.Debug("Skipping duplicate suggestion", map[string]interface{}{
+			"server_id": suggestion.ServerID,
+			"migration_id": recent.ID,
+		})
+		return
+	}
+
+	// Get node names from conductor
+	fromNodeName := "Unknown"
+	toNodeName := "Unknown"
+	if fromNode, exists := s.conductor.NodeRegistry.GetNode(suggestion.CurrentNodeID); exists {
+		fromNodeName = fromNode.Hostname
+	}
+	if toNode, exists := s.conductor.NodeRegistry.GetNode(suggestion.TargetNodeID); exists {
+		toNodeName = toNode.Hostname
+	}
+
+	// Create migration record
+	migration := &models.Migration{
+		ID:              uuid.New().String(),
+		ServerID:        suggestion.ServerID,
+		FromNodeID:      suggestion.CurrentNodeID,
+		FromNodeName:    fromNodeName,
+		ToNodeID:        suggestion.TargetNodeID,
+		ToNodeName:      toNodeName,
+		Status:          models.MigrationStatusSuggested,
+		Reason:          models.MigrationReasonCostOptimization,
+		SavingsEURHour:  suggestion.SavingsPerHour,
+		SavingsEURMonth: suggestion.SavingsPerMonth,
+		CreatedAt:       time.Now(),
+		TriggeredBy:     "system",
+		Notes:           suggestion.Reason,
+	}
+
+	if err := s.migrationRepo.Create(migration); err != nil {
+		logger.Error("Failed to create migration record", err, map[string]interface{}{
+			"server_id": suggestion.ServerID,
+		})
+		return
+	}
+
+	logger.Info("💰 Cost Optimization Suggestion Created", map[string]interface{}{
+		"migration_id":      migration.ID,
 		"server_id":         suggestion.ServerID,
 		"server_name":       suggestion.ServerName,
-		"from_node":         suggestion.CurrentNodeID,
-		"to_node":           suggestion.TargetNodeID,
+		"from_node":         fromNodeName,
+		"to_node":           toNodeName,
 		"savings_hour":      fmt.Sprintf("€%.4f", suggestion.SavingsPerHour),
 		"savings_month":     fmt.Sprintf("€%.2f", suggestion.SavingsPerMonth),
-		"reason":            suggestion.Reason,
 	})
-
-	// TODO: Store in database for Dashboard display
 }
 
-// performAutoMigration executes an automatic migration
+// performAutoMigration creates a migration record with status "scheduled" for immediate execution
 func (s *CostOptimizationService) performAutoMigration(
 	suggestion OptimizationSuggestion,
 	server models.MinecraftServer,
 ) {
-	logger.Info("🤖 Executing auto-migration", map[string]interface{}{
+	// Check if migration is allowed (no active migration + cooldown check)
+	canMigrate, err := s.migrationRepo.CanMigrateServer(suggestion.ServerID, 30) // 30 minute cooldown
+	if err != nil || !canMigrate {
+		logger.Warn("Cannot migrate server - cooldown or active migration", map[string]interface{}{
+			"server_id": suggestion.ServerID,
+			"error":     err,
+		})
+		return
+	}
+
+	// Get node names from conductor
+	fromNodeName := "Unknown"
+	toNodeName := "Unknown"
+	if fromNode, exists := s.conductor.NodeRegistry.GetNode(suggestion.CurrentNodeID); exists {
+		fromNodeName = fromNode.Hostname
+	}
+	if toNode, exists := s.conductor.NodeRegistry.GetNode(suggestion.TargetNodeID); exists {
+		toNodeName = toNode.Hostname
+	}
+
+	// Create migration record with status "scheduled"
+	now := time.Now()
+	migration := &models.Migration{
+		ID:              uuid.New().String(),
+		ServerID:        suggestion.ServerID,
+		FromNodeID:      suggestion.CurrentNodeID,
+		FromNodeName:    fromNodeName,
+		ToNodeID:        suggestion.TargetNodeID,
+		ToNodeName:      toNodeName,
+		Status:          models.MigrationStatusScheduled,
+		Reason:          models.MigrationReasonCostOptimization,
+		SavingsEURHour:  suggestion.SavingsPerHour,
+		SavingsEURMonth: suggestion.SavingsPerMonth,
+		CreatedAt:       now,
+		ScheduledAt:     &now,
+		PlayerCountAtStart: server.CurrentPlayerCount,
+		TriggeredBy:     "system",
+		Notes:           fmt.Sprintf("Auto-migration (Level 2): %s", suggestion.Reason),
+	}
+
+	if err := s.migrationRepo.Create(migration); err != nil {
+		logger.Error("Failed to create migration record", err, map[string]interface{}{
+			"server_id": suggestion.ServerID,
+		})
+		return
+	}
+
+	logger.Info("🤖 Auto-Migration Scheduled", map[string]interface{}{
+		"migration_id":  migration.ID,
 		"server_id":     suggestion.ServerID,
 		"server_name":   suggestion.ServerName,
-		"from_node":     suggestion.CurrentNodeID,
-		"to_node":       suggestion.TargetNodeID,
+		"from_node":     fromNodeName,
+		"to_node":       toNodeName,
 		"savings_hour":  fmt.Sprintf("€%.4f", suggestion.SavingsPerHour),
+		"player_count":  server.CurrentPlayerCount,
 	})
 
-	// TODO: Implement live migration
-	// 1. Send warning to players (if any online)
-	// 2. Start new container on target node
-	// 3. Transfer players (via Velocity)
-	// 4. Stop old container
-	// 5. Update database
-
-	logger.Warn("Auto-migration not yet implemented - would migrate now", map[string]interface{}{
-		"server": suggestion.ServerName,
-	})
+	// TODO: Migration Service will pick this up and execute
+	// For now, just create the record - execution will be implemented in Migration Service
 }
 
 // calculateTotalSavings sums up all savings

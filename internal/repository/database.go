@@ -66,6 +66,7 @@ func InitDB(cfg *config.Config) error {
 		&models.Plugin{},
 		&models.PluginVersion{},
 		&models.InstalledPlugin{},
+		&models.Migration{},
 	)
 	if err != nil {
 		return err
