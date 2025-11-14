@@ -133,9 +133,12 @@ func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool
 			return false
 		}
 	} else {
-		// Manual migrations: allow starting or running
-		if server.Status != models.StatusRunning && server.Status != models.StatusStarting {
-			logger.Debug("Server not running/starting, skipping migration", map[string]interface{}{
+		// Manual migrations: allow running, starting, or stopped
+		// Stopped servers are the SAFEST to migrate (no players, no downtime risk)
+		if server.Status != models.StatusRunning &&
+		   server.Status != models.StatusStarting &&
+		   server.Status != models.StatusStopped {
+			logger.Debug("Server not in migratable state, skipping migration", map[string]interface{}{
 				"operation_id": migration.ID,
 				"server_id":    migration.ServerID,
 				"status":       server.Status,
