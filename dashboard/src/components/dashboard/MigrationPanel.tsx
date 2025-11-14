@@ -11,7 +11,11 @@ interface Server {
   status: string;
 }
 
-export const MigrationPanel = () => {
+interface MigrationPanelProps {
+  inline?: boolean;
+}
+
+export const MigrationPanel = ({ inline = false }: MigrationPanelProps) => {
   const { nodes } = useDashboardStore();
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [targetNodeId, setTargetNodeId] = useState<string>('');
@@ -91,33 +95,41 @@ export const MigrationPanel = () => {
     }
   };
 
+  const containerStyle = inline ? {
+    background: 'rgba(59, 130, 246, 0.1)',
+    border: '2px solid #3b82f6',
+    borderRadius: '8px',
+    padding: '16px',
+    color: 'white',
+  } : {
+    position: 'fixed' as const,
+    top: '100px',
+    left: '20px',
+    zIndex: 15,
+    background: 'rgba(15, 23, 42, 0.95)',
+    border: '2px solid #667eea',
+    borderRadius: '12px',
+    padding: '20px',
+    width: '320px',
+    maxHeight: 'calc(100vh - 120px)',
+    overflowY: 'auto' as const,
+    color: 'white',
+    backdropFilter: 'blur(10px)',
+  };
+
   return (
     <motion.div
-      initial={{ x: -300, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      style={{
-        position: 'fixed',
-        top: '100px',
-        left: '20px',
-        zIndex: 15,
-        background: 'rgba(15, 23, 42, 0.95)',
-        border: '2px solid #667eea',
-        borderRadius: '12px',
-        padding: '20px',
-        width: '320px',
-        maxHeight: 'calc(100vh - 120px)',
-        overflowY: 'auto',
-        color: 'white',
-        backdropFilter: 'blur(10px)',
-      }}
+      initial={inline ? {} : { x: -300, opacity: 0 }}
+      animate={inline ? {} : { x: 0, opacity: 1 }}
+      style={containerStyle}
     >
       <h3 style={{
         margin: '0 0 16px 0',
-        fontSize: '18px',
+        fontSize: inline ? '14px' : '18px',
         fontWeight: 'bold',
-        color: '#667eea',
+        color: inline ? '#3b82f6' : '#667eea',
       }}>
-        Manual Migration
+        Create Migration
       </h3>
 
       {allServers.length === 0 ? (

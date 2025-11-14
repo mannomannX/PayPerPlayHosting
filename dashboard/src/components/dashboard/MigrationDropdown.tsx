@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useDashboardStore } from '../../stores/dashboardStore';
+import { MigrationPanel } from './MigrationPanel';
 
 export const MigrationDropdown = () => {
   const { migrations } = useDashboardStore();
   const [isOpen, setIsOpen] = useState(false);
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
 
   const migrationArray = Array.from(migrations.values());
   const activeMigrations = migrationArray.filter(m =>
@@ -136,24 +138,66 @@ export const MigrationDropdown = () => {
               }}>
                 Server Migrations
               </h3>
-              <button
-                onClick={() => setIsOpen(false)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#94a3b8',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                  padding: '0',
-                  width: '24px',
-                  height: '24px',
-                }}
-              >
-                ×
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {/* Plus Button to Create Migration */}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setShowCreatePanel(!showCreatePanel)}
+                  style={{
+                    background: showCreatePanel ? '#3b82f6' : 'transparent',
+                    border: '2px solid #3b82f6',
+                    borderRadius: '6px',
+                    color: showCreatePanel ? 'white' : '#3b82f6',
+                    fontSize: '18px',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    width: '28px',
+                    height: '28px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 'bold',
+                  }}
+                  title="Create Manual Migration"
+                >
+                  {showCreatePanel ? '−' : '+'}
+                </motion.button>
+                {/* Close Button */}
+                <button
+                  onClick={() => setIsOpen(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#94a3b8',
+                    fontSize: '20px',
+                    cursor: 'pointer',
+                    padding: '0',
+                    width: '24px',
+                    height: '24px',
+                  }}
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
-            {migrationArray.length === 0 ? (
+            {/* Create Migration Panel */}
+            <AnimatePresence>
+              {showCreatePanel && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ overflow: 'hidden', marginBottom: '16px' }}
+                >
+                  <MigrationPanel inline={true} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {migrationArray.length === 0 && !showCreatePanel ? (
               <div style={{
                 padding: '40px 20px',
                 textAlign: 'center',

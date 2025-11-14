@@ -6,7 +6,6 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { GridNode } from '../nodes/GridNode';
 import { ManhattanArrow } from '../arrows/ManhattanArrow';
 import { DebugConsole } from './DebugConsole';
-import { MigrationPanel } from './MigrationPanel';
 import { MigrationDropdown } from './MigrationDropdown';
 
 // WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
@@ -466,9 +465,6 @@ export const Dashboard = () => {
           </div>
         </div>
       </motion.div>
-
-      {/* Migration Panel */}
-      <MigrationPanel />
 
       {/* Debug Console */}
       <DebugConsole />
