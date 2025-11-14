@@ -14,6 +14,7 @@ import (
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/middleware"
+	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/monitoring"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/internal/service"
@@ -274,6 +275,66 @@ func main() {
 		logger.Info("Syncing containers from remote worker nodes...", nil)
 		cond.SyncRemoteNodeContainers(serverRepo)
 		logger.Info("Remote container sync completed", nil)
+	}
+
+	// CRITICAL: Re-register all running servers with Velocity after restart
+	// This prevents "server not found" errors when backend restarts while servers are running
+	if remoteVelocityClient != nil {
+		logger.Info("Re-registering running servers with Velocity...", nil)
+		runningServers, err := serverRepo.FindByStatus(string(models.StatusRunning))
+		if err != nil {
+			logger.Error("Failed to find running servers for Velocity sync", err, nil)
+		} else {
+			registered := 0
+			for _, server := range runningServers {
+				if server.NodeID == "" {
+					logger.Warn("Skipping Velocity registration for server without node assignment", map[string]interface{}{
+						"server_id": server.ID,
+						"name":      server.Name,
+					})
+					continue
+				}
+
+				velocityServerName := fmt.Sprintf("mc-%s", server.ID)
+
+				// Get node IP
+				var serverIP string
+				if server.NodeID == "local-node" {
+					serverIP = cfg.ControlPlaneIP
+				} else {
+					remoteNode, err := cond.GetRemoteNode(server.NodeID)
+					if err != nil {
+						logger.Warn("Failed to get node IP for Velocity registration", map[string]interface{}{
+							"server_id": server.ID,
+							"node_id":   server.NodeID,
+							"error":     err.Error(),
+						})
+						continue
+					}
+					serverIP = remoteNode.IPAddress
+				}
+
+				serverAddress := fmt.Sprintf("%s:%d", serverIP, server.Port)
+
+				if err := remoteVelocityClient.RegisterServer(velocityServerName, serverAddress); err != nil {
+					logger.Warn("Failed to re-register server with Velocity", map[string]interface{}{
+						"server_id": server.ID,
+						"error":     err.Error(),
+					})
+				} else {
+					registered++
+					logger.Debug("Server re-registered with Velocity", map[string]interface{}{
+						"server_id": server.ID,
+						"name":      velocityServerName,
+						"address":   serverAddress,
+					})
+				}
+			}
+			logger.Info("Velocity state sync completed", map[string]interface{}{
+				"total_running": len(runningServers),
+				"registered":    registered,
+			})
+		}
 	}
 
 	// NOTE: No immediate scaling check after startup to prevent race conditions
