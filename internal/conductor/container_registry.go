@@ -50,8 +50,9 @@ func (r *ContainerRegistry) RegisterContainer(info *ContainerInfo) {
 
 	info.LastSeenAt = time.Now()
 
-	// Check if this is a NEW container (not just an update)
-	_, existingContainer := r.containers[info.ServerID]
+	// Check if this is a NEW container or an UPDATE with status change
+	oldContainer, existingContainer := r.containers[info.ServerID]
+	statusChanged := existingContainer && oldContainer.Status != info.Status
 
 	r.containers[info.ServerID] = info
 
@@ -65,6 +66,33 @@ func (r *ContainerRegistry) RegisterContainer(info *ContainerInfo) {
 				"server_id": info.ServerID,
 			})
 		}
+	}
+
+	// Publish status change event if status changed
+	if statusChanged {
+		// Get node IP for join address
+		joinAddress := fmt.Sprintf(":%d", info.MinecraftPort) // Default format
+		if r.nodeRegistry != nil {
+			if node, exists := r.nodeRegistry.GetNode(info.NodeID); exists {
+				joinAddress = fmt.Sprintf("%s:%d", node.IPAddress, info.MinecraftPort)
+			}
+		}
+
+		// Publish container status changed event
+		events.PublishContainerStatusChanged(
+			info.ServerID,
+			info.ServerName,
+			info.NodeID,
+			info.Status,
+			info.MinecraftPort,
+			joinAddress,
+		)
+
+		logger.Info("Container status changed", map[string]interface{}{
+			"server_id":  info.ServerID,
+			"old_status": oldContainer.Status,
+			"new_status": info.Status,
+		})
 	}
 }
 

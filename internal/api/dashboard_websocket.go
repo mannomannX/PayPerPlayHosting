@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -280,6 +281,12 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 	if ws.conductor.ContainerRegistry != nil {
 		containers := ws.conductor.ContainerRegistry.GetAllContainers()
 		for _, container := range containers {
+			// Get node IP for join address
+			joinAddress := fmt.Sprintf(":%d", container.MinecraftPort) // Default format
+			if node, exists := ws.conductor.NodeRegistry.GetNode(container.NodeID); exists {
+				joinAddress = fmt.Sprintf("%s:%d", node.IPAddress, container.MinecraftPort)
+			}
+
 			event := DashboardEvent{
 				Type:      "container.created",
 				Timestamp: time.Now(),
@@ -290,7 +297,8 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 					"node_id":      container.NodeID,
 					"ram_mb":       container.RAMMb,
 					"status":       string(container.Status),
-					"port":         container.DockerPort,
+					"port":         container.MinecraftPort,
+					"join_address": joinAddress,
 				},
 			}
 			ws.sendToClient(client, event)

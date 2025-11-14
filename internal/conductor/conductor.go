@@ -1204,8 +1204,14 @@ func (c *Conductor) RegisterContainer(serverID, serverName, containerID, nodeID 
 
 	c.ContainerRegistry.RegisterContainer(containerInfo)
 
+	// Get node IP for join address
+	joinAddress := fmt.Sprintf(":%d", minecraftPort) // Default format
+	if node, exists := c.NodeRegistry.GetNode(nodeID); exists {
+		joinAddress = fmt.Sprintf("%s:%d", node.IPAddress, minecraftPort)
+	}
+
 	// Publish container created event to dashboard
-	events.PublishContainerCreated(serverID, serverName, nodeID, ramMB, minecraftPort, status)
+	events.PublishContainerCreated(serverID, serverName, nodeID, ramMB, minecraftPort, status, joinAddress)
 
 	logger.Info("Container registered in registry", map[string]interface{}{
 		"server_id":      serverID,
@@ -1213,6 +1219,7 @@ func (c *Conductor) RegisterContainer(serverID, serverName, containerID, nodeID 
 		"node_id":        nodeID,
 		"ram_mb":         ramMB,
 		"minecraft_port": minecraftPort,
+		"join_address":   joinAddress,
 		"status":         status,
 	})
 }

@@ -99,42 +99,51 @@ func PublishDashboardNodeRemoved(nodeID string, reason string) {
 }
 
 // PublishContainerCreated publishes a container creation event
-func PublishContainerCreated(serverID, serverName, nodeID string, ramMb, port int, status string) {
+func PublishContainerCreated(serverID, serverName, nodeID string, ramMb, port int, status, joinAddress string) {
 	if DashboardEventPublisher == nil {
 		return
 	}
 
 	data := map[string]interface{}{
-		"server_id":   serverID,
-		"server_name": serverName,
-		"node_id":     nodeID,
-		"ram_mb":      ramMb,
-		"status":      status,
-		"port":        port,
+		"server_id":    serverID,
+		"server_name":  serverName,
+		"node_id":      nodeID,
+		"ram_mb":       ramMb,
+		"status":       status,
+		"port":         port,
+		"join_address": joinAddress,
 	}
 
 	DashboardEventPublisher.PublishEvent("container.created", data)
 	logger.Debug("Dashboard event published: container.created", map[string]interface{}{
 		"server_id": serverID,
 		"node_id":   nodeID,
+		"port":      port,
 	})
 }
 
 // PublishContainerStatusChanged publishes a container status change event
-func PublishContainerStatusChanged(serverID, serverName, nodeID, status string) {
+func PublishContainerStatusChanged(serverID, serverName, nodeID, status string, port int, joinAddress string) {
 	if DashboardEventPublisher == nil {
 		return
 	}
 
 	data := map[string]interface{}{
-		"server_id":   serverID,
-		"server_name": serverName,
-		"node_id":     nodeID,
-		"status":      status,
-		"timestamp":   time.Now(),
+		"server_id":    serverID,
+		"server_name":  serverName,
+		"node_id":      nodeID,
+		"status":       status,
+		"port":         port,
+		"join_address": joinAddress,
+		"timestamp":    time.Now(),
 	}
 
 	DashboardEventPublisher.PublishEvent("container.status_changed", data)
+	logger.Debug("Dashboard event published: container.status_changed", map[string]interface{}{
+		"server_id": serverID,
+		"status":    status,
+		"port":      port,
+	})
 }
 
 // PublishContainerRemoved publishes a container removal event
