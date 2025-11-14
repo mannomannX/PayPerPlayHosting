@@ -114,14 +114,27 @@ func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool
 		return false
 	}
 
-	// Server must be running
-	if server.Status != models.StatusRunning {
-		logger.Debug("Server not running, skipping migration", map[string]interface{}{
-			"migration_id": migration.ID,
-			"server_id":    migration.ServerID,
-			"status":       server.Status,
-		})
-		return false
+	// Server must be running or starting (for manual migrations)
+	// For cost-optimization, server must be fully running
+	if migration.Reason == models.MigrationReasonCostOptimization {
+		if server.Status != models.StatusRunning {
+			logger.Debug("Server not running, skipping cost-optimization migration", map[string]interface{}{
+				"migration_id": migration.ID,
+				"server_id":    migration.ServerID,
+				"status":       server.Status,
+			})
+			return false
+		}
+	} else {
+		// Manual migrations: allow starting or running
+		if server.Status != models.StatusRunning && server.Status != models.StatusStarting {
+			logger.Debug("Server not running/starting, skipping migration", map[string]interface{}{
+				"migration_id": migration.ID,
+				"server_id":    migration.ServerID,
+				"status":       server.Status,
+			})
+			return false
+		}
 	}
 
 	// For cost-optimization migrations: wait for idle state
