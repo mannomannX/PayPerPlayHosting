@@ -7,7 +7,7 @@ import { GridNode } from '../nodes/GridNode';
 import { ManhattanArrow } from '../arrows/ManhattanArrow';
 import { DebugConsole } from './DebugConsole';
 import { MigrationPanel } from './MigrationPanel';
-import { MigrationsList } from './MigrationsList';
+import { MigrationDropdown } from './MigrationDropdown';
 
 // WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
 const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
@@ -109,8 +109,12 @@ export const Dashboard = () => {
           </p>
         </div>
 
-        {/* Connection Status */}
+        {/* Connection Status & Migration Dropdown */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          {/* Migration Dropdown */}
+          <MigrationDropdown />
+
+          {/* Connection Status */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <motion.div
               animate={{
@@ -465,9 +469,6 @@ export const Dashboard = () => {
 
       {/* Migration Panel */}
       <MigrationPanel />
-
-      {/* Migrations List */}
-      <MigrationsList />
 
       {/* Debug Console */}
       <DebugConsole />
