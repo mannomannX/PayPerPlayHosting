@@ -226,11 +226,19 @@ func main() {
 		// Initialize Velocity monitor for health checking and auto-recovery
 		velocityMonitor = velocity.NewVelocityMonitor(remoteVelocityClient, serverRepo, cfg)
 		logger.Info("Velocity monitor initialized", nil)
+
+		// Initialize Player Count tracking service for accurate auto-shutdown
+		playerCountService := service.NewPlayerCountService(remoteVelocityClient, serverRepo)
+		playerCountService.Start()
+		defer playerCountService.Stop()
+		logger.Info("Player count tracking service started (Velocity-based)", map[string]interface{}{
+			"check_interval": "15s",
+		})
 	} else {
 		logger.Warn("VELOCITY_API_URL not configured, remote Velocity integration disabled", nil)
 	}
 
-	// Start monitoring service
+	// Start monitoring service (auto-shutdown based on player counts)
 	monitoringService.Start()
 	defer monitoringService.Stop()
 	logger.Info("Monitoring service started", nil)

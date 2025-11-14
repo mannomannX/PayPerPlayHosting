@@ -186,8 +186,22 @@ func (m *MonitoringService) checkServer(serverID string) {
 		return
 	}
 
-	// Try to get player count via RCON
-	playerCount, err := m.getPlayerCount(server)
+	// PRIORITY 1: Use player count from database (updated by PlayerCountService via Velocity)
+	// This is more reliable and faster than RCON
+	playerCount := server.CurrentPlayerCount
+
+	// FALLBACK: Try RCON if database count is 0 and LastPlayerActivity is recent
+	// (handles edge case where Velocity might be temporarily unavailable)
+	if playerCount == 0 && server.LastPlayerActivity != nil {
+		if time.Since(*server.LastPlayerActivity) < 2*time.Minute {
+			// Recent activity recorded - double-check with RCON
+			rconCount, err := m.getPlayerCount(server)
+			if err == nil && rconCount > 0 {
+				playerCount = rconCount
+				log.Printf("Using RCON fallback for server %s: %d players", serverID, rconCount)
+			}
+		}
+	}
 
 	m.mu.Lock()
 	timer, exists := m.idleTimers[serverID]

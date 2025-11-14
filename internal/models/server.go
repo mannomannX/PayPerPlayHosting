@@ -110,13 +110,16 @@ type MinecraftServer struct {
 	ArchivedAt      *time.Time                                  // When server was archived
 	ArchiveLocation string         `gorm:"size:512;default:''"` // Path to archive file (Storage Box)
 
-	// Settings
-	IdleTimeoutSeconds   int  `gorm:"default:300"`
-	AutoShutdownEnabled  bool `gorm:"default:true"`
+	// Pay-Per-Use Settings
+	IdleTimeoutSeconds   int  `gorm:"default:300"`  // Seconds of inactivity before auto-shutdown (default: 5 minutes)
+	AutoShutdownEnabled  bool `gorm:"default:true"` // Enable auto-shutdown when no players online
+	LastPlayerActivity   *time.Time                // Last time a player was online (for idle tracking)
+	CurrentPlayerCount   int  `gorm:"default:0"`    // Current number of players online (cached from Velocity)
 
-	// Container Migration Settings (B8 - Cost Optimization)
-	AllowMigration bool   `gorm:"default:true"`            // Allow server to be migrated for cost optimization
-	MigrationMode  string `gorm:"default:only_offline"`    // Migration modes: "only_offline", "always", "never"
+	// Cost Optimization Settings (B8)
+	CostOptimizationLevel int    `gorm:"default:0"`           // 0=Disabled, 1=Suggestions only, 2=Auto-migrate
+	AllowMigration        bool   `gorm:"default:true"`        // Allow server to be migrated for cost optimization
+	MigrationMode         string `gorm:"default:only_offline"` // Migration modes: "only_offline", "always", "never"
 
 	// Velocity Proxy Integration
 	VelocityRegistered  bool   `gorm:"default:false"`
