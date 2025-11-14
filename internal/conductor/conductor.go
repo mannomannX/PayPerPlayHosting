@@ -1685,13 +1685,30 @@ func (c *Conductor) SyncRemoteNodeContainers(serverRepo interface{}) {
 
 			ramMB := int(ramResults[0].Int())
 
+			// Get server name using field access
+			serverName := ""
+			nameField := server.Elem().FieldByName("Name")
+			if nameField.IsValid() {
+				serverName = nameField.String()
+			}
+
+			// Get Minecraft port using field access
+			minecraftPort := 0
+			portField := server.Elem().FieldByName("Port")
+			if portField.IsValid() {
+				minecraftPort = int(portField.Int())
+			}
+
 			// Register container in Container Registry
 			containerInfo := &ContainerInfo{
-				ContainerID: container.ContainerID,
-				ServerID:    container.ServerID,
-				NodeID:      node.ID,
-				RAMMb:       ramMB,
-				Status:      "running",
+				ContainerID:   container.ContainerID,
+				ServerID:      container.ServerID,
+				ServerName:    serverName,
+				NodeID:        node.ID,
+				RAMMb:         ramMB,
+				Status:        "running",
+				MinecraftPort: minecraftPort,
+				DockerPort:    0, // Docker port not available from remote list
 			}
 			c.ContainerRegistry.RegisterContainer(containerInfo)
 
@@ -1707,10 +1724,12 @@ func (c *Conductor) SyncRemoteNodeContainers(serverRepo interface{}) {
 			syncedCount++
 
 			logger.Info("CONTAINER-SYNC: Container synced", map[string]interface{}{
-				"container": container.ContainerID[:12],
-				"server":    container.ServerID[:8],
-				"node_id":   node.ID,
-				"ram_mb":    ramMB,
+				"container":   container.ContainerID[:12],
+				"server":      container.ServerID[:8],
+				"server_name": serverName,
+				"node_id":     node.ID,
+				"ram_mb":      ramMB,
+				"port":        minecraftPort,
 			})
 		}
 	}
