@@ -35,6 +35,11 @@ type RemoteNode struct {
 	SSHUser   string
 }
 
+// GetIPAddress returns the IP address of the remote node
+func (n *RemoteNode) GetIPAddress() string {
+	return n.IPAddress
+}
+
 // StartContainer creates and starts a Docker container on a remote node
 func (r *RemoteDockerClient) StartContainer(
 	ctx context.Context,

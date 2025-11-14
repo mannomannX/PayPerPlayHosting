@@ -25,6 +25,16 @@ import (
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
+// conductorAdapter adapts conductor.Conductor to velocity.ConductorInterface
+type conductorAdapter struct {
+	*conductor.Conductor
+}
+
+// GetRemoteNode adapts Conductor's GetRemoteNode to return velocity.RemoteNodeGetter
+func (c *conductorAdapter) GetRemoteNode(nodeID string) (velocity.RemoteNodeGetter, error) {
+	return c.Conductor.GetRemoteNode(nodeID)
+}
+
 func main() {
 	// Load configuration
 	cfg := config.Load()
@@ -203,6 +213,7 @@ func main() {
 
 	// VELOCITY REMOTE API: Initialize HTTP client for remote Velocity proxy (NEW 3-tier architecture)
 	var remoteVelocityClient *velocity.RemoteVelocityClient
+	var velocityMonitor *velocity.VelocityMonitor
 	if cfg.VelocityAPIURL != "" {
 		remoteVelocityClient = velocity.NewRemoteVelocityClient(cfg.VelocityAPIURL)
 
@@ -211,6 +222,10 @@ func main() {
 		logger.Info("Remote Velocity client initialized and linked to MinecraftService", map[string]interface{}{
 			"url": cfg.VelocityAPIURL,
 		})
+
+		// Initialize Velocity monitor for health checking and auto-recovery
+		velocityMonitor = velocity.NewVelocityMonitor(remoteVelocityClient, serverRepo, cfg)
+		logger.Info("Velocity monitor initialized", nil)
 	} else {
 		logger.Warn("VELOCITY_API_URL not configured, remote Velocity integration disabled", nil)
 	}
@@ -252,6 +267,15 @@ func main() {
 	cond.Start()
 	defer cond.Stop()
 	logger.Info("Conductor Core started", nil)
+
+	// Link Velocity Monitor to Conductor and start monitoring
+	if velocityMonitor != nil {
+		// Create adapter to bridge conductor and velocity interfaces
+		velocityMonitor.SetConductor(&conductorAdapter{cond})
+		velocityMonitor.Start()
+		defer velocityMonitor.Stop()
+		logger.Info("Velocity monitor started", nil)
+	}
 
 	// CRITICAL: Sync running containers with Conductor state (prevents OOM after restarts)
 	logger.Info("Syncing running containers with Conductor state...", nil)
