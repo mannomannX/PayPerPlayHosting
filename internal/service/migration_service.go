@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -493,6 +494,14 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 				"operation_id": migration.ID,
 				"container_id": oldContainerID,
 			})
+
+			// Notify dashboard that container was removed from old node
+			events.PublishContainerRemoved(
+				migration.ServerID,
+				server.Name,
+				oldNodeID,
+				"migration",
+			)
 		}
 	}
 
