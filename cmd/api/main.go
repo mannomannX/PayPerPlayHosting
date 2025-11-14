@@ -273,6 +273,10 @@ func main() {
 	cond.SetServerStarter(mcService)
 	logger.Info("MinecraftService linked to Conductor as ServerStarter for queue processing", nil)
 
+	// Link ServerRepo to Conductor for ghost container cleanup
+	cond.SetServerRepo(serverRepo)
+	logger.Info("ServerRepo linked to Conductor for ghost container cleanup (1-minute intervals)", nil)
+
 	cond.Start()
 	defer cond.Stop()
 	logger.Info("Conductor Core started", nil)

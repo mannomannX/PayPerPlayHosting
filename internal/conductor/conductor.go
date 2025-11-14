@@ -12,6 +12,7 @@ import (
 	"github.com/payperplay/hosting/internal/cloud"
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
+	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
 )
@@ -37,6 +38,7 @@ type Conductor struct {
 	StartedAt         time.Time                  // When Conductor started (for startup delay)
 	serverStarter     ServerStarter              // Interface to start servers (injected)
 	nodeRepo          NodeRepositoryInterface    // For persisting nodes to database
+	ServerRepo        ServerRepositoryInterface  // For ghost container cleanup
 	stopChan          chan struct{}              // For graceful shutdown of background workers
 	AuditLog          *audit.AuditLogger         // Audit log for tracking destructive actions
 	queueProcessMu    sync.Mutex                 // Prevents concurrent ProcessStartQueue() calls
@@ -50,6 +52,11 @@ type NodeRepositoryInterface interface {
 	FindAll() (interface{}, error)
 	Update(node interface{}) error
 	UpsertNode(node interface{}) error
+}
+
+// ServerRepositoryInterface defines minimal interface for ghost container cleanup
+type ServerRepositoryInterface interface {
+	FindByID(id string) (*models.MinecraftServer, error)
 }
 
 // NewConductor creates a new conductor instance
@@ -158,6 +165,10 @@ func (c *Conductor) Start() {
 	// Start CPU metrics collector (checks every 60 seconds)
 	go c.cpuMetricsWorker()
 	logger.Info("CPU metrics worker started (60-second intervals)", nil)
+
+	// Start ghost container cleanup worker (checks every minute)
+	go c.ghostContainerCleanupWorker()
+	logger.Info("Ghost container cleanup worker started (1-minute intervals)", nil)
 
 	// NOTE: Worker-Node sync is now called explicitly from main.go AFTER queue sync
 	// This ensures the queue is populated before scaling decisions are made
@@ -804,6 +815,11 @@ func (c *Conductor) SetServerStarter(starter ServerStarter) {
 	c.serverStarter = starter
 }
 
+// SetServerRepo sets the server repository for ghost container cleanup
+func (c *Conductor) SetServerRepo(repo ServerRepositoryInterface) {
+	c.ServerRepo = repo
+}
+
 // RemoveFromQueue removes a server from the start queue
 func (c *Conductor) RemoveFromQueue(serverID string) {
 	if c.StartQueue.Remove(serverID) {
@@ -1378,6 +1394,45 @@ func (c *Conductor) collectCPUMetrics() {
 			"node_id":           node.ID,
 			"cpu_usage_percent": cpuUsage,
 		})
+	}
+}
+
+// ghostContainerCleanupWorker periodically cleans up ghost containers from registry
+// Runs every minute to remove containers that no longer exist in database
+func (c *Conductor) ghostContainerCleanupWorker() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	// Perform initial cleanup after 30 seconds (let system settle)
+	time.Sleep(30 * time.Second)
+	c.cleanupGhostContainers()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.cleanupGhostContainers()
+		case <-c.stopChan:
+			logger.Info("Ghost container cleanup worker stopped", nil)
+			return
+		}
+	}
+}
+
+// cleanupGhostContainers removes containers from registry that don't exist in database
+func (c *Conductor) cleanupGhostContainers() {
+	if c.ServerRepo == nil {
+		logger.Warn("CLEANUP: ServerRepo not set, skipping ghost container cleanup", nil)
+		return
+	}
+
+	removed := c.ContainerRegistry.CleanupGhostContainers(c.ServerRepo)
+
+	if removed > 0 {
+		logger.Info("CLEANUP: Ghost containers removed", map[string]interface{}{
+			"removed_count": removed,
+		})
+	} else {
+		logger.Debug("CLEANUP: No ghost containers found", nil)
 	}
 }
 

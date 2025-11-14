@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/payperplay/hosting/internal/events"
+	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -306,6 +307,43 @@ func (r *ContainerRegistry) UpdateContainerNode(serverID, newNodeID string) erro
 	})
 
 	return nil
+}
+
+// CleanupGhostContainers removes containers from registry that don't exist in the database
+// Should be called periodically to prevent stale entries
+func (r *ContainerRegistry) CleanupGhostContainers(serverRepo interface {
+	FindByID(id string) (*models.MinecraftServer, error)
+}) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	removed := 0
+	for serverID, container := range r.containers {
+		// Try to find server in database
+		_, err := serverRepo.FindByID(serverID)
+		if err != nil {
+			// Server doesn't exist in DB - remove from registry
+			logger.Info("CLEANUP: Removing ghost container from registry", map[string]interface{}{
+				"server_id":    serverID,
+				"container_id": container.ContainerID,
+				"node_id":      container.NodeID,
+			})
+
+			// Publish removal event
+			events.PublishContainerRemoved(serverID, container.ServerName, container.NodeID, "ghost_cleanup")
+
+			delete(r.containers, serverID)
+			removed++
+		}
+	}
+
+	if removed > 0 {
+		logger.Info("CLEANUP: Ghost containers removed from registry", map[string]interface{}{
+			"removed_count": removed,
+		})
+	}
+
+	return removed
 }
 
 // GetStaleContainers returns containers that haven't been seen for a specified duration
