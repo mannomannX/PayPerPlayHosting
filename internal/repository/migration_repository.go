@@ -290,27 +290,32 @@ func (r *MigrationRepository) CanMigrateServer(serverID string, cooldownMinutes 
 		return false, fmt.Errorf("server has active migration")
 	}
 
-	// Check cooldown period
-	recent, err := r.FindRecentMigrationForServer(serverID)
-	if err != nil {
-		return false, err
-	}
-
-	if recent != nil && recent.CompletedAt != nil {
-		// Check if cooldown period has passed
-		var count int64
-		err := r.db.Model(&models.Migration{}).Where(
-			"server_id = ? AND completed_at > NOW() - INTERVAL '? minutes'",
-			serverID,
-			cooldownMinutes,
-		).Count(&count).Error
-
+	// Check cooldown period (skip if cooldownMinutes is 0)
+	if cooldownMinutes > 0 {
+		recent, err := r.FindRecentMigrationForServer(serverID)
 		if err != nil {
 			return false, err
 		}
 
-		if count > 0 {
-			return false, fmt.Errorf("server in cooldown period (%d minutes)", cooldownMinutes)
+		if recent != nil && recent.CompletedAt != nil {
+			// Check if cooldown period has passed
+			var count int64
+			query := fmt.Sprintf(
+				"server_id = ? AND completed_at > NOW() - INTERVAL '%d minutes'",
+				cooldownMinutes,
+			)
+			err := r.db.Model(&models.Migration{}).Where(
+				query,
+				serverID,
+			).Count(&count).Error
+
+			if err != nil {
+				return false, err
+			}
+
+			if count > 0 {
+				return false, fmt.Errorf("server in cooldown period (%d minutes)", cooldownMinutes)
+			}
 		}
 	}
 

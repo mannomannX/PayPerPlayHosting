@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
+	"github.com/payperplay/hosting/pkg/logger"
 )
 
 // MigrationHandler handles migration-related HTTP requests
@@ -356,7 +357,19 @@ func (h *MigrationHandler) CreateManualMigration(c *gin.Context) {
 
 	// Check if server can be migrated (no cooldown for manual migrations)
 	canMigrate, err := h.migrationRepo.CanMigrateServer(req.ServerID, 0)
-	if err != nil || !canMigrate {
+	if err != nil {
+		logger.Error("Failed to check if server can be migrated", err, map[string]interface{}{
+			"server_id": req.ServerID,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to validate migration eligibility",
+		})
+		return
+	}
+	if !canMigrate {
+		logger.Warn("Server cannot be migrated - active migration in progress", map[string]interface{}{
+			"server_id": req.ServerID,
+		})
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Server cannot be migrated (active migration in progress)",
 		})
