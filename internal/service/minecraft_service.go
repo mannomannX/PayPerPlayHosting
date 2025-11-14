@@ -539,6 +539,21 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return err
 	}
 
+	// Register container in ContainerRegistry with "starting" status for dashboard tracking
+	// This allows dashboard to show blue (starting) → green (running) transition
+	if s.conductor != nil {
+		s.conductor.RegisterContainer(
+			server.ID,
+			server.Name,
+			server.ContainerID, // Use server.ContainerID (set earlier in the function)
+			selectedNodeID,
+			server.RAMMb,
+			server.Port, // DockerPort = same as MinecraftPort (1:1 port mapping)
+			server.Port, // MinecraftPort
+			string(models.StatusStarting), // Use "starting" status to show blue in dashboard
+		)
+	}
+
 	// Only call StartContainer for LOCAL nodes (remote containers are already started by RemoteDockerClient.StartContainer)
 	if s.isLocalNode(selectedNodeID) {
 		if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
@@ -924,6 +939,21 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		return err
 	}
 
+	// Register container in ContainerRegistry with "starting" status for dashboard tracking
+	// This allows dashboard to show blue (starting) → green (running) transition
+	if s.conductor != nil {
+		s.conductor.RegisterContainer(
+			server.ID,
+			server.Name,
+			server.ContainerID, // Use server.ContainerID (set earlier in the function)
+			selectedNodeID,
+			server.RAMMb,
+			server.Port, // DockerPort = same as MinecraftPort (1:1 port mapping)
+			server.Port, // MinecraftPort
+			string(models.StatusStarting), // Use "starting" status to show blue in dashboard
+		)
+	}
+
 	// Only call StartContainer for LOCAL nodes (remote containers are already started by RemoteDockerClient.StartContainer)
 	if s.isLocalNode(selectedNodeID) {
 		if err := s.dockerService.StartContainer(server.ContainerID); err != nil {
@@ -979,20 +1009,9 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 		return err
 	}
 
-	// Register container in ContainerRegistry (for dashboard and tracking)
+	// CPU-GUARD: Update ContainerRegistry status from "starting" to "running"
+	// Container was already registered with "starting" status earlier
 	if s.conductor != nil {
-		s.conductor.RegisterContainer(
-			server.ID,
-			server.Name,
-			containerID,
-			selectedNodeID,
-			server.RAMMb,
-			server.Port, // DockerPort = same as MinecraftPort (1:1 port mapping)
-			server.Port, // MinecraftPort
-			"running",
-		)
-
-		// CPU-GUARD: Update ContainerRegistry status from "starting" to "running"
 		s.conductor.UpdateContainerStatus(server.ID, "running")
 
 		// Trigger queue processing - queued servers can now start
