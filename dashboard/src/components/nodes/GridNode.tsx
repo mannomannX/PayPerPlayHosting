@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { ContainerDetailsModal } from '../dashboard/ContainerDetailsModal';
 
 interface Container {
   server_id: string;
   server_name: string;
   ram_mb: number;
   status: string;
+  port: number;
+  join_address: string;
 }
 
 interface GridNodeProps {
@@ -31,12 +35,19 @@ interface GridNodeProps {
 
 export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
   const { data } = node;
+  const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const getCapacityColor = (percent: number) => {
     if (percent < 50) return '#10b981'; // green
     if (percent < 70) return '#f59e0b'; // yellow
     if (percent < 85) return '#f97316'; // orange
     return '#ef4444'; // red
+  };
+
+  const handleContainerClick = (container: Container) => {
+    setSelectedContainer(container);
+    setIsModalOpen(true);
   };
 
   const capacityColor = getCapacityColor(data.capacityPercent);
@@ -172,7 +183,8 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.05 }}
-                  title={`${container.server_name}\n${(container.ram_mb / 1024).toFixed(1)} GB RAM\nStatus: ${container.status}`}
+                  onClick={() => handleContainerClick(container)}
+                  title={`${container.server_name}\n${(container.ram_mb / 1024).toFixed(1)} GB RAM\nStatus: ${container.status}\nClick for details`}
                   style={{
                     height: `${containerHeight}px`,
                     borderRadius: '6px',
@@ -251,6 +263,18 @@ export const GridNode = ({ node, getStatusColor }: GridNodeProps) => {
       >
         {data.type.toUpperCase()}
       </div>
+
+      {/* Container Details Modal */}
+      <ContainerDetailsModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedContainer(null);
+        }}
+        container={selectedContainer}
+        nodeId={node.id}
+        nodeIp={data.ipAddress}
+      />
     </motion.div>
   );
 };
