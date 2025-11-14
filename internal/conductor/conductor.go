@@ -844,6 +844,17 @@ func (c *Conductor) ProcessStartQueue() {
 		return // Nothing to process
 	}
 
+	// CPU-GUARD: Don't start new servers if one is already starting
+	// This ensures sequential processing (one server at a time)
+	startingCount := c.ContainerRegistry.GetStartingCount()
+	if startingCount > 0 {
+		logger.Debug("Queue processing skipped - server already starting", map[string]interface{}{
+			"queue_size":     c.StartQueue.Size(),
+			"starting_count": startingCount,
+		})
+		return // Wait for current server to finish starting
+	}
+
 	logger.Info("Processing start queue", map[string]interface{}{
 		"queue_size": c.StartQueue.Size(),
 	})
