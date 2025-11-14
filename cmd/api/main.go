@@ -285,6 +285,17 @@ func main() {
 		logger.Info("Velocity monitor started", nil)
 	}
 
+	// Initialize Cost-Optimization Service for automatic server placement optimization
+	costOptimizationService := service.NewCostOptimizationService(serverRepo)
+	costOptimizationService.SetConductor(cond)
+	costOptimizationService.Start()
+	defer costOptimizationService.Stop()
+	logger.Info("Cost optimization service started", map[string]interface{}{
+		"check_interval":    "2h",
+		"min_savings":       "€0.10/hour",
+		"scaling_cooldown":  "2h",
+	})
+
 	// CRITICAL: Sync running containers with Conductor state (prevents OOM after restarts)
 	logger.Info("Syncing running containers with Conductor state...", nil)
 	cond.SyncRunningContainers(dockerService, serverRepo)
