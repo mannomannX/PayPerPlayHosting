@@ -26,6 +26,11 @@ type CostOptimizationService struct {
 	scalingCooldown time.Duration
 	lastScalingEvent time.Time
 	cooldownMu      sync.RWMutex
+
+	// Current suggestions
+	currentSuggestions []OptimizationSuggestion
+	suggestionsMu      sync.RWMutex
+	lastAnalysis       time.Time
 }
 
 // OptimizationSuggestion represents a cost-saving opportunity
@@ -160,6 +165,12 @@ func (s *CostOptimizationService) analyzeAndOptimize() {
 	}
 
 	suggestions := s.analyzeCostOpportunities(servers, nodeMap)
+
+	// Store suggestions for API access
+	s.suggestionsMu.Lock()
+	s.currentSuggestions = suggestions
+	s.lastAnalysis = time.Now()
+	s.suggestionsMu.Unlock()
 
 	if len(suggestions) == 0 {
 		logger.Info("Cost optimization analysis complete: no opportunities found", map[string]interface{}{
@@ -369,4 +380,70 @@ func calculateTotalSavings(suggestions []OptimizationSuggestion) float64 {
 		total += s.SavingsPerHour
 	}
 	return total
+}
+
+// GetCurrentSuggestions returns the current optimization suggestions
+func (s *CostOptimizationService) GetCurrentSuggestions() []OptimizationSuggestion {
+	s.suggestionsMu.RLock()
+	defer s.suggestionsMu.RUnlock()
+
+	// Return a copy to avoid race conditions
+	suggestions := make([]OptimizationSuggestion, len(s.currentSuggestions))
+	copy(suggestions, s.currentSuggestions)
+
+	return suggestions
+}
+
+// ServiceStatus represents the status of the cost optimization service
+type ServiceStatus struct {
+	IsRunning            bool      `json:"is_running"`
+	LastAnalysis         time.Time `json:"last_analysis"`
+	NextAnalysis         time.Time `json:"next_analysis"`
+	InCooldown           bool      `json:"in_cooldown"`
+	CooldownRemaining    string    `json:"cooldown_remaining,omitempty"`
+	CurrentSuggestions   int       `json:"current_suggestions"`
+	TotalSavingsPerHour  float64   `json:"total_savings_eur_hour"`
+	TotalSavingsPerMonth float64   `json:"total_savings_eur_month"`
+	CheckInterval        string    `json:"check_interval"`
+	MinSavingsThreshold  float64   `json:"min_savings_threshold_eur_hour"`
+}
+
+// GetStatus returns the current status of the service
+func (s *CostOptimizationService) GetStatus() ServiceStatus {
+	s.suggestionsMu.RLock()
+	suggestions := s.currentSuggestions
+	lastAnalysis := s.lastAnalysis
+	s.suggestionsMu.RUnlock()
+
+	s.cooldownMu.RLock()
+	inCooldown := s.isInCooldown()
+	lastScaling := s.lastScalingEvent
+	s.cooldownMu.RUnlock()
+
+	totalSavingsHour := calculateTotalSavings(suggestions)
+
+	status := ServiceStatus{
+		IsRunning:            true,
+		LastAnalysis:         lastAnalysis,
+		NextAnalysis:         lastAnalysis.Add(s.checkInterval),
+		InCooldown:           inCooldown,
+		CurrentSuggestions:   len(suggestions),
+		TotalSavingsPerHour:  totalSavingsHour,
+		TotalSavingsPerMonth: totalSavingsHour * 730, // ~730 hours/month
+		CheckInterval:        s.checkInterval.String(),
+		MinSavingsThreshold:  s.minSavingsThreshold,
+	}
+
+	if inCooldown && !lastScaling.IsZero() {
+		remaining := s.scalingCooldown - time.Since(lastScaling)
+		status.CooldownRemaining = remaining.Round(time.Minute).String()
+	}
+
+	return status
+}
+
+// TriggerImmediateAnalysis triggers an immediate cost optimization analysis
+func (s *CostOptimizationService) TriggerImmediateAnalysis() {
+	logger.Info("Manual cost optimization analysis triggered", nil)
+	s.analyzeAndOptimize()
 }

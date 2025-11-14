@@ -33,6 +33,7 @@ func SetupRouter(
 	bulkHandler *BulkHandler,
 	marketplaceHandler *MarketplaceHandler,
 	scalingHandler *ScalingHandler,
+	costOptHandler *CostOptimizationHandler,
 	dashboardWsHandler *DashboardWebSocket,
 	cfg *config.Config,
 ) *gin.Engine {
@@ -312,6 +313,14 @@ func SetupRouter(
 			scaling.POST("/disable", scalingHandler.DisableScaling)
 			scaling.GET("/history", scalingHandler.GetScalingHistory)
 			scaling.POST("/optimize-costs", scalingHandler.OptimizeCosts) // B8: Manual cost optimization trigger
+		}
+
+		// Cost Optimization API (B8) - Admin only
+		costOpt := api.Group("/cost-optimization")
+		{
+			costOpt.GET("/suggestions", costOptHandler.GetSuggestions)
+			costOpt.GET("/status", costOptHandler.GetStatus)
+			costOpt.POST("/analyze", costOptHandler.TriggerAnalysis)
 		}
 	}
 

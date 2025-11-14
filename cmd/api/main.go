@@ -458,6 +458,9 @@ func main() {
 	// Scaling handler for auto-scaling (B5)
 	scalingHandler := api.NewScalingHandler(cond)
 
+	// Cost optimization handler for cost analysis and suggestions (B8)
+	costOptHandler := api.NewCostOptimizationHandler(costOptimizationService)
+
 	// Dashboard WebSocket for real-time visualization
 	dashboardWs := api.NewDashboardWebSocket(cond)
 	go dashboardWs.Run()
@@ -468,7 +471,7 @@ func main() {
 	events.DashboardEventPublisher = dashboardWs
 
 	// Setup router
-	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, dashboardWs, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, costOptHandler, dashboardWs, cfg)
 
 	// Graceful shutdown
 	go func() {
