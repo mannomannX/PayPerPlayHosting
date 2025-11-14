@@ -297,6 +297,19 @@ func main() {
 		"scaling_cooldown":  "2h",
 	})
 
+	// Initialize Migration Service for live server migrations
+	migrationService := service.NewMigrationService(migrationRepo, serverRepo, dockerService)
+	migrationService.SetConductor(cond)
+	migrationService.SetWebSocketHub(wsHub)
+	if remoteVelocityClient != nil {
+		migrationService.SetRemoteVelocityClient(remoteVelocityClient)
+	}
+	migrationService.StartMigrationWorker()
+	logger.Info("Migration service started", map[string]interface{}{
+		"check_interval": "30s",
+		"enabled":        true,
+	})
+
 	// CRITICAL: Sync running containers with Conductor state (prevents OOM after restarts)
 	logger.Info("Syncing running containers with Conductor state...", nil)
 	cond.SyncRunningContainers(dockerService, serverRepo)

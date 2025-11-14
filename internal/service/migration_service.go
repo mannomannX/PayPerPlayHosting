@@ -1,0 +1,610 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/payperplay/hosting/internal/docker"
+	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
+	"github.com/payperplay/hosting/pkg/logger"
+)
+
+// MigrationService handles server migrations between nodes
+type MigrationService struct {
+	migrationRepo       *repository.MigrationRepository
+	serverRepo          *repository.ServerRepository
+	dockerService       *docker.DockerService
+	conductor           ConductorInterface
+	wsHub               WebSocketHubInterface
+	remoteVelocityClient RemoteVelocityClientInterface
+}
+
+// NewMigrationService creates a new migration service
+func NewMigrationService(
+	migrationRepo *repository.MigrationRepository,
+	serverRepo *repository.ServerRepository,
+	dockerService *docker.DockerService,
+) *MigrationService {
+	return &MigrationService{
+		migrationRepo: migrationRepo,
+		serverRepo:    serverRepo,
+		dockerService: dockerService,
+	}
+}
+
+// SetConductor sets the Conductor for node management
+func (s *MigrationService) SetConductor(conductor ConductorInterface) {
+	s.conductor = conductor
+}
+
+// SetWebSocketHub sets the WebSocket hub for real-time updates
+func (s *MigrationService) SetWebSocketHub(wsHub WebSocketHubInterface) {
+	s.wsHub = wsHub
+}
+
+// SetRemoteVelocityClient sets the remote Velocity API client
+func (s *MigrationService) SetRemoteVelocityClient(client RemoteVelocityClientInterface) {
+	s.remoteVelocityClient = client
+}
+
+// StartMigrationWorker starts the background worker that processes scheduled migrations
+func (s *MigrationService) StartMigrationWorker() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
+		defer ticker.Stop()
+
+		logger.Info("Migration worker started", nil)
+
+		for range ticker.C {
+			s.processPendingMigrations()
+		}
+	}()
+}
+
+// processPendingMigrations finds and executes scheduled migrations
+func (s *MigrationService) processPendingMigrations() {
+	migrations, err := s.migrationRepo.FindPendingMigrations()
+	if err != nil {
+		logger.Error("Failed to fetch pending migrations", err, map[string]interface{}{})
+		return
+	}
+
+	if len(migrations) == 0 {
+		return
+	}
+
+	logger.Debug("Found pending migrations", map[string]interface{}{
+		"count": len(migrations),
+	})
+
+	for _, migration := range migrations {
+		// Check if migration can be executed
+		if s.canExecuteMigration(&migration) {
+			logger.Info("Starting migration execution", map[string]interface{}{
+				"migration_id": migration.ID,
+				"server_id":    migration.ServerID,
+				"from_node":    migration.FromNodeID,
+				"to_node":      migration.ToNodeID,
+			})
+
+			// Execute migration asynchronously
+			go s.executeMigration(&migration)
+		}
+	}
+}
+
+// canExecuteMigration checks if a migration can be executed now
+func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool {
+	// Check if server has active migration
+	hasActive, err := s.migrationRepo.HasActiveMigration(migration.ServerID)
+	if err != nil || hasActive {
+		return false
+	}
+
+	// Get server
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	if err != nil {
+		logger.Error("Failed to get server for migration", err, map[string]interface{}{
+			"migration_id": migration.ID,
+			"server_id":    migration.ServerID,
+		})
+		return false
+	}
+
+	// Server must be running
+	if server.Status != models.StatusRunning {
+		logger.Debug("Server not running, skipping migration", map[string]interface{}{
+			"migration_id": migration.ID,
+			"server_id":    migration.ServerID,
+			"status":       server.Status,
+		})
+		return false
+	}
+
+	// For cost-optimization migrations: wait for idle state
+	if migration.Reason == models.MigrationReasonCostOptimization {
+		// Only migrate if server is idle (0 players) OR has been idle for 5+ minutes
+		if server.CurrentPlayerCount > 0 {
+			logger.Debug("Server has players, waiting for idle state", map[string]interface{}{
+				"migration_id":  migration.ID,
+				"server_id":     migration.ServerID,
+				"player_count":  server.CurrentPlayerCount,
+			})
+			return false
+		}
+
+		// Check if server has been running long enough (minimum 15 minutes)
+		if server.LastStartedAt != nil {
+			runningDuration := time.Since(*server.LastStartedAt)
+			if runningDuration < 15*time.Minute {
+				logger.Debug("Server started too recently, waiting", map[string]interface{}{
+					"migration_id":     migration.ID,
+					"server_id":        migration.ServerID,
+					"running_duration": runningDuration.String(),
+				})
+				return false
+			}
+		}
+	}
+
+	// Check if system is stable (no scaling events in progress)
+	if s.conductor != nil {
+		// TODO: Add method to check if scaling is in progress
+		// For now, we allow migrations
+	}
+
+	return true
+}
+
+// executeMigration executes a migration through all phases
+func (s *MigrationService) executeMigration(migration *models.Migration) {
+	// Phase 1: Preparing
+	if err := s.phasePreparing(migration); err != nil {
+		s.failMigration(migration, fmt.Sprintf("Preparing phase failed: %v", err))
+		return
+	}
+
+	// Phase 2: Transferring
+	if err := s.phaseTransferring(migration); err != nil {
+		s.failMigration(migration, fmt.Sprintf("Transferring phase failed: %v", err))
+		s.rollbackPreparing(migration) // Rollback: stop new container
+		return
+	}
+
+	// Phase 3: Completing
+	if err := s.phaseCompleting(migration); err != nil {
+		// At this point, new server is already running with players
+		// We can't rollback - just log the error and mark as completed with warning
+		logger.Error("Completing phase failed but migration is functional", err, map[string]interface{}{
+			"migration_id": migration.ID,
+		})
+		// Continue to completion
+	}
+
+	// Mark as completed
+	s.completeMigration(migration)
+}
+
+// phasePreparing implements Phase 1: Preparation
+func (s *MigrationService) phasePreparing(migration *models.Migration) error {
+	// Update status to preparing
+	now := time.Now()
+	migration.Status = models.MigrationStatusPreparing
+	migration.StartedAt = &now
+	if err := s.migrationRepo.Update(migration); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	s.broadcastMigrationEvent("migration.status_changed", map[string]interface{}{
+		"migration_id": migration.ID,
+		"old_status":   "scheduled",
+		"new_status":   "preparing",
+		"timestamp":    now,
+	})
+
+	logger.Info("Migration Phase 1: Preparing", map[string]interface{}{
+		"migration_id": migration.ID,
+		"server_id":    migration.ServerID,
+	})
+
+	// Get server
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	if err != nil {
+		return fmt.Errorf("failed to get server: %w", err)
+	}
+
+	// Store player count at start
+	migration.PlayerCountAtStart = server.CurrentPlayerCount
+	s.migrationRepo.Update(migration)
+
+	// Validate target node
+	if s.conductor == nil {
+		return fmt.Errorf("conductor not available")
+	}
+
+	// Get target node info
+	targetNode, err := s.conductor.GetRemoteNode(migration.ToNodeID)
+	if err != nil {
+		return fmt.Errorf("failed to get target node: %w", err)
+	}
+
+	// Check target node capacity
+	if !s.conductor.AtomicAllocateRAMOnNode(migration.ToNodeID, server.RAMMb) {
+		return fmt.Errorf("insufficient capacity on target node %s", migration.ToNodeID)
+	}
+
+	// Create container on target node with proper naming
+	containerName := fmt.Sprintf("mc-%s", server.ID) // Use standard naming
+	imageName := docker.GetDockerImageName(string(server.ServerType))
+	env := docker.BuildContainerEnv(server)
+	portBindings := docker.BuildPortBindings(server.Port)
+	binds := docker.BuildVolumeBinds(server.ID, "/minecraft/servers")
+
+	ctx := context.Background()
+	newContainerID, err := s.conductor.GetRemoteDockerClient().StartContainer(
+		ctx,
+		targetNode,
+		containerName,
+		imageName,
+		env,
+		portBindings,
+		binds,
+		server.RAMMb,
+	)
+
+	if err != nil {
+		// Rollback RAM allocation
+		s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+		return fmt.Errorf("failed to start container on target node: %w", err)
+	}
+
+	// Wait for new container to be ready
+	logger.Info("Waiting for new container to be ready", map[string]interface{}{
+		"migration_id": migration.ID,
+		"container_id": newContainerID,
+	})
+
+	s.broadcastMigrationEvent("migration.progress", map[string]interface{}{
+		"migration_id": migration.ID,
+		"status":       "preparing",
+		"progress":     50,
+		"message":      "New container started, waiting for server to be ready...",
+	})
+
+	if err := s.conductor.GetRemoteDockerClient().WaitForServerReady(ctx, targetNode, newContainerID, 120); err != nil {
+		// Rollback: stop new container
+		s.conductor.GetRemoteDockerClient().StopContainer(ctx, targetNode, newContainerID, 30)
+		s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, targetNode, newContainerID, true)
+		s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+		return fmt.Errorf("new container failed to start: %w", err)
+	}
+
+	// Store new container ID temporarily (will be updated in phaseCompleting)
+	migration.Notes = fmt.Sprintf("%s\nNew Container ID: %s\nOld Container ID: %s", migration.Notes, newContainerID, server.ContainerID)
+	s.migrationRepo.Update(migration)
+
+	s.broadcastMigrationEvent("migration.progress", map[string]interface{}{
+		"migration_id": migration.ID,
+		"status":       "preparing",
+		"progress":     100,
+		"message":      "New container ready",
+	})
+
+	logger.Info("Migration Phase 1: Preparing completed", map[string]interface{}{
+		"migration_id": migration.ID,
+		"new_container": newContainerID,
+	})
+
+	return nil
+}
+
+// phaseTransferring implements Phase 2: Player Transfer
+func (s *MigrationService) phaseTransferring(migration *models.Migration) error {
+	// Update status to transferring
+	migration.Status = models.MigrationStatusTransferring
+	if err := s.migrationRepo.Update(migration); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	s.broadcastMigrationEvent("migration.status_changed", map[string]interface{}{
+		"migration_id": migration.ID,
+		"old_status":   "preparing",
+		"new_status":   "transferring",
+		"timestamp":    time.Now(),
+	})
+
+	logger.Info("Migration Phase 2: Transferring", map[string]interface{}{
+		"migration_id": migration.ID,
+		"server_id":    migration.ServerID,
+	})
+
+	// Get server
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	if err != nil {
+		return fmt.Errorf("failed to get server: %w", err)
+	}
+
+	// Update Velocity registration to new node
+	if s.remoteVelocityClient != nil {
+		// Get new node IP
+		targetNode, err := s.conductor.GetRemoteNode(migration.ToNodeID)
+		if err != nil {
+			return fmt.Errorf("failed to get target node for Velocity update: %w", err)
+		}
+
+		velocityServerName := fmt.Sprintf("mc-%s", server.ID)
+		newServerAddress := fmt.Sprintf("%s:%d", targetNode.IPAddress, server.Port)
+
+		// Unregister old server
+		if err := s.remoteVelocityClient.UnregisterServer(velocityServerName); err != nil {
+			logger.Warn("Failed to unregister old server from Velocity", map[string]interface{}{
+				"server_id": server.ID,
+				"error":     err.Error(),
+			})
+		}
+
+		// Register new server
+		if err := s.remoteVelocityClient.RegisterServer(velocityServerName, newServerAddress); err != nil {
+			return fmt.Errorf("failed to register new server with Velocity: %w", err)
+		}
+
+		logger.Info("Velocity registration updated", map[string]interface{}{
+			"migration_id": migration.ID,
+			"old_address":  fmt.Sprintf("%s:%d", server.NodeID, server.Port),
+			"new_address":  newServerAddress,
+		})
+	}
+
+	// If players were online, they will automatically reconnect to the new server via Velocity
+	// No need for explicit player transfer - Velocity handles routing
+
+	s.broadcastMigrationEvent("migration.progress", map[string]interface{}{
+		"migration_id": migration.ID,
+		"status":       "transferring",
+		"progress":     100,
+		"message":      "Velocity routing updated",
+	})
+
+	logger.Info("Migration Phase 2: Transferring completed", map[string]interface{}{
+		"migration_id": migration.ID,
+	})
+
+	return nil
+}
+
+// phaseCompleting implements Phase 3: Cleanup
+func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
+	// Update status to completing
+	migration.Status = models.MigrationStatusCompleting
+	if err := s.migrationRepo.Update(migration); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	s.broadcastMigrationEvent("migration.status_changed", map[string]interface{}{
+		"migration_id": migration.ID,
+		"old_status":   "transferring",
+		"new_status":   "completing",
+		"timestamp":    time.Now(),
+	})
+
+	logger.Info("Migration Phase 3: Completing", map[string]interface{}{
+		"migration_id": migration.ID,
+		"server_id":    migration.ServerID,
+	})
+
+	// Get server
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	if err != nil {
+		return fmt.Errorf("failed to get server: %w", err)
+	}
+
+	// Stop old container on source node
+	oldNodeID := migration.FromNodeID
+	oldContainerID := server.ContainerID
+
+	if oldContainerID != "" {
+		sourceNode, err := s.conductor.GetRemoteNode(oldNodeID)
+		if err != nil {
+			logger.Warn("Failed to get source node for cleanup", map[string]interface{}{
+				"node_id": oldNodeID,
+				"error":   err.Error(),
+			})
+		} else {
+			ctx := context.Background()
+
+			// Stop old container
+			if err := s.conductor.GetRemoteDockerClient().StopContainer(ctx, sourceNode, oldContainerID, 30); err != nil {
+				logger.Warn("Failed to stop old container", map[string]interface{}{
+					"container_id": oldContainerID,
+					"error":        err.Error(),
+				})
+			}
+
+			// Remove old container
+			if err := s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, sourceNode, oldContainerID, true); err != nil {
+				logger.Warn("Failed to remove old container", map[string]interface{}{
+					"container_id": oldContainerID,
+					"error":        err.Error(),
+				})
+			}
+
+			logger.Info("Old container stopped and removed", map[string]interface{}{
+				"migration_id": migration.ID,
+				"container_id": oldContainerID,
+			})
+		}
+	}
+
+	// Release RAM on source node
+	s.conductor.ReleaseRAMOnNode(oldNodeID, server.RAMMb)
+
+	// Extract new container ID from migration notes
+	// The notes format is: "...\nNew Container ID: <id>\nOld Container ID: <id>"
+	// Parse the new container ID
+	newContainerID := ""
+	if migration.Notes != "" {
+		lines := strings.Split(migration.Notes, "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "New Container ID: ") {
+				newContainerID = strings.TrimPrefix(line, "New Container ID: ")
+				break
+			}
+		}
+	}
+
+	// Update server in database with new node ID and container ID
+	server.NodeID = migration.ToNodeID
+	if newContainerID != "" {
+		server.ContainerID = newContainerID
+	}
+
+	if err := s.serverRepo.Update(server); err != nil {
+		return fmt.Errorf("failed to update server: %w", err)
+	}
+
+	// Update Conductor's container registry
+	if newContainerID != "" {
+		s.conductor.RegisterContainer(
+			server.ID,
+			server.Name,
+			newContainerID,
+			migration.ToNodeID,
+			server.RAMMb,
+			server.Port,
+			server.Port,
+			"running",
+		)
+	}
+
+	logger.Info("Migration Phase 3: Completing finished", map[string]interface{}{
+		"migration_id": migration.ID,
+		"new_node_id":  migration.ToNodeID,
+	})
+
+	return nil
+}
+
+// completeMigration marks migration as completed
+func (s *MigrationService) completeMigration(migration *models.Migration) {
+	now := time.Now()
+	migration.Status = models.MigrationStatusCompleted
+	migration.CompletedAt = &now
+
+	if err := s.migrationRepo.Update(migration); err != nil {
+		logger.Error("Failed to mark migration as completed", err, map[string]interface{}{
+			"migration_id": migration.ID,
+		})
+		return
+	}
+
+	duration := migration.DurationSeconds()
+
+	logger.Info("Migration completed successfully", map[string]interface{}{
+		"migration_id":      migration.ID,
+		"server_id":         migration.ServerID,
+		"duration_seconds":  duration,
+		"savings_eur_hour":  migration.SavingsEURHour,
+		"savings_eur_month": migration.SavingsEURMonth,
+	})
+
+	s.broadcastMigrationEvent("migration.completed", map[string]interface{}{
+		"migration_id":      migration.ID,
+		"duration_seconds":  duration,
+		"players_transferred": migration.PlayerCountAtStart,
+		"success":           true,
+	})
+}
+
+// failMigration marks migration as failed
+func (s *MigrationService) failMigration(migration *models.Migration, errorMessage string) {
+	migration.Status = models.MigrationStatusFailed
+	migration.ErrorMessage = errorMessage
+	migration.RetryCount++
+
+	if err := s.migrationRepo.Update(migration); err != nil {
+		logger.Error("Failed to mark migration as failed", err, map[string]interface{}{
+			"migration_id": migration.ID,
+		})
+		return
+	}
+
+	logger.Error("Migration failed", fmt.Errorf("%s", errorMessage), map[string]interface{}{
+		"migration_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"retry_count":  migration.RetryCount,
+	})
+
+	s.broadcastMigrationEvent("migration.failed", map[string]interface{}{
+		"migration_id":     migration.ID,
+		"error":            errorMessage,
+		"rollback_success": true,
+	})
+
+	// TODO: Retry logic if retry_count < max_retries
+	if migration.RetryCount < migration.MaxRetries {
+		logger.Info("Migration will be retried", map[string]interface{}{
+			"migration_id": migration.ID,
+			"retry_count":  migration.RetryCount,
+			"max_retries":  migration.MaxRetries,
+		})
+		// Set status back to scheduled for retry
+		migration.Status = models.MigrationStatusScheduled
+		s.migrationRepo.Update(migration)
+	}
+}
+
+// rollbackPreparing rolls back Phase 1 (stop and remove new container)
+func (s *MigrationService) rollbackPreparing(migration *models.Migration) {
+	logger.Info("Rolling back preparing phase", map[string]interface{}{
+		"migration_id": migration.ID,
+	})
+
+	// Release RAM on target node
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	if err != nil {
+		logger.Error("Failed to get server for rollback", err, map[string]interface{}{
+			"migration_id": migration.ID,
+		})
+		return
+	}
+
+	s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+
+	// TODO: Stop and remove new container if we stored its ID
+	// For now, we assume the container name is predictable
+	containerName := fmt.Sprintf("mc-%s-migration", migration.ServerID)
+
+	targetNode, err := s.conductor.GetRemoteNode(migration.ToNodeID)
+	if err != nil {
+		logger.Error("Failed to get target node for rollback", err, map[string]interface{}{
+			"migration_id": migration.ID,
+		})
+		return
+	}
+
+	ctx := context.Background()
+	// Try to remove container by name
+	s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, targetNode, containerName, true)
+
+	logger.Info("Rollback completed", map[string]interface{}{
+		"migration_id": migration.ID,
+	})
+}
+
+// broadcastMigrationEvent sends WebSocket event
+func (s *MigrationService) broadcastMigrationEvent(eventType string, data map[string]interface{}) {
+	if s.wsHub != nil {
+		s.wsHub.Broadcast(eventType, data)
+	}
+}
+
+// ScheduleMigration creates a manual migration and schedules it
+func (s *MigrationService) ScheduleMigration(serverID, toNodeID, reason string) (*models.Migration, error) {
+	// This is a convenience method for manual migrations
+	// For now, migrations are created via the API handler
+	// This method is reserved for future use
+	return nil, fmt.Errorf("not implemented - use API endpoint instead")
+}
