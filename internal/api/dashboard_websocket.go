@@ -8,6 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/payperplay/hosting/internal/conductor"
+	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
@@ -23,15 +25,17 @@ var upgrader = websocket.Upgrader{
 
 // DashboardWebSocket manages WebSocket connections for the admin dashboard
 type DashboardWebSocket struct {
-	conductor     *conductor.Conductor
-	clients       map[*websocket.Conn]bool
-	clientsMutex  sync.RWMutex
-	clientWriters map[*websocket.Conn]*sync.Mutex // Mutex per client to prevent concurrent writes
-	writersMutex  sync.Mutex
-	broadcast     chan DashboardEvent
-	register      chan *websocket.Conn
-	unregister    chan *websocket.Conn
-	shutdownChan  chan struct{}
+	conductor       *conductor.Conductor
+	migrationRepo   *repository.MigrationRepository
+	serverRepo      *repository.ServerRepository
+	clients         map[*websocket.Conn]bool
+	clientsMutex    sync.RWMutex
+	clientWriters   map[*websocket.Conn]*sync.Mutex // Mutex per client to prevent concurrent writes
+	writersMutex    sync.Mutex
+	broadcast       chan DashboardEvent
+	register        chan *websocket.Conn
+	unregister      chan *websocket.Conn
+	shutdownChan    chan struct{}
 }
 
 // DashboardEvent represents a WebSocket message sent to dashboard clients
@@ -52,6 +56,12 @@ func NewDashboardWebSocket(conductor *conductor.Conductor) *DashboardWebSocket {
 		unregister:    make(chan *websocket.Conn),
 		shutdownChan:  make(chan struct{}),
 	}
+}
+
+// SetRepositories sets the migration and server repositories for loading active migrations
+func (ws *DashboardWebSocket) SetRepositories(migrationRepo *repository.MigrationRepository, serverRepo *repository.ServerRepository) {
+	ws.migrationRepo = migrationRepo
+	ws.serverRepo = serverRepo
 }
 
 // Run starts the WebSocket manager (run in goroutine)
@@ -325,10 +335,66 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 	}
 	ws.sendToClient(client, event)
 
+	// Send active migrations
+	if ws.migrationRepo != nil && ws.serverRepo != nil {
+		activeMigrations, err := ws.migrationRepo.FindPendingMigrations()
+		if err != nil {
+			logger.Error("Failed to load active migrations for initial state", err, nil)
+		} else {
+			for _, migration := range activeMigrations {
+				// Get server name
+				server, err := ws.serverRepo.FindByID(migration.ServerID)
+				serverName := "Unknown"
+				if err == nil {
+					serverName = server.Name
+				}
+
+				// Send migration event based on status
+				eventType := "operation.migration.progress"
+				if migration.Status == "scheduled" || migration.Status == "suggested" || migration.Status == "approved" {
+					eventType = "operation.migration.started"
+				}
+
+				migrationEvent := DashboardEvent{
+					Type:      eventType,
+					Timestamp: time.Now(),
+					Data: map[string]interface{}{
+						"operation_id": migration.ID,
+						"server_id":    migration.ServerID,
+						"server_name":  serverName,
+						"from_node":    migration.FromNodeID,
+						"to_node":      migration.ToNodeID,
+						"status":       string(migration.Status),
+						"progress":     ws.getMigrationProgress(migration.Status),
+					},
+				}
+				ws.sendToClient(client, migrationEvent)
+			}
+		}
+	}
+
 	logger.Info("DashboardWebSocket: Sent initial state to client", map[string]interface{}{
 		"nodes":      len(nodes),
 		"containers": len(ws.conductor.ContainerRegistry.GetAllContainers()),
 	})
+}
+
+// getMigrationProgress returns progress percentage based on migration status
+func (ws *DashboardWebSocket) getMigrationProgress(status models.MigrationStatus) int {
+	switch string(status) {
+	case "scheduled", "suggested", "approved":
+		return 0
+	case "preparing":
+		return 33
+	case "transferring":
+		return 66
+	case "completing":
+		return 90
+	case "completed":
+		return 100
+	default:
+		return 0
+	}
 }
 
 // broadcastFleetStats broadcasts current fleet statistics

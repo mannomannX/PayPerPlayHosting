@@ -480,6 +480,7 @@ func main() {
 
 	// Dashboard WebSocket for real-time visualization
 	dashboardWs := api.NewDashboardWebSocket(cond)
+	dashboardWs.SetRepositories(migrationRepo, serverRepo) // Enable loading active migrations on reconnect
 	go dashboardWs.Run()
 	defer dashboardWs.Shutdown()
 	logger.Info("Dashboard WebSocket started", nil)
