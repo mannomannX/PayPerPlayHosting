@@ -1,5 +1,7 @@
 import { Handle, Position } from 'reactflow';
 import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { ContainerDetailsModal } from '../dashboard/ContainerDetailsModal';
 
 interface DedicatedNodeProps {
   data: {
@@ -19,16 +21,74 @@ interface DedicatedNodeProps {
       server_name: string;
       ram_mb: number;
       status: string;
+      port: number;
+      join_address: string;
     }>;
   };
+  id: string;
 }
 
-export const DedicatedNode = ({ data }: DedicatedNodeProps) => {
+export const DedicatedNode = ({ data, id }: DedicatedNodeProps) => {
+  const [selectedContainer, setSelectedContainer] = useState<{
+    server_id: string;
+    server_name: string;
+    ram_mb: number;
+    status: string;
+    port: number;
+    join_address: string;
+  } | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
   const getCapacityColor = (percent: number) => {
     if (percent < 50) return '#10b981'; // green
     if (percent < 70) return '#f59e0b'; // yellow
     if (percent < 85) return '#f97316'; // orange
     return '#ef4444'; // red
+  };
+
+  const getContainerStatusColor = (status: string): string => {
+    switch (status.toLowerCase()) {
+      case 'running':
+        return '#10b981'; // Green
+      case 'starting':
+      case 'provisioning':
+        return '#3b82f6'; // Blue
+      case 'stopping':
+        return '#f59e0b'; // Yellow
+      case 'stopped':
+      case 'sleeping':
+        return '#6b7280'; // Gray
+      case 'crashed':
+      case 'failed':
+        return '#ef4444'; // Red
+      default:
+        return '#8b5cf6'; // Purple
+    }
+  };
+
+  const getContainerStatusEmoji = (status: string): string => {
+    switch (status.toLowerCase()) {
+      case 'running':
+        return '✅';
+      case 'starting':
+      case 'provisioning':
+        return '🔵';
+      case 'stopping':
+        return '🟡';
+      case 'stopped':
+      case 'sleeping':
+        return '⚫';
+      case 'crashed':
+      case 'failed':
+        return '🔴';
+      default:
+        return '🟣';
+    }
+  };
+
+  const handleContainerClick = (container: typeof data.containers[0]) => {
+    setSelectedContainer(container);
+    setIsModalOpen(true);
   };
 
   const capacityColor = getCapacityColor(data.capacityPercent);
@@ -113,25 +173,60 @@ export const DedicatedNode = ({ data }: DedicatedNodeProps) => {
       {!data.isSystemNode && data.containers.length > 0 && (
         <div style={{ marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: '8px' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px' }}>Assigned MC Servers:</div>
-          <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
-            {data.containers.map((container) => (
-              <div
-                key={container.server_id}
-                style={{
-                  fontSize: '10px',
-                  padding: '4px 6px',
-                  background: 'rgba(255,255,255,0.1)',
-                  borderRadius: '4px',
-                  marginBottom: '2px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span>{container.server_name}</span>
-                <span style={{ opacity: 0.7 }}>{container.ram_mb}MB</span>
-              </div>
-            ))}
+          <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+            {data.containers.map((container) => {
+              const statusColor = getContainerStatusColor(container.status);
+              const statusEmoji = getContainerStatusEmoji(container.status);
+
+              return (
+                <div
+                  key={container.server_id}
+                  onClick={() => handleContainerClick(container)}
+                  style={{
+                    fontSize: '10px',
+                    padding: '6px 8px',
+                    background: 'rgba(255,255,255,0.1)',
+                    borderRadius: '6px',
+                    marginBottom: '4px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    border: `1px solid ${statusColor}40`,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.15)';
+                    e.currentTarget.style.transform = 'translateX(2px)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.transform = 'translateX(0)';
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1 }}>
+                    <span style={{ fontSize: '12px' }}>{statusEmoji}</span>
+                    <span style={{ fontWeight: 'bold' }}>{container.server_name}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        fontSize: '8px',
+                        padding: '2px 4px',
+                        borderRadius: '3px',
+                        background: `${statusColor}30`,
+                        color: statusColor,
+                        fontWeight: 'bold',
+                        border: `1px solid ${statusColor}`,
+                      }}
+                    >
+                      {container.status.toUpperCase()}
+                    </span>
+                    <span style={{ opacity: 0.7, fontSize: '9px' }}>{container.ram_mb}MB</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -191,6 +286,18 @@ export const DedicatedNode = ({ data }: DedicatedNodeProps) => {
       </div>
 
       <Handle type="source" position={Position.Bottom} />
+
+      {/* Container Details Modal */}
+      <ContainerDetailsModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setSelectedContainer(null);
+        }}
+        container={selectedContainer}
+        nodeId={id}
+        nodeIp={data.ipAddress}
+      />
     </motion.div>
   );
 };

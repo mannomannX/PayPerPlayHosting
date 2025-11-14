@@ -41,6 +41,8 @@ export interface ContainerCreatedEvent {
   node_id: string;
   ram_mb: number;
   status: string;
+  port: number;
+  join_address: string;
 }
 
 export interface ContainerStatusChangedEvent {
@@ -48,6 +50,8 @@ export interface ContainerStatusChangedEvent {
   server_name: string;
   node_id: string;
   status: string;
+  port: number;
+  join_address: string;
   timestamp: string;
 }
 

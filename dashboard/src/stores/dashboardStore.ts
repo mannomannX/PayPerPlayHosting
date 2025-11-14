@@ -4,6 +4,7 @@ import type {
   NodeCreatedEvent,
   NodeStatsEvent,
   ContainerCreatedEvent,
+  ContainerStatusChangedEvent,
   MigrationStartedEvent,
   MigrationEvent,
   FleetStatsEvent,
@@ -35,6 +36,8 @@ interface ContainerInfo {
   server_name: string;
   ram_mb: number;
   status: string;
+  port: number;
+  join_address: string;
 }
 
 interface MigrationOperation {
@@ -91,7 +94,7 @@ interface DashboardState {
   removeNode: (nodeId: string) => void;
   addContainer: (event: ContainerCreatedEvent) => void;
   removeContainer: (serverId: string) => void;
-  updateContainerStatus: (serverId: string, status: string) => void;
+  updateContainerStatus: (event: ContainerStatusChangedEvent) => void;
   startMigration: (event: MigrationStartedEvent) => void;
   updateMigration: (event: MigrationEvent) => void;
   updateFleetStats: (event: FleetStatsEvent) => void;
@@ -126,7 +129,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         get().addContainer(data as ContainerCreatedEvent);
         break;
       case 'container.status_changed':
-        get().updateContainerStatus(data.server_id, data.status);
+        get().updateContainerStatus(data as ContainerStatusChangedEvent);
         break;
       case 'container.removed':
         get().removeContainer(data.server_id);
@@ -241,6 +244,8 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
                     server_name: event.server_name,
                     ram_mb: event.ram_mb,
                     status: event.status,
+                    port: event.port,
+                    join_address: event.join_address,
                   },
                 ],
               },
@@ -262,14 +267,21 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     });
   },
 
-  updateContainerStatus: (serverId: string, status: string) => {
+  updateContainerStatus: (event: ContainerStatusChangedEvent) => {
     set({
       nodes: get().nodes.map((node) => ({
         ...node,
         data: {
           ...node.data,
           containers: node.data.containers.map((c) =>
-            c.server_id === serverId ? { ...c, status } : c
+            c.server_id === event.server_id
+              ? {
+                  ...c,
+                  status: event.status,
+                  port: event.port,
+                  join_address: event.join_address,
+                }
+              : c
           ),
         },
       })),
