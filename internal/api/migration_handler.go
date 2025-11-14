@@ -354,11 +354,11 @@ func (h *MigrationHandler) CreateManualMigration(c *gin.Context) {
 		return
 	}
 
-	// Check if server can be migrated
-	canMigrate, err := h.migrationRepo.CanMigrateServer(req.ServerID, 30)
+	// Check if server can be migrated (no cooldown for manual migrations)
+	canMigrate, err := h.migrationRepo.CanMigrateServer(req.ServerID, 0)
 	if err != nil || !canMigrate {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Server cannot be migrated (cooldown or active migration)",
+			"error": "Server cannot be migrated (active migration in progress)",
 		})
 		return
 	}
