@@ -8,7 +8,7 @@ export const MigrationDropdown = () => {
 
   const migrationArray = Array.from(migrations.values());
   const activeMigrations = migrationArray.filter(m =>
-    m.status === 'started' || m.status === 'progress' || m.status === 'preparing' || m.status === 'transferring' || m.status === 'completing'
+    m.status !== 'completed' && m.status !== 'failed'
   );
   const hasActive = activeMigrations.length > 0;
 
