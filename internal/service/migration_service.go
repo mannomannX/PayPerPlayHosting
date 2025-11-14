@@ -90,7 +90,7 @@ func (s *MigrationService) processPendingMigrations() {
 		// Check if migration can be executed
 		if s.canExecuteMigration(&migration) {
 			logger.Info("Starting migration execution", map[string]interface{}{
-				"migration_id": migration.ID,
+				"operation_id": migration.ID,
 				"server_id":    migration.ServerID,
 				"from_node":    migration.FromNodeID,
 				"to_node":      migration.ToNodeID,
@@ -114,7 +114,7 @@ func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool
 	server, err := s.serverRepo.FindByID(migration.ServerID)
 	if err != nil {
 		logger.Error("Failed to get server for migration", err, map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 			"server_id":    migration.ServerID,
 		})
 		return false
@@ -125,7 +125,7 @@ func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool
 	if migration.Reason == models.MigrationReasonCostOptimization {
 		if server.Status != models.StatusRunning {
 			logger.Debug("Server not running, skipping cost-optimization migration", map[string]interface{}{
-				"migration_id": migration.ID,
+				"operation_id": migration.ID,
 				"server_id":    migration.ServerID,
 				"status":       server.Status,
 			})
@@ -135,7 +135,7 @@ func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool
 		// Manual migrations: allow starting or running
 		if server.Status != models.StatusRunning && server.Status != models.StatusStarting {
 			logger.Debug("Server not running/starting, skipping migration", map[string]interface{}{
-				"migration_id": migration.ID,
+				"operation_id": migration.ID,
 				"server_id":    migration.ServerID,
 				"status":       server.Status,
 			})
@@ -180,6 +180,24 @@ func (s *MigrationService) canExecuteMigration(migration *models.Migration) bool
 
 // executeMigration executes a migration through all phases
 func (s *MigrationService) executeMigration(migration *models.Migration) {
+	// Get server name for events
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	serverName := "Unknown"
+	if err == nil {
+		serverName = server.Name
+	}
+
+	// Broadcast migration started event
+	s.broadcastMigrationEvent("operation.migration.started", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  serverName,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
+		"progress":     0,
+		"status":       "started",
+	})
+
 	// Phase 1: Preparing
 	if err := s.phasePreparing(migration); err != nil {
 		s.failMigration(migration, fmt.Sprintf("Preparing phase failed: %v", err))
@@ -198,7 +216,7 @@ func (s *MigrationService) executeMigration(migration *models.Migration) {
 		// At this point, new server is already running with players
 		// We can't rollback - just log the error and mark as completed with warning
 		logger.Error("Completing phase failed but migration is functional", err, map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 		})
 		// Continue to completion
 	}
@@ -217,15 +235,8 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
-	s.broadcastMigrationEvent("migration.status_changed", map[string]interface{}{
-		"migration_id": migration.ID,
-		"old_status":   "scheduled",
-		"new_status":   "preparing",
-		"timestamp":    now,
-	})
-
 	logger.Info("Migration Phase 1: Preparing", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"server_id":    migration.ServerID,
 	})
 
@@ -234,6 +245,16 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 	if err != nil {
 		return fmt.Errorf("failed to get server: %w", err)
 	}
+
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
+		"progress":     10,
+		"status":       "preparing",
+	})
 
 	// Store player count at start
 	migration.PlayerCountAtStart = server.CurrentPlayerCount
@@ -282,12 +303,16 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 
 	// Wait for new container to be ready
 	logger.Info("Waiting for new container to be ready", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"container_id": newContainerID,
 	})
 
-	s.broadcastMigrationEvent("migration.progress", map[string]interface{}{
-		"migration_id": migration.ID,
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
 		"status":       "preparing",
 		"progress":     50,
 		"message":      "New container started, waiting for server to be ready...",
@@ -305,15 +330,19 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 	migration.Notes = fmt.Sprintf("%s\nNew Container ID: %s\nOld Container ID: %s", migration.Notes, newContainerID, server.ContainerID)
 	s.migrationRepo.Update(migration)
 
-	s.broadcastMigrationEvent("migration.progress", map[string]interface{}{
-		"migration_id": migration.ID,
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
 		"status":       "preparing",
 		"progress":     100,
 		"message":      "New container ready",
 	})
 
 	logger.Info("Migration Phase 1: Preparing completed", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"new_container": newContainerID,
 	})
 
@@ -328,15 +357,8 @@ func (s *MigrationService) phaseTransferring(migration *models.Migration) error 
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
-	s.broadcastMigrationEvent("migration.status_changed", map[string]interface{}{
-		"migration_id": migration.ID,
-		"old_status":   "preparing",
-		"new_status":   "transferring",
-		"timestamp":    time.Now(),
-	})
-
 	logger.Info("Migration Phase 2: Transferring", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"server_id":    migration.ServerID,
 	})
 
@@ -345,6 +367,16 @@ func (s *MigrationService) phaseTransferring(migration *models.Migration) error 
 	if err != nil {
 		return fmt.Errorf("failed to get server: %w", err)
 	}
+
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
+		"status":       "transferring",
+		"progress":     0,
+	})
 
 	// Update Velocity registration to new node
 	if s.remoteVelocityClient != nil {
@@ -371,7 +403,7 @@ func (s *MigrationService) phaseTransferring(migration *models.Migration) error 
 		}
 
 		logger.Info("Velocity registration updated", map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 			"old_address":  fmt.Sprintf("%s:%d", server.NodeID, server.Port),
 			"new_address":  newServerAddress,
 		})
@@ -380,15 +412,19 @@ func (s *MigrationService) phaseTransferring(migration *models.Migration) error 
 	// If players were online, they will automatically reconnect to the new server via Velocity
 	// No need for explicit player transfer - Velocity handles routing
 
-	s.broadcastMigrationEvent("migration.progress", map[string]interface{}{
-		"migration_id": migration.ID,
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
 		"status":       "transferring",
 		"progress":     100,
 		"message":      "Velocity routing updated",
 	})
 
 	logger.Info("Migration Phase 2: Transferring completed", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 	})
 
 	return nil
@@ -402,15 +438,8 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
-	s.broadcastMigrationEvent("migration.status_changed", map[string]interface{}{
-		"migration_id": migration.ID,
-		"old_status":   "transferring",
-		"new_status":   "completing",
-		"timestamp":    time.Now(),
-	})
-
 	logger.Info("Migration Phase 3: Completing", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"server_id":    migration.ServerID,
 	})
 
@@ -419,6 +448,16 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 	if err != nil {
 		return fmt.Errorf("failed to get server: %w", err)
 	}
+
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
+		"status":       "completing",
+		"progress":     90,
+	})
 
 	// Stop old container on source node
 	oldNodeID := migration.FromNodeID
@@ -451,7 +490,7 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 			}
 
 			logger.Info("Old container stopped and removed", map[string]interface{}{
-				"migration_id": migration.ID,
+				"operation_id": migration.ID,
 				"container_id": oldContainerID,
 			})
 		}
@@ -499,7 +538,7 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 	}
 
 	logger.Info("Migration Phase 3: Completing finished", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"new_node_id":  migration.ToNodeID,
 	})
 
@@ -514,26 +553,39 @@ func (s *MigrationService) completeMigration(migration *models.Migration) {
 
 	if err := s.migrationRepo.Update(migration); err != nil {
 		logger.Error("Failed to mark migration as completed", err, map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 		})
 		return
 	}
 
 	duration := migration.DurationSeconds()
 
+	// Get server name for event
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	serverName := "Unknown"
+	if err == nil {
+		serverName = server.Name
+	}
+
 	logger.Info("Migration completed successfully", map[string]interface{}{
-		"migration_id":      migration.ID,
+		"operation_id":      migration.ID,
 		"server_id":         migration.ServerID,
 		"duration_seconds":  duration,
 		"savings_eur_hour":  migration.SavingsEURHour,
 		"savings_eur_month": migration.SavingsEURMonth,
 	})
 
-	s.broadcastMigrationEvent("migration.completed", map[string]interface{}{
-		"migration_id":      migration.ID,
-		"duration_seconds":  duration,
+	s.broadcastMigrationEvent("operation.migration.completed", map[string]interface{}{
+		"operation_id":        migration.ID,
+		"server_id":           migration.ServerID,
+		"server_name":         serverName,
+		"from_node":           migration.FromNodeID,
+		"to_node":             migration.ToNodeID,
+		"duration_seconds":    duration,
 		"players_transferred": migration.PlayerCountAtStart,
-		"success":           true,
+		"progress":            100,
+		"status":              "completed",
+		"success":             true,
 	})
 }
 
@@ -545,27 +597,39 @@ func (s *MigrationService) failMigration(migration *models.Migration, errorMessa
 
 	if err := s.migrationRepo.Update(migration); err != nil {
 		logger.Error("Failed to mark migration as failed", err, map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 		})
 		return
 	}
 
+	// Get server name for event
+	server, err := s.serverRepo.FindByID(migration.ServerID)
+	serverName := "Unknown"
+	if err == nil {
+		serverName = server.Name
+	}
+
 	logger.Error("Migration failed", fmt.Errorf("%s", errorMessage), map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 		"server_id":    migration.ServerID,
 		"retry_count":  migration.RetryCount,
 	})
 
-	s.broadcastMigrationEvent("migration.failed", map[string]interface{}{
-		"migration_id":     migration.ID,
+	s.broadcastMigrationEvent("operation.migration.failed", map[string]interface{}{
+		"operation_id":     migration.ID,
+		"server_id":        migration.ServerID,
+		"server_name":      serverName,
+		"from_node":        migration.FromNodeID,
+		"to_node":          migration.ToNodeID,
 		"error":            errorMessage,
+		"status":           "failed",
 		"rollback_success": true,
 	})
 
 	// TODO: Retry logic if retry_count < max_retries
 	if migration.RetryCount < migration.MaxRetries {
 		logger.Info("Migration will be retried", map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 			"retry_count":  migration.RetryCount,
 			"max_retries":  migration.MaxRetries,
 		})
@@ -578,14 +642,14 @@ func (s *MigrationService) failMigration(migration *models.Migration, errorMessa
 // rollbackPreparing rolls back Phase 1 (stop and remove new container)
 func (s *MigrationService) rollbackPreparing(migration *models.Migration) {
 	logger.Info("Rolling back preparing phase", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 	})
 
 	// Release RAM on target node
 	server, err := s.serverRepo.FindByID(migration.ServerID)
 	if err != nil {
 		logger.Error("Failed to get server for rollback", err, map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 		})
 		return
 	}
@@ -599,7 +663,7 @@ func (s *MigrationService) rollbackPreparing(migration *models.Migration) {
 	targetNode, err := s.conductor.GetRemoteNode(migration.ToNodeID)
 	if err != nil {
 		logger.Error("Failed to get target node for rollback", err, map[string]interface{}{
-			"migration_id": migration.ID,
+			"operation_id": migration.ID,
 		})
 		return
 	}
@@ -609,7 +673,7 @@ func (s *MigrationService) rollbackPreparing(migration *models.Migration) {
 	s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, targetNode, containerName, true)
 
 	logger.Info("Rollback completed", map[string]interface{}{
-		"migration_id": migration.ID,
+		"operation_id": migration.ID,
 	})
 }
 
