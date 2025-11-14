@@ -487,6 +487,10 @@ func main() {
 	// Set dashboard WebSocket as global event publisher
 	events.DashboardEventPublisher = dashboardWs
 
+	// Link Dashboard WebSocket to Migration Service for real-time migration visualization
+	migrationService.SetDashboardWebSocket(dashboardWs)
+	logger.Info("Migration service linked to Dashboard WebSocket", nil)
+
 	// Setup router
 	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, costOptHandler, migrationHandler, dashboardWs, cfg)
 

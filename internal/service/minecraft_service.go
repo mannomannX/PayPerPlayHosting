@@ -32,6 +32,11 @@ type WebSocketHubInterface interface {
 	Broadcast(messageType string, data interface{})
 }
 
+// DashboardWebSocketInterface defines the methods needed from Dashboard WebSocket
+type DashboardWebSocketInterface interface {
+	BroadcastEvent(eventType string, data interface{})
+}
+
 // VelocityServiceInterface defines the methods needed from VelocityService (DEPRECATED)
 type VelocityServiceInterface interface {
 	RegisterServer(server *models.MinecraftServer) error

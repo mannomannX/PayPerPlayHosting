@@ -19,6 +19,7 @@ type MigrationService struct {
 	dockerService       *docker.DockerService
 	conductor           ConductorInterface
 	wsHub               WebSocketHubInterface
+	dashboardWs         DashboardWebSocketInterface
 	remoteVelocityClient RemoteVelocityClientInterface
 }
 
@@ -43,6 +44,11 @@ func (s *MigrationService) SetConductor(conductor ConductorInterface) {
 // SetWebSocketHub sets the WebSocket hub for real-time updates
 func (s *MigrationService) SetWebSocketHub(wsHub WebSocketHubInterface) {
 	s.wsHub = wsHub
+}
+
+// SetDashboardWebSocket sets the Dashboard WebSocket for real-time dashboard updates
+func (s *MigrationService) SetDashboardWebSocket(dashboardWs DashboardWebSocketInterface) {
+	s.dashboardWs = dashboardWs
 }
 
 // SetRemoteVelocityClient sets the remote Velocity API client
@@ -607,10 +613,16 @@ func (s *MigrationService) rollbackPreparing(migration *models.Migration) {
 	})
 }
 
-// broadcastMigrationEvent sends WebSocket event
+// broadcastMigrationEvent sends WebSocket event to both hubs
 func (s *MigrationService) broadcastMigrationEvent(eventType string, data map[string]interface{}) {
+	// Send to old WebSocket hub (for backward compatibility)
 	if s.wsHub != nil {
 		s.wsHub.Broadcast(eventType, data)
+	}
+
+	// Send to Dashboard WebSocket (for real-time dashboard visualization)
+	if s.dashboardWs != nil {
+		s.dashboardWs.BroadcastEvent(eventType, data)
 	}
 }
 
