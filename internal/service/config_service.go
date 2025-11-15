@@ -336,7 +336,13 @@ func (s *ConfigService) ApplyConfigChanges(req ConfigChangeRequest) (*models.Con
 			"server_id": req.ServerID,
 			"change_id": change.ID,
 		})
-		_, err := s.backupService.CreateBackup(req.ServerID)
+		_, err := s.backupService.CreateBackup(
+		req.ServerID,
+		models.BackupTypePreUpdate,
+		fmt.Sprintf("Pre-config-change backup for change %s", change.ID),
+		nil, // No user ID for automated backups
+		0,   // Use default retention (7 days for pre-update)
+	)
 		if err != nil {
 			logger.Warn("Failed to create backup before config change", map[string]interface{}{
 				"server_id": req.ServerID,

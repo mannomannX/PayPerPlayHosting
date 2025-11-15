@@ -107,6 +107,7 @@ func main() {
 	fileRepo := repository.NewFileRepository(db)
 	pluginRepo := repository.NewPluginRepository(db)
 	migrationRepo := repository.NewMigrationRepository(db)
+	backupRepo := repository.NewBackupRepository(db)
 
 	// Initialize Email Service (using mock sender for now)
 	// 🚧 TODO: Replace MockEmailSender with ResendEmailSender when ready for production
@@ -137,13 +138,15 @@ func main() {
 
 	// Link auth service to middleware
 	middleware.SetAuthService(authService)
-	backupService, err := service.NewBackupService(serverRepo, cfg)
-	if err != nil {
-		logger.Fatal("Failed to initialize backup service", err, nil)
-	}
+
+	// Initialize Backup Service with SFTP integration
+	backupService := service.NewBackupService(backupRepo, serverRepo, cfg)
+	logger.Info("Backup service initialized with SFTP support", map[string]interface{}{
+		"storage_box_enabled": cfg.StorageBoxEnabled,
+	})
 
 	// Initialize Backup Scheduler for automated backups
-	backupScheduler := service.NewBackupScheduler(db, backupService, serverRepo)
+	backupScheduler := service.NewBackupScheduler(db, backupService, backupRepo, serverRepo)
 	backupScheduler.Start()
 	defer backupScheduler.Stop()
 	logger.Info("Backup scheduler started", nil)
@@ -164,6 +167,12 @@ func main() {
 	archiveWorker.Start()
 	defer archiveWorker.Stop()
 	logger.Info("Archive worker started (scans every 1h, archives servers sleeping > 48h)", nil)
+
+	// Initialize Backup Retention Worker for automatic cleanup of expired backups
+	backupRetentionWorker := service.NewBackupRetentionWorker(backupService)
+	backupRetentionWorker.Start()
+	defer backupRetentionWorker.Stop()
+	logger.Info("Backup retention worker started (cleans up expired backups daily)", nil)
 
 	// Initialize Billing Service for cost analytics
 	billingService := service.NewBillingService(db, serverRepo)
@@ -285,6 +294,10 @@ func main() {
 	mcService.SetArchiveService(archiveService)
 	logger.Info("Archive service linked to MinecraftService for auto-unarchive", nil)
 
+	// Link Backup Service to MinecraftService for pre-operation backups
+	mcService.SetBackupService(backupService)
+	logger.Info("Backup service linked to MinecraftService for pre-operation backups", nil)
+
 	// Link MinecraftService to Conductor as ServerStarter for queue processing
 	cond.SetServerStarter(mcService)
 	logger.Info("MinecraftService linked to Conductor as ServerStarter for queue processing", nil)
@@ -318,7 +331,7 @@ func main() {
 	})
 
 	// Initialize Migration Service for live server migrations
-	migrationService := service.NewMigrationService(migrationRepo, serverRepo, dockerService)
+	migrationService := service.NewMigrationService(migrationRepo, serverRepo, dockerService, backupService)
 	migrationService.SetConductor(cond)
 	migrationService.SetWebSocketHub(wsHub)
 	if remoteVelocityClient != nil {
@@ -449,7 +462,7 @@ func main() {
 	oauthHandler := api.NewOAuthHandler(oauthService)
 	handler := api.NewHandler(mcService)
 	monitoringHandler := api.NewMonitoringHandler(monitoringService)
-	backupHandler := api.NewBackupHandler(backupService)
+	backupHandler := api.NewBackupHandler(backupService, backupRepo)
 	pluginHandler := api.NewPluginHandler(pluginService)
 	velocityHandler := api.NewVelocityHandler(velocityService, mcService)
 	wsHandler := api.NewWebSocketHandler(wsHub)

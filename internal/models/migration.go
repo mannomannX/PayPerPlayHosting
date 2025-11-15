@@ -67,6 +67,9 @@ type Migration struct {
 	RetryCount   int    `gorm:"default:0" json:"retry_count"`
 	MaxRetries   int    `gorm:"default:3" json:"max_retries"`
 
+	// Backup tracking
+	BackupID *string `gorm:"type:varchar(36)" json:"backup_id,omitempty"` // Pre-migration backup for rollback
+
 	// Metadata
 	TriggeredBy string `gorm:"type:varchar(50)" json:"triggered_by"` // system, admin, user
 	Notes       string `gorm:"type:text" json:"notes,omitempty"`

@@ -172,7 +172,13 @@ func (s *WorldService) UploadWorld(serverID, worldName, zipPath string) error {
 			"world":     worldName,
 		})
 
-		if _, err := s.backupService.CreateBackup(serverID); err != nil {
+		if _, err := s.backupService.CreateBackup(
+			serverID,
+			models.BackupTypePreUpdate,
+			fmt.Sprintf("Pre-world-upload backup for %s", worldName),
+			nil, // No user ID for automated backups
+			0,   // Use default retention (7 days)
+		); err != nil {
 			logger.Warn("Failed to create automatic backup", map[string]interface{}{
 				"error": err.Error(),
 			})
@@ -239,7 +245,13 @@ func (s *WorldService) ResetWorld(serverID, worldName string) error {
 		"world":     worldName,
 	})
 
-	if _, err := s.backupService.CreateBackup(serverID); err != nil {
+	if _, err := s.backupService.CreateBackup(
+		serverID,
+		models.BackupTypePreUpdate,
+		fmt.Sprintf("Pre-world-upload backup for %s", worldName),
+		nil, // No user ID for automated backups
+		0,   // Use default retention (7 days)
+	); err != nil {
 		logger.Warn("Failed to create automatic backup", map[string]interface{}{
 			"error": err.Error(),
 		})

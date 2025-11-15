@@ -18,6 +18,7 @@ type MigrationService struct {
 	migrationRepo       *repository.MigrationRepository
 	serverRepo          *repository.ServerRepository
 	dockerService       *docker.DockerService
+	backupService       *BackupService
 	conductor           ConductorInterface
 	wsHub               WebSocketHubInterface
 	dashboardWs         DashboardWebSocketInterface
@@ -29,11 +30,13 @@ func NewMigrationService(
 	migrationRepo *repository.MigrationRepository,
 	serverRepo *repository.ServerRepository,
 	dockerService *docker.DockerService,
+	backupService *BackupService,
 ) *MigrationService {
 	return &MigrationService{
 		migrationRepo: migrationRepo,
 		serverRepo:    serverRepo,
 		dockerService: dockerService,
+		backupService: backupService,
 	}
 }
 
@@ -203,6 +206,42 @@ func (s *MigrationService) executeMigration(migration *models.Migration) {
 		"status":       "started",
 	})
 
+	// Pre-Migration Backup: Create backup SYNCHRONOUSLY and wait for completion
+	logger.Info("MIGRATION: Creating pre-migration backup (synchronous)", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  serverName,
+	})
+
+	backup, err := s.backupService.CreateBackupSync(
+		migration.ServerID,
+		models.BackupTypePreMigration,
+		fmt.Sprintf("Pre-migration backup for operation %s", migration.ID),
+		nil, // No user ID for automated backups
+		0,   // Use default retention (7 days)
+	)
+	if err != nil {
+		s.failMigration(migration, fmt.Sprintf("Pre-migration backup failed: %v", err))
+		return
+	}
+
+	// Store backup ID in migration record for rollback purposes
+	migration.BackupID = &backup.ID
+	if err := s.migrationRepo.Update(migration); err != nil {
+		logger.Warn("Failed to store backup ID in migration record", map[string]interface{}{
+			"operation_id": migration.ID,
+			"backup_id":    backup.ID,
+			"error":        err.Error(),
+		})
+	}
+
+	logger.Info("MIGRATION: Pre-migration backup created and uploaded successfully", map[string]interface{}{
+		"operation_id":     migration.ID,
+		"backup_id":        backup.ID,
+		"compressed_mb":    backup.CompressedSize / 1024 / 1024,
+		"compression_pct":  backup.GetCompressionRatio(),
+	})
+
 	// Phase 1: Preparing
 	if err := s.phasePreparing(migration); err != nil {
 		s.failMigration(migration, fmt.Sprintf("Preparing phase failed: %v", err))
@@ -281,6 +320,50 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 		return fmt.Errorf("insufficient capacity on target node %s", migration.ToNodeID)
 	}
 
+	// CRITICAL: Restore world data to target node BEFORE creating container
+	// This ensures the container will find the world data when it starts
+	if migration.BackupID != nil && *migration.BackupID != "" {
+		logger.Info("MIGRATION: Restoring world data to target node", map[string]interface{}{
+			"operation_id": migration.ID,
+			"backup_id":    *migration.BackupID,
+			"target_node":  targetNode.IPAddress,
+		})
+
+		s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+			"operation_id": migration.ID,
+			"server_id":    migration.ServerID,
+			"server_name":  server.Name,
+			"from_node":    migration.FromNodeID,
+			"to_node":      migration.ToNodeID,
+			"status":       "preparing",
+			"progress":     20,
+			"message":      "Transferring world data to target node...",
+		})
+
+		if err := s.backupService.RestoreBackupToNode(*migration.BackupID, targetNode.IPAddress, server.ID); err != nil {
+			// Rollback RAM allocation
+			s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+			return fmt.Errorf("failed to restore world data to target node: %w", err)
+		}
+
+		logger.Info("MIGRATION: World data restored to target node successfully", map[string]interface{}{
+			"operation_id": migration.ID,
+			"backup_id":    *migration.BackupID,
+			"target_node":  targetNode.IPAddress,
+		})
+
+		s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+			"operation_id": migration.ID,
+			"server_id":    migration.ServerID,
+			"server_name":  server.Name,
+			"from_node":    migration.FromNodeID,
+			"to_node":      migration.ToNodeID,
+			"status":       "preparing",
+			"progress":     40,
+			"message":      "World data transferred, starting new container...",
+		})
+	}
+
 	// Create container on target node with proper naming
 	containerName := fmt.Sprintf("mc-%s", server.ID) // Use standard naming
 	imageName := docker.GetDockerImageName(string(server.ServerType))
@@ -319,7 +402,7 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 		"from_node":    migration.FromNodeID,
 		"to_node":      migration.ToNodeID,
 		"status":       "preparing",
-		"progress":     50,
+		"progress":     60,
 		"message":      "New container started, waiting for server to be ready...",
 	})
 
@@ -342,13 +425,14 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 		"from_node":    migration.FromNodeID,
 		"to_node":      migration.ToNodeID,
 		"status":       "preparing",
-		"progress":     100,
-		"message":      "New container ready",
+		"progress":     80,
+		"message":      "New container ready with restored world data",
 	})
 
 	logger.Info("Migration Phase 1: Preparing completed", map[string]interface{}{
-		"operation_id": migration.ID,
+		"operation_id":  migration.ID,
 		"new_container": newContainerID,
+		"world_data":    "restored",
 	})
 
 	return nil

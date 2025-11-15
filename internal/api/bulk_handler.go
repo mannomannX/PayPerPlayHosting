@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/service"
 	"github.com/payperplay/hosting/pkg/logger"
 )
@@ -135,8 +136,15 @@ func (h *BulkHandler) BulkBackupServers(c *gin.Context) {
 		return
 	}
 
+	userIDPtr := &userID
 	result := h.executeBulkOperation(req.ServerIDs, userID, func(serverID string) error {
-		_, err := h.backupService.CreateBackup(serverID)
+		_, err := h.backupService.CreateBackup(
+			serverID,
+			models.BackupTypeManual,
+			"Bulk manual backup",
+			userIDPtr,
+			0, // Use default retention (30 days for manual)
+		)
 		return err
 	})
 

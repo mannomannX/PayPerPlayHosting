@@ -15,6 +15,7 @@ import (
 type BackupScheduler struct {
 	db            *gorm.DB
 	backupService *BackupService
+	backupRepo    *repository.BackupRepository
 	serverRepo    *repository.ServerRepository
 	ticker        *time.Ticker
 	stopChan      chan bool
@@ -22,10 +23,11 @@ type BackupScheduler struct {
 }
 
 // NewBackupScheduler creates a new backup scheduler
-func NewBackupScheduler(db *gorm.DB, backupService *BackupService, serverRepo *repository.ServerRepository) *BackupScheduler {
+func NewBackupScheduler(db *gorm.DB, backupService *BackupService, backupRepo *repository.BackupRepository, serverRepo *repository.ServerRepository) *BackupScheduler {
 	return &BackupScheduler{
 		db:            db,
 		backupService: backupService,
+		backupRepo:    backupRepo,
 		serverRepo:    serverRepo,
 		stopChan:      make(chan bool),
 	}
@@ -167,8 +169,14 @@ func (s *BackupScheduler) createScheduledBackup(schedule models.ServerBackupSche
 		return fmt.Errorf("server not found: %s", schedule.ServerID)
 	}
 
-	// Create backup (returns backup path as string)
-	backupPath, err := s.backupService.CreateBackup(schedule.ServerID)
+	// Create backup with new signature
+	backup, err := s.backupService.CreateBackup(
+		schedule.ServerID,
+		models.BackupTypeScheduled,
+		fmt.Sprintf("Scheduled backup for %s", server.Name),
+		nil, // No user ID for automated backups
+		0,   // Use default retention (7 days for scheduled)
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
@@ -176,7 +184,7 @@ func (s *BackupScheduler) createScheduledBackup(schedule models.ServerBackupSche
 	logger.Info("Scheduled backup created", map[string]interface{}{
 		"server_id":   schedule.ServerID,
 		"server_name": server.Name,
-		"backup_path": backupPath,
+		"backup_id":   backup.ID,
 	})
 
 	// Clean up old backups if max_backups is exceeded
@@ -194,26 +202,26 @@ func (s *BackupScheduler) createScheduledBackup(schedule models.ServerBackupSche
 
 // cleanupOldBackups removes old backups exceeding the max limit
 func (s *BackupScheduler) cleanupOldBackups(serverID string, maxBackups int) error {
-	backups, err := s.backupService.ListBackups(serverID)
+	backups, err := s.backupRepo.FindByServerIDAndType(serverID, models.BackupTypeScheduled)
 	if err != nil {
 		return fmt.Errorf("failed to list backups: %w", err)
 	}
 
 	// If we have more backups than allowed, delete oldest ones
 	if len(backups) > maxBackups {
-		// Sort by creation time (oldest first)
+		// Backups are already sorted by created_at DESC, reverse for oldest first
 		// Backups are returned newest first, so reverse
 		toDelete := len(backups) - maxBackups
 		for i := len(backups) - 1; i >= len(backups)-toDelete; i-- {
 			logger.Info("Deleting old backup", map[string]interface{}{
 				"server_id": serverID,
-				"filename":  backups[i].Filename,
+				"backup_id": backups[i].ID,
 			})
 
-			if err := s.backupService.DeleteBackup(backups[i].Path); err != nil {
+			if err := s.backupService.DeleteBackup(backups[i].ID); err != nil {
 				logger.Warn("Failed to delete old backup", map[string]interface{}{
 					"server_id": serverID,
-					"filename":  backups[i].Filename,
+					"backup_id": backups[i].ID,
 					"error":     err.Error(),
 				})
 			}

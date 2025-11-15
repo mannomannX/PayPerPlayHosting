@@ -26,6 +26,7 @@ type MinecraftService struct {
 	wsHub                 WebSocketHubInterface    // Interface for WebSocket broadcasting
 	conductor             ConductorInterface        // Interface for capacity management
 	archiveService        ArchiveServiceInterface   // Interface for archive management (Phase 3 lifecycle)
+	backupService         *BackupService            // Backup service for pre-operation backups
 }
 
 // WebSocketHubInterface defines the methods needed from WebSocket Hub
@@ -173,6 +174,11 @@ func (s *MinecraftService) SetConductor(conductor ConductorInterface) {
 // SetArchiveService sets the archive service for unarchiving servers on start
 func (s *MinecraftService) SetArchiveService(archiveService ArchiveServiceInterface) {
 	s.archiveService = archiveService
+}
+
+// SetBackupService sets the backup service for pre-operation backups
+func (s *MinecraftService) SetBackupService(backupService *BackupService) {
+	s.backupService = backupService
 }
 
 // CreateServer creates a new Minecraft server
@@ -1227,6 +1233,33 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 	if err != nil {
 		log.Printf("ERROR: server %s not found: %v", serverID, err)
 		return fmt.Errorf("server not found: %w", err)
+	}
+
+	// Pre-Deletion Backup: Create safety backup before deletion
+	if s.backupService != nil {
+		logger.Info("DELETE: Creating pre-deletion backup", map[string]interface{}{
+			"server_id":   serverID,
+			"server_name": server.Name,
+		})
+
+		_, err := s.backupService.CreateBackup(
+			serverID,
+			models.BackupTypePreDeletion,
+			fmt.Sprintf("Pre-deletion safety backup for %s", server.Name),
+			nil, // No user ID for automated backups
+			0,   // Use default retention (30 days for safety)
+		)
+		if err != nil {
+			logger.Warn("DELETE: Failed to create pre-deletion backup (continuing with deletion)", map[string]interface{}{
+				"server_id": serverID,
+				"error":     err.Error(),
+			})
+			// Don't fail deletion if backup fails - log warning and continue
+		} else {
+			logger.Info("DELETE: Pre-deletion backup created successfully", map[string]interface{}{
+				"server_id": serverID,
+			})
+		}
 	}
 
 	// Unregister from Velocity first

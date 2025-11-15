@@ -178,10 +178,10 @@ func SetupRouter(
 			backups := servers.Group("/:id/backups")
 			backups.Use(middleware.RateLimitMiddleware(middleware.ExpensiveRateLimiter))
 			{
-				backups.POST("", backupHandler.CreateBackup)
-				backups.GET("", backupHandler.ListBackups)
-				backups.POST("/restore", backupHandler.RestoreBackup)
-				backups.DELETE("/:filename", backupHandler.DeleteBackup)
+				backups.POST("", backupHandler.CreateBackup)           // Create backup
+				backups.GET("", backupHandler.ListBackups)             // List server backups
+				backups.POST("/restore", backupHandler.RestoreBackup)  // Restore backup
+				backups.GET("/stats", backupHandler.GetServerBackupStats) // Get server backup stats
 			}
 
 			// Plugins
@@ -289,6 +289,12 @@ func SetupRouter(
 
 		// Global monitoring
 		api.GET("/monitoring/status", monitoringHandler.GetAllStatuses)
+
+		// Global backup operations
+		api.GET("/backups/:id", backupHandler.GetBackup)                     // Get backup by ID
+		api.DELETE("/backups/:id", backupHandler.DeleteBackup)               // Delete backup by ID
+		api.GET("/backups/stats", backupHandler.GetBackupStats)              // Get global backup stats
+		api.POST("/backups/cleanup", backupHandler.CleanupExpiredBackups)    // Cleanup expired backups (admin)
 
 		// Plugin/Mod marketplace
 		api.GET("/plugins/search", pluginHandler.SearchPlugins)
