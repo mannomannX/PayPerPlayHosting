@@ -21,7 +21,6 @@ type PersistedContainerState struct {
 	RAMMb         int       `json:"ram_mb"`
 	Port          int       `json:"port"`
 	MinecraftPort int       `json:"minecraft_port"`
-	JoinAddress   string    `json:"join_address"`
 
 	// Timing information (critical for lifecycle rules)
 	LastStartedAt *time.Time `json:"last_started_at,omitempty"`
@@ -192,16 +191,17 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 	for _, container := range expectedContainers {
 		// Register container in registry (regardless of actual Docker state)
 		// The health checker will verify if it actually exists
-		c.ContainerRegistry.RegisterContainer(
-			container.ServerID,
-			container.ServerName,
-			container.ContainerID,
-			container.NodeID,
-			container.RAMMb,
-			container.Port,
-			container.MinecraftPort,
-			container.Status,
-		)
+		c.ContainerRegistry.RegisterContainer(&ContainerInfo{
+			ServerID:      container.ServerID,
+			ServerName:    container.ServerName,
+			ContainerID:   container.ContainerID,
+			NodeID:        container.NodeID,
+			RAMMb:         container.RAMMb,
+			DockerPort:    container.Port,
+			MinecraftPort: container.MinecraftPort,
+			Status:        container.Status,
+			LastSeenAt:    time.Now(),
+		})
 
 		logger.Info("CONTAINER-PERSIST: Container restored from state", map[string]interface{}{
 			"server_id":   container.ServerID,
