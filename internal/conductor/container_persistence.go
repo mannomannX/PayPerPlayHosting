@@ -11,25 +11,22 @@ import (
 )
 
 // PersistedContainerState represents container state for recovery after restart
-// Preserves timing information critical for lifecycle management (sleeping timers, etc)
+// NOTE: Timing information (LastStartedAt, LastStoppedAt) is stored in the database (minecraft_servers table)
+// This struct only tracks WHICH containers exist on WHICH nodes for state recovery
 type PersistedContainerState struct {
-	ServerID      string    `json:"server_id"`
-	ServerName    string    `json:"server_name"`
-	ContainerID   string    `json:"container_id"`
-	NodeID        string    `json:"node_id"`
-	Status        string    `json:"status"` // running, stopped, sleeping
-	RAMMb         int       `json:"ram_mb"`
-	Port          int       `json:"port"`
-	MinecraftPort int       `json:"minecraft_port"`
-
-	// Timing information (critical for lifecycle rules)
-	LastStartedAt *time.Time `json:"last_started_at,omitempty"`
-	LastStoppedAt *time.Time `json:"last_stopped_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ServerID      string `json:"server_id"`
+	ServerName    string `json:"server_name"`
+	ContainerID   string `json:"container_id"`
+	NodeID        string `json:"node_id"`
+	Status        string `json:"status"` // running, stopped, sleeping
+	RAMMb         int    `json:"ram_mb"`
+	Port          int    `json:"port"`
+	MinecraftPort int    `json:"minecraft_port"`
 }
 
 // SaveContainerState persists all container states to JSON file
-// Called during graceful shutdown to preserve container timing information
+// Called during graceful shutdown to preserve container-to-node mappings
+// NOTE: Timing info (LastStartedAt/LastStoppedAt) is stored in database, not here
 func (c *Conductor) SaveContainerState(filePath string) error {
 	containers := []PersistedContainerState{}
 
@@ -44,7 +41,6 @@ func (c *Conductor) SaveContainerState(filePath string) error {
 			RAMMb:         container.RAMMb,
 			Port:          container.DockerPort,
 			MinecraftPort: container.MinecraftPort,
-			CreatedAt:     time.Now(), // Use current time as fallback
 		}
 		containers = append(containers, state)
 	}

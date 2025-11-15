@@ -25,6 +25,7 @@ type MinecraftService struct {
 	remoteVelocityClient  RemoteVelocityClientInterface // NEW: HTTP API client for remote Velocity server
 	wsHub                 WebSocketHubInterface    // Interface for WebSocket broadcasting
 	conductor             ConductorInterface        // Interface for capacity management
+	archiveService        ArchiveServiceInterface   // Interface for archive management (Phase 3 lifecycle)
 }
 
 // WebSocketHubInterface defines the methods needed from WebSocket Hub
@@ -42,6 +43,11 @@ type VelocityServiceInterface interface {
 	RegisterServer(server *models.MinecraftServer) error
 	UnregisterServer(serverID string) error
 	IsRunning() bool
+}
+
+// ArchiveServiceInterface defines the methods needed from ArchiveService
+type ArchiveServiceInterface interface {
+	UnarchiveServer(serverID string) error
 }
 
 // RemoteVelocityClientInterface defines the methods needed from RemoteVelocityClient
@@ -162,6 +168,11 @@ func (s *MinecraftService) SetWebSocketHub(wsHub WebSocketHubInterface) {
 // SetConductor sets the Conductor for capacity management
 func (s *MinecraftService) SetConductor(conductor ConductorInterface) {
 	s.conductor = conductor
+}
+
+// SetArchiveService sets the archive service for unarchiving servers on start
+func (s *MinecraftService) SetArchiveService(archiveService ArchiveServiceInterface) {
+	s.archiveService = archiveService
 }
 
 // CreateServer creates a new Minecraft server
@@ -288,6 +299,37 @@ func (s *MinecraftService) StartServer(serverID string) error {
 
 	if server.Status == models.StatusRunning {
 		return fmt.Errorf("server already running")
+	}
+
+	// PHASE 3 LIFECYCLE: Auto-unarchive if server is archived
+	// This restores the server from Storage Box before starting
+	if server.Status == models.StatusArchived {
+		if s.archiveService == nil {
+			return fmt.Errorf("server is archived but archive service not available")
+		}
+
+		logger.Info("LIFECYCLE: Server is archived, unarchiving before start", map[string]interface{}{
+			"server_id":        serverID,
+			"server_name":      server.Name,
+			"archive_location": server.ArchiveLocation,
+			"archive_size_mb":  server.ArchiveSize / 1024 / 1024,
+		})
+
+		if err := s.archiveService.UnarchiveServer(serverID); err != nil {
+			return fmt.Errorf("failed to unarchive server: %w", err)
+		}
+
+		// Reload server to get updated status (should be 'stopped' now)
+		server, err = s.repo.FindByID(serverID)
+		if err != nil {
+			return fmt.Errorf("failed to reload server after unarchive: %w", err)
+		}
+
+		logger.Info("LIFECYCLE: Server unarchived successfully, proceeding with start", map[string]interface{}{
+			"server_id":   serverID,
+			"server_name": server.Name,
+			"new_status":  server.Status,
+		})
 	}
 
 	// PRE-START RESOURCE GUARD: CPU + RAM protection
