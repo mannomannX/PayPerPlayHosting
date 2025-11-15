@@ -301,28 +301,58 @@ func (p *VMProvisioner) DecommissionNode(nodeID string, decisionBy string) error
 	}
 
 	// CRITICAL: Check recovery grace period (prevents premature decommission after restart)
-	// Nodes restored from state file get a grace period to allow container sync
-	if node.Metrics.RecoveredAt != nil && node.Metrics.RecoveryGracePeriod > 0 {
-		timeSinceRecovery := time.Since(*node.Metrics.RecoveredAt)
-		if timeSinceRecovery < node.Metrics.RecoveryGracePeriod {
-			remaining := node.Metrics.RecoveryGracePeriod - timeSinceRecovery
-			err := fmt.Errorf("node in recovery grace period (%s remaining)", remaining.Round(time.Minute))
-			logger.Warn("Decommission rejected - node in recovery grace period", map[string]interface{}{
-				"node_id":              nodeID,
-				"recovered_at":         node.Metrics.RecoveredAt,
-				"time_since_recovery":  timeSinceRecovery.Round(time.Minute),
-				"grace_period":         node.Metrics.RecoveryGracePeriod,
-				"remaining":            remaining.Round(time.Minute),
+	// Two-phase grace period for recovered nodes:
+	// Phase 1: DURING container sync - node is completely protected
+	// Phase 2: AFTER container sync - additional 10min grace period
+	if node.Metrics.RecoveredAt != nil {
+		// Phase 1: Container sync still in progress
+		if node.Metrics.ContainerSyncCompletedAt == nil {
+			err := fmt.Errorf("node in container sync (recovery in progress)")
+			logger.Warn("Decommission rejected - container sync in progress", map[string]interface{}{
+				"node_id":      nodeID,
+				"recovered_at": node.Metrics.RecoveredAt,
+				"time_since_recovery": time.Since(*node.Metrics.RecoveredAt).Round(time.Minute),
+				"reason":       "Waiting for container state synchronization to complete",
 			})
 			if p.conductor != nil && p.conductor.AuditLog != nil {
-				p.conductor.AuditLog.RecordNodeDecommission(nodeID, "recovery_grace_period", decisionBy, map[string]interface{}{
+				p.conductor.AuditLog.RecordNodeDecommission(nodeID, "container_sync_in_progress", decisionBy, map[string]interface{}{
 					"recovered_at":        node.Metrics.RecoveredAt,
-					"time_since_recovery": timeSinceRecovery,
-					"remaining":           remaining,
+					"time_since_recovery": time.Since(*node.Metrics.RecoveredAt),
 				}, "rejected", err)
 			}
 			return err
 		}
+
+		// Phase 2: Container sync completed, but still in grace period
+		if node.Metrics.ContainerSyncGracePeriod > 0 {
+			timeSinceSyncCompletion := time.Since(*node.Metrics.ContainerSyncCompletedAt)
+			if timeSinceSyncCompletion < node.Metrics.ContainerSyncGracePeriod {
+				remaining := node.Metrics.ContainerSyncGracePeriod - timeSinceSyncCompletion
+				err := fmt.Errorf("node in post-sync grace period (%s remaining)", remaining.Round(time.Minute))
+				logger.Warn("Decommission rejected - post-sync grace period", map[string]interface{}{
+					"node_id":               nodeID,
+					"sync_completed_at":     node.Metrics.ContainerSyncCompletedAt,
+					"time_since_sync":       timeSinceSyncCompletion.Round(time.Minute),
+					"grace_period":          node.Metrics.ContainerSyncGracePeriod,
+					"remaining":             remaining.Round(time.Minute),
+				})
+				if p.conductor != nil && p.conductor.AuditLog != nil {
+					p.conductor.AuditLog.RecordNodeDecommission(nodeID, "post_sync_grace_period", decisionBy, map[string]interface{}{
+						"sync_completed_at": node.Metrics.ContainerSyncCompletedAt,
+						"time_since_sync":   timeSinceSyncCompletion,
+						"remaining":         remaining,
+					}, "rejected", err)
+				}
+				return err
+			}
+		}
+
+		// Grace period expired - node can be decommissioned normally
+		logger.Info("Recovery grace period expired, node eligible for scaling", map[string]interface{}{
+			"node_id":           nodeID,
+			"recovered_at":      node.Metrics.RecoveredAt,
+			"sync_completed_at": node.Metrics.ContainerSyncCompletedAt,
+		})
 	}
 
 	// CRITICAL: Safety check using new lifecycle system

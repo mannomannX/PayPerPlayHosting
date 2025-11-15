@@ -344,11 +344,26 @@ func main() {
 		cond.SyncExistingWorkerNodes(false) // Don't trigger scaling yet
 		logger.Info("Worker node sync completed", nil)
 
-		// CRITICAL: Sync running containers from remote worker nodes
-		// This must happen immediately after node restoration to prevent capacity errors
-		logger.Info("Syncing containers from remote worker nodes...", nil)
+		// CRITICAL: Restore containers from persisted state FIRST
+		// This preserves timing information (sleeping timers, etc) and prevents data loss
+		containerStateFile := filepath.Join("./data", "container_state.json")
+		logger.Info("Restoring containers from persisted state...", map[string]interface{}{
+			"state_file": containerStateFile,
+		})
+		syncedCount, err := cond.RestoreContainersFromState(containerStateFile, serverRepo)
+		if err != nil {
+			logger.Error("Failed to restore containers from state", err, nil)
+		} else {
+			logger.Info("Container state restoration completed", map[string]interface{}{
+				"synced_containers": syncedCount,
+			})
+		}
+
+		// CRITICAL: Sync actual Docker containers from remote worker nodes
+		// This verifies containers still exist and reconciles with state file
+		logger.Info("Verifying actual Docker containers on remote worker nodes...", nil)
 		cond.SyncRemoteNodeContainers(serverRepo)
-		logger.Info("Remote container sync completed", nil)
+		logger.Info("Remote container verification completed", nil)
 	}
 
 	// CRITICAL: Re-register all running servers with Velocity after restart
@@ -520,16 +535,30 @@ func main() {
 
 		logger.Info("Shutting down gracefully...", nil)
 
-		// CRITICAL: Save node state before shutdown to prevent data loss on restart
-		if cond != nil && cond.CloudProvider != nil {
-			nodeStateFile := filepath.Join("./data", "node_state.json")
-			logger.Info("Saving node state before shutdown...", map[string]interface{}{
-				"state_file": nodeStateFile,
+		// CRITICAL: Save state before shutdown to prevent data loss on restart
+		if cond != nil {
+			// Save node state
+			if cond.CloudProvider != nil {
+				nodeStateFile := filepath.Join("./data", "node_state.json")
+				logger.Info("Saving node state before shutdown...", map[string]interface{}{
+					"state_file": nodeStateFile,
+				})
+				if err := cond.SaveNodeState(nodeStateFile); err != nil {
+					logger.Error("Failed to save node state", err, nil)
+				} else {
+					logger.Info("Node state saved successfully", nil)
+				}
+			}
+
+			// Save container state (preserves timing information)
+			containerStateFile := filepath.Join("./data", "container_state.json")
+			logger.Info("Saving container state before shutdown...", map[string]interface{}{
+				"state_file": containerStateFile,
 			})
-			if err := cond.SaveNodeState(nodeStateFile); err != nil {
-				logger.Error("Failed to save node state", err, nil)
+			if err := cond.SaveContainerState(containerStateFile); err != nil {
+				logger.Error("Failed to save container state", err, nil)
 			} else {
-				logger.Info("Node state saved successfully", nil)
+				logger.Info("Container state saved successfully", nil)
 			}
 		}
 

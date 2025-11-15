@@ -162,14 +162,15 @@ func (c *Conductor) RestoreNodesFromState(filePath string) error {
 			CloudProviderID:  state.CloudProviderID,
 			IsSystemNode:     false,
 			Metrics: NodeLifecycleMetrics{
-				ProvisionedAt:        state.CreatedAt,
-				InitializedAt:        &now,
-				RecoveredAt:          &now, // Mark as recovered with timestamp
-				RecoveryGracePeriod:  4 * time.Hour, // 4 hours grace period
-				FirstContainerAt:     nil,
-				LastContainerAt:      nil,
-				TotalContainersEver:  0,
-				CurrentContainers:    0,
+				ProvisionedAt:             state.CreatedAt,
+				InitializedAt:             &now,
+				RecoveredAt:               &now, // Mark as recovered with timestamp
+				ContainerSyncCompletedAt:  nil,  // Will be set after container sync completes
+				ContainerSyncGracePeriod:  10 * time.Minute, // 10min grace period after sync
+				FirstContainerAt:          nil,
+				LastContainerAt:           nil,
+				TotalContainersEver:       0,
+				CurrentContainers:         0,
 			},
 		}
 

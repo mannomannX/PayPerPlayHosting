@@ -48,8 +48,10 @@ type NodeLifecycleMetrics struct {
 	CurrentContainers   int // Currently running (cached from ContainerRegistry)
 
 	// Recovery Tracking (for nodes restored from state file after restart)
-	RecoveredAt         *time.Time    // When node was recovered from state file
-	RecoveryGracePeriod time.Duration // How long to protect from scale-down after recovery
+	RecoveredAt              *time.Time    // When node was recovered from state file
+	RecoveryGracePeriod      time.Duration // How long to protect from scale-down after recovery
+	ContainerSyncCompletedAt *time.Time    // When container sync finished (ends grace period countdown)
+	ContainerSyncGracePeriod time.Duration // Additional protection after sync completes (default: 10min)
 }
 
 // CanBeDecommissioned checks if a node can safely be decommissioned

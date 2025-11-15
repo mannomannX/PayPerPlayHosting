@@ -1526,12 +1526,15 @@ func (c *Conductor) SyncExistingWorkerNodes(triggerScaling bool) {
 			LifecycleState:   NodeStateReady,              // Recovered nodes start as ready (unknown history)
 			HealthStatus:     HealthStatusUnknown,         // Will be checked by health checker
 			Metrics: NodeLifecycleMetrics{
-				ProvisionedAt:       now, // Use current time (don't have original creation time)
-				InitializedAt:       &now, // Assume already initialized since it exists
-				FirstContainerAt:    nil,
-				LastContainerAt:     nil,
-				TotalContainersEver: 0,
-				CurrentContainers:   0,
+				ProvisionedAt:            now, // Use current time (don't have original creation time)
+				InitializedAt:            &now, // Assume already initialized since it exists
+				RecoveredAt:              &now, // Mark as recovered from Hetzner
+				ContainerSyncCompletedAt: nil,  // Will be set after container sync
+				ContainerSyncGracePeriod: 10 * time.Minute, // 10min grace period after sync
+				FirstContainerAt:         nil,
+				LastContainerAt:          nil,
+				TotalContainersEver:      0,
+				CurrentContainers:        0,
 			},
 			LastHealthCheck:  time.Now(),
 			ContainerCount:   0,
