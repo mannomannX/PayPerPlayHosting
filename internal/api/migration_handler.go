@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/payperplay/hosting/internal/conductor"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -17,13 +18,15 @@ import (
 type MigrationHandler struct {
 	migrationRepo *repository.MigrationRepository
 	serverRepo    *repository.ServerRepository
+	conductor     *conductor.Conductor
 }
 
 // NewMigrationHandler creates a new migration handler
-func NewMigrationHandler(migrationRepo *repository.MigrationRepository, serverRepo *repository.ServerRepository) *MigrationHandler {
+func NewMigrationHandler(migrationRepo *repository.MigrationRepository, serverRepo *repository.ServerRepository, cond *conductor.Conductor) *MigrationHandler {
 	return &MigrationHandler{
 		migrationRepo: migrationRepo,
 		serverRepo:    serverRepo,
+		conductor:     cond,
 	}
 }
 
@@ -353,6 +356,25 @@ func (h *MigrationHandler) CreateManualMigration(c *gin.Context) {
 			"error": "Server not found",
 		})
 		return
+	}
+
+	// CRITICAL: Validate target node is not a system node
+	// System nodes (proxy-node, local-node) cannot host Minecraft containers
+	if h.conductor != nil && h.conductor.NodeRegistry != nil {
+		targetNode := h.conductor.NodeRegistry.GetNode(req.ToNodeID)
+		if targetNode == nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Target node not found",
+			})
+			return
+		}
+
+		if targetNode.IsSystemNode {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Cannot migrate to system node (proxy-node, local-node). Only worker nodes can host Minecraft containers.",
+			})
+			return
+		}
 	}
 
 	// Check if server can be migrated (no cooldown for manual migrations)

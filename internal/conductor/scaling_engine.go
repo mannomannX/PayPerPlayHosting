@@ -316,10 +316,12 @@ func (e *ScalingEngine) buildScalingContext() ScalingContext {
 		containerRegistry = e.conductor.ContainerRegistry
 	}
 
-	// Get queue size
+	// Get queue size and total queued RAM demand
 	queueSize := 0
+	queuedRAMMB := 0
 	if e.startQueue != nil {
 		queueSize = e.startQueue.Size()
+		queuedRAMMB = e.startQueue.GetTotalRequiredRAM()
 	}
 
 	return ScalingContext{
@@ -328,6 +330,7 @@ func (e *ScalingEngine) buildScalingContext() ScalingContext {
 		CloudNodes:        cloudNodes,
 		WorkerNodes:       workerNodes,
 		QueuedServerCount: queueSize,
+		QueuedRAMMB:       queuedRAMMB,
 		ContainerRegistry: containerRegistry,
 		CurrentTime:       now,
 		IsWeekend:         now.Weekday() == time.Saturday || now.Weekday() == time.Sunday,

@@ -129,12 +129,17 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 
-	capacityPercent := (float64(ctx.FleetStats.AllocatedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
+	// CRITICAL FIX: Include queued server demand in capacity calculation
+	// This ensures we provision new nodes when queued servers are waiting
+	projectedRAMMB := ctx.FleetStats.AllocatedRAMMB + ctx.QueuedRAMMB
+	capacityPercent := (float64(projectedRAMMB) / float64(ctx.FleetStats.TotalRAMMB)) * 100
 
 	logger.Debug("ReactivePolicy: Capacity check", map[string]interface{}{
 		"capacity_percent":      capacityPercent,
 		"scale_up_threshold":    p.ScaleUpThreshold,
 		"allocated_ram_mb":      ctx.FleetStats.AllocatedRAMMB,
+		"queued_ram_mb":         ctx.QueuedRAMMB,
+		"projected_ram_mb":      projectedRAMMB,
 		"total_ram_mb":          ctx.FleetStats.TotalRAMMB,
 		"system_reserved_mb":    ctx.FleetStats.SystemReservedRAMMB,
 		"queued_servers":        ctx.QueuedServerCount,
@@ -178,6 +183,15 @@ func (p *ReactivePolicy) ShouldScaleUp(ctx ScalingContext) (bool, ScaleRecommend
 func (p *ReactivePolicy) ShouldScaleDown(ctx ScalingContext) (bool, ScaleRecommendation) {
 	// Don't scale down if we have no cloud nodes
 	if len(ctx.CloudNodes) <= p.MinCloudNodes {
+		return false, ScaleRecommendation{Action: ScaleActionNone}
+	}
+
+	// CRITICAL: Never scale down if servers are queued - they're waiting for capacity!
+	if ctx.QueuedServerCount > 0 {
+		logger.Debug("ReactivePolicy: Not scaling down - servers queued", map[string]interface{}{
+			"queued_servers": ctx.QueuedServerCount,
+			"queued_ram_mb":  ctx.QueuedRAMMB,
+		})
 		return false, ScaleRecommendation{Action: ScaleActionNone}
 	}
 

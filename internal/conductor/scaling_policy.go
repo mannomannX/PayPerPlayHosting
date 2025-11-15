@@ -34,6 +34,7 @@ type ScalingContext struct {
 
 	// Queue Information
 	QueuedServerCount int // Number of servers waiting for capacity
+	QueuedRAMMB       int // Total RAM demand from queued servers
 
 	// Container Registry (for B8 - Consolidation Policy)
 	ContainerRegistry *ContainerRegistry

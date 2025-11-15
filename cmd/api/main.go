@@ -536,7 +536,7 @@ func main() {
 	costOptHandler := api.NewCostOptimizationHandler(costOptimizationService)
 
 	// Migration handler for server migration management
-	migrationHandler := api.NewMigrationHandler(migrationRepo, serverRepo)
+	migrationHandler := api.NewMigrationHandler(migrationRepo, serverRepo, cond)
 
 	// Dashboard WebSocket for real-time visualization
 	dashboardWs := api.NewDashboardWebSocket(cond)
