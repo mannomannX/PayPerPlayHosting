@@ -105,7 +105,7 @@ type ConductorInterface interface {
 	ReleaseRAMOnNode(nodeID string, ramMB int)
 
 	// RegisterContainer registers a container in the registry with node tracking
-	RegisterContainer(serverID, serverName, containerID, nodeID string, ramMB, dockerPort, minecraftPort int, status string)
+	RegisterContainer(serverID, serverName, containerID, nodeID string, ramMB, dockerPort, minecraftPort int, status, minecraftVersion, serverType string)
 
 	// GetContainer retrieves container info including node assignment
 	GetContainer(serverID string) (containerInfo interface{}, exists bool)
@@ -599,6 +599,8 @@ func (s *MinecraftService) StartServer(serverID string) error {
 			server.Port, // DockerPort = same as MinecraftPort (1:1 port mapping)
 			server.Port, // MinecraftPort
 			string(models.StatusStarting), // Use "starting" status to show blue in dashboard
+			server.MinecraftVersion,
+			string(server.ServerType),
 		)
 	}
 
@@ -999,6 +1001,8 @@ func (s *MinecraftService) StartServerFromQueue(serverID string) error {
 			server.Port, // DockerPort = same as MinecraftPort (1:1 port mapping)
 			server.Port, // MinecraftPort
 			string(models.StatusStarting), // Use "starting" status to show blue in dashboard
+			server.MinecraftVersion,
+			string(server.ServerType),
 		)
 	}
 

@@ -13,15 +13,17 @@ import (
 
 // ContainerInfo represents a Minecraft server container running on a node
 type ContainerInfo struct {
-	ServerID      string    `json:"server_id"`
-	ServerName    string    `json:"server_name"`
-	ContainerID   string    `json:"container_id"`
-	NodeID        string    `json:"node_id"`
-	RAMMb         int       `json:"ram_mb"`
-	Status        string    `json:"status"`
-	LastSeenAt    time.Time `json:"last_seen_at"`
-	DockerPort    int       `json:"docker_port"`
-	MinecraftPort int       `json:"minecraft_port"`
+	ServerID         string    `json:"server_id"`
+	ServerName       string    `json:"server_name"`
+	ContainerID      string    `json:"container_id"`
+	NodeID           string    `json:"node_id"`
+	RAMMb            int       `json:"ram_mb"`
+	Status           string    `json:"status"`
+	LastSeenAt       time.Time `json:"last_seen_at"`
+	DockerPort       int       `json:"docker_port"`
+	MinecraftPort    int       `json:"minecraft_port"`
+	MinecraftVersion string    `json:"minecraft_version"`
+	ServerType       string    `json:"server_type"`
 }
 
 // ContainerRegistry tracks which containers are running on which nodes

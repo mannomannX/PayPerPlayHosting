@@ -1201,16 +1201,18 @@ func (c *Conductor) GetRemoteDockerClient() *docker.RemoteDockerClient {
 
 // RegisterContainer registers a container in the registry with node tracking
 // This is used by MinecraftService to track which containers are running on which nodes
-func (c *Conductor) RegisterContainer(serverID, serverName, containerID, nodeID string, ramMB, dockerPort, minecraftPort int, status string) {
+func (c *Conductor) RegisterContainer(serverID, serverName, containerID, nodeID string, ramMB, dockerPort, minecraftPort int, status, minecraftVersion, serverType string) {
 	containerInfo := &ContainerInfo{
-		ServerID:      serverID,
-		ServerName:    serverName,
-		ContainerID:   containerID,
-		NodeID:        nodeID,
-		RAMMb:         ramMB,
-		Status:        status,
-		DockerPort:    dockerPort,
-		MinecraftPort: minecraftPort,
+		ServerID:         serverID,
+		ServerName:       serverName,
+		ContainerID:      containerID,
+		NodeID:           nodeID,
+		RAMMb:            ramMB,
+		Status:           status,
+		DockerPort:       dockerPort,
+		MinecraftPort:    minecraftPort,
+		MinecraftVersion: minecraftVersion,
+		ServerType:       serverType,
 	}
 
 	c.ContainerRegistry.RegisterContainer(containerInfo)

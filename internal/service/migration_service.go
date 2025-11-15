@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -206,41 +207,64 @@ func (s *MigrationService) executeMigration(migration *models.Migration) {
 		"status":       "started",
 	})
 
-	// Pre-Migration Backup: Create backup SYNCHRONOUSLY and wait for completion
-	logger.Info("MIGRATION: Creating pre-migration backup (synchronous)", map[string]interface{}{
-		"operation_id": migration.ID,
-		"server_id":    migration.ServerID,
-		"server_name":  serverName,
-	})
-
-	backup, err := s.backupService.CreateBackupSync(
-		migration.ServerID,
-		models.BackupTypePreMigration,
-		fmt.Sprintf("Pre-migration backup for operation %s", migration.ID),
-		nil, // No user ID for automated backups
-		0,   // Use default retention (7 days)
-	)
-	if err != nil {
-		s.failMigration(migration, fmt.Sprintf("Pre-migration backup failed: %v", err))
+	// Pre-Migration Backup: OPTIONAL for worker-to-worker migrations
+	// For worker-to-worker: we'll use direct rsync instead of backup+restore
+	// For system-to-worker: backup is needed since local access is available
+	fromNode, err := s.conductor.NodeRegistry.GetNode(migration.FromNodeID)
+	if err != nil || fromNode == nil {
+		s.failMigration(migration, fmt.Sprintf("Source node not found: %s", migration.FromNodeID))
 		return
 	}
 
-	// Store backup ID in migration record for rollback purposes
-	migration.BackupID = &backup.ID
-	if err := s.migrationRepo.Update(migration); err != nil {
-		logger.Warn("Failed to store backup ID in migration record", map[string]interface{}{
+	// Skip backup for worker-to-worker migrations (use direct rsync instead)
+	isWorkerToWorker := !fromNode.IsSystemNode
+
+	if !isWorkerToWorker {
+		// Only create backup if migrating FROM system node (where we have local access)
+		logger.Info("MIGRATION: Creating pre-migration backup (synchronous)", map[string]interface{}{
 			"operation_id": migration.ID,
-			"backup_id":    backup.ID,
-			"error":        err.Error(),
+			"server_id":    migration.ServerID,
+			"server_name":  serverName,
+			"from_node_type": "system",
+		})
+
+		backup, err := s.backupService.CreateBackupSync(
+			migration.ServerID,
+			models.BackupTypePreMigration,
+			fmt.Sprintf("Pre-migration backup for operation %s", migration.ID),
+			nil, // No user ID for automated backups
+			0,   // Use default retention (7 days)
+		)
+		if err != nil {
+			s.failMigration(migration, fmt.Sprintf("Pre-migration backup failed: %v", err))
+			return
+		}
+
+		// Store backup ID in migration record for rollback purposes
+		migration.BackupID = &backup.ID
+		if err := s.migrationRepo.Update(migration); err != nil {
+			logger.Warn("Failed to store backup ID in migration record", map[string]interface{}{
+				"operation_id": migration.ID,
+				"backup_id":    backup.ID,
+				"error":        err.Error(),
+			})
+		}
+
+		logger.Info("MIGRATION: Pre-migration backup created successfully", map[string]interface{}{
+			"operation_id":     migration.ID,
+			"backup_id":        backup.ID,
+			"compressed_mb":    backup.CompressedSize / 1024 / 1024,
+			"compression_pct":  backup.GetCompressionRatio(),
+		})
+	} else {
+		// Worker-to-worker: skip backup, use direct rsync
+		logger.Info("MIGRATION: Skipping backup for worker-to-worker migration (will use direct rsync)", map[string]interface{}{
+			"operation_id": migration.ID,
+			"server_id":    migration.ServerID,
+			"from_node":    migration.FromNodeID,
+			"to_node":      migration.ToNodeID,
 		})
 	}
-
-	logger.Info("MIGRATION: Pre-migration backup created and uploaded successfully", map[string]interface{}{
-		"operation_id":     migration.ID,
-		"backup_id":        backup.ID,
-		"compressed_mb":    backup.CompressedSize / 1024 / 1024,
-		"compression_pct":  backup.GetCompressionRatio(),
-	})
 
 	// Phase 1: Preparing
 	if err := s.phasePreparing(migration); err != nil {
@@ -320,10 +344,11 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 		return fmt.Errorf("insufficient capacity on target node %s", migration.ToNodeID)
 	}
 
-	// CRITICAL: Restore world data to target node BEFORE creating container
+	// CRITICAL: Transfer world data to target node BEFORE creating container
 	// This ensures the container will find the world data when it starts
 	if migration.BackupID != nil && *migration.BackupID != "" {
-		logger.Info("MIGRATION: Restoring world data to target node", map[string]interface{}{
+		// Method 1: Restore from backup (for system-to-worker migrations)
+		logger.Info("MIGRATION: Restoring world data from backup", map[string]interface{}{
 			"operation_id": migration.ID,
 			"backup_id":    *migration.BackupID,
 			"target_node":  targetNode.IPAddress,
@@ -337,7 +362,7 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 			"to_node":      migration.ToNodeID,
 			"status":       "preparing",
 			"progress":     20,
-			"message":      "Transferring world data to target node...",
+			"message":      "Transferring world data from backup...",
 		})
 
 		if err := s.backupService.RestoreBackupToNode(*migration.BackupID, targetNode.IPAddress, server.ID); err != nil {
@@ -346,9 +371,23 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 			return fmt.Errorf("failed to restore world data to target node: %w", err)
 		}
 
-		logger.Info("MIGRATION: World data restored to target node successfully", map[string]interface{}{
+		logger.Info("MIGRATION: World data restored from backup successfully", map[string]interface{}{
 			"operation_id": migration.ID,
 			"backup_id":    *migration.BackupID,
+			"target_node":  targetNode.IPAddress,
+		})
+	} else {
+		// Method 2: Direct rsync between worker nodes (for worker-to-worker migrations)
+		sourceNode, err := s.conductor.GetRemoteNode(migration.FromNodeID)
+		if err != nil {
+			s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+			return fmt.Errorf("failed to get source node: %w", err)
+		}
+
+		logger.Info("MIGRATION: Transferring world data via direct rsync", map[string]interface{}{
+			"operation_id": migration.ID,
+			"server_id":    migration.ServerID,
+			"source_node":  sourceNode.IPAddress,
 			"target_node":  targetNode.IPAddress,
 		})
 
@@ -359,10 +398,32 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 			"from_node":    migration.FromNodeID,
 			"to_node":      migration.ToNodeID,
 			"status":       "preparing",
-			"progress":     40,
-			"message":      "World data transferred, starting new container...",
+			"progress":     20,
+			"message":      "Syncing world data between worker nodes...",
+		})
+
+		if err := s.syncWorldDataBetweenNodes(sourceNode.IPAddress, targetNode.IPAddress, server.ID); err != nil {
+			s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+			return fmt.Errorf("failed to sync world data between nodes: %w", err)
+		}
+
+		logger.Info("MIGRATION: World data synced successfully", map[string]interface{}{
+			"operation_id": migration.ID,
+			"source_node":  sourceNode.IPAddress,
+			"target_node":  targetNode.IPAddress,
 		})
 	}
+
+	s.broadcastMigrationEvent("operation.migration.progress", map[string]interface{}{
+		"operation_id": migration.ID,
+		"server_id":    migration.ServerID,
+		"server_name":  server.Name,
+		"from_node":    migration.FromNodeID,
+		"to_node":      migration.ToNodeID,
+		"status":       "preparing",
+		"progress":     40,
+		"message":      "World data transferred, starting new container...",
+	})
 
 	// Create container on target node with proper naming
 	containerName := fmt.Sprintf("mc-%s", server.ID) // Use standard naming
@@ -684,6 +745,68 @@ func (s *MigrationService) completeMigration(migration *models.Migration) {
 		"status":              "completed",
 		"success":             true,
 	})
+}
+
+// syncWorldDataBetweenNodes synchronizes world data directly between worker nodes using rsync
+func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverID string) error {
+	sourceDir := fmt.Sprintf("/minecraft/servers/%s/", serverID)
+	targetDir := fmt.Sprintf("/minecraft/servers/%s", serverID)
+
+	logger.Info("MIGRATION: Starting rsync between worker nodes", map[string]interface{}{
+		"source_ip":   sourceIP,
+		"target_ip":   targetIP,
+		"server_id":   serverID,
+		"source_path": sourceDir,
+		"target_path": targetDir,
+	})
+
+	// 1. Create target directory on destination node
+	mkdirCmd := fmt.Sprintf("ssh root@%s 'mkdir -p %s'", targetIP, targetDir)
+	if err := s.executeCommand(mkdirCmd); err != nil {
+		return fmt.Errorf("failed to create target directory: %w", err)
+	}
+
+	// 2. Rsync from source to target via SSH
+	// Using rsync with compression and archive mode
+	// Format: rsync -avz -e ssh source_user@source_ip:/path/ target_user@target_ip:/path/
+	rsyncCmd := fmt.Sprintf(
+		"ssh root@%s 'rsync -avz --delete %s root@%s:%s/'",
+		sourceIP,   // Connect to source node
+		sourceDir,  // Source directory (with trailing slash to copy contents)
+		targetIP,   // Target node IP
+		targetDir,  // Target directory
+	)
+
+	logger.Info("MIGRATION: Executing rsync command", map[string]interface{}{
+		"server_id": serverID,
+		"command":   rsyncCmd,
+	})
+
+	if err := s.executeCommand(rsyncCmd); err != nil {
+		return fmt.Errorf("rsync failed: %w", err)
+	}
+
+	logger.Info("MIGRATION: Rsync completed successfully", map[string]interface{}{
+		"source_ip": sourceIP,
+		"target_ip": targetIP,
+		"server_id": serverID,
+	})
+
+	return nil
+}
+
+// executeCommand executes a shell command via bash
+func (s *MigrationService) executeCommand(command string) error {
+	cmd := exec.Command("bash", "-c", command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("command failed: %w, output: %s", err, string(output))
+	}
+	logger.Debug("MIGRATION: Command executed", map[string]interface{}{
+		"command": command,
+		"output":  string(output),
+	})
+	return nil
 }
 
 // failMigration marks migration as failed
