@@ -46,6 +46,10 @@ type NodeLifecycleMetrics struct {
 	// Safety Tracking
 	TotalContainersEver int // How many containers ever ran
 	CurrentContainers   int // Currently running (cached from ContainerRegistry)
+
+	// Recovery Tracking (for nodes restored from state file after restart)
+	RecoveredAt         *time.Time    // When node was recovered from state file
+	RecoveryGracePeriod time.Duration // How long to protect from scale-down after recovery
 }
 
 // CanBeDecommissioned checks if a node can safely be decommissioned

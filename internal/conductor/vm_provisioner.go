@@ -76,10 +76,9 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		SSHUser:          "root",
 		CreatedAt:        time.Now(),
 		Labels: map[string]string{
-			"type":          "cloud",
-			"managed_by":    "payperplay",
-			"status":        "provisioning", // Special label to indicate provisioning in progress
-			"auto_scalable": "true",         // Auto-provisioned nodes can be scaled down
+			"type":       "cloud",
+			"managed_by": "payperplay",
+			"status":     "provisioning", // Special label to indicate provisioning in progress
 		},
 		HourlyCostEUR: 0,
 	}
@@ -120,10 +119,9 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		Location:  "nbg1",  // Nuremberg, Germany (default)
 		CloudInit: cloudInit,
 		Labels: map[string]string{
-			"managed_by":    "payperplay",
-			"type":          "cloud", // vs "dedicated"
-			"created_at":    fmt.Sprintf("%d", time.Now().Unix()), // Unix timestamp - Hetzner-compliant
-			"auto_scalable": "true",  // Auto-provisioned nodes can be scaled down
+			"managed_by": "payperplay",
+			"type":       "cloud", // vs "dedicated"
+			"created_at": fmt.Sprintf("%d", time.Now().Unix()), // Unix timestamp - Hetzner-compliant
 		},
 		SSHKeys: []string{p.sshKeyName},
 	}
@@ -207,9 +205,8 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		SSHUser:          "root",
 		CreatedAt:        now,
 		Labels: map[string]string{
-			"type":          "cloud",
-			"managed_by":    "payperplay",
-			"auto_scalable": "true", // Auto-provisioned nodes can be scaled down
+			"type":       "cloud",
+			"managed_by": "payperplay",
 		},
 		HourlyCostEUR: server.HourlyCostEUR,
 	}
@@ -303,23 +300,29 @@ func (p *VMProvisioner) DecommissionNode(nodeID string, decisionBy string) error
 		return err
 	}
 
-	// CRITICAL: Only decommission auto-scalable nodes (never pre-existing/manual nodes)
-	// Pre-existing nodes (recovered from Hetzner on startup) have auto_scalable="false"
-	// Auto-provisioned nodes (created by scaling engine) have auto_scalable="true"
-	if autoScalable, exists := node.Labels["auto_scalable"]; !exists || autoScalable != "true" {
-		err := fmt.Errorf("cannot decommission non-auto-scalable node: %s (auto_scalable=%s)", nodeID, autoScalable)
-		logger.Warn("Decommission rejected - node is not auto-scalable", map[string]interface{}{
-			"node_id":       nodeID,
-			"auto_scalable": autoScalable,
-			"reason":        "Pre-existing or manual nodes should not be auto-scaled",
-		})
-		if p.conductor != nil && p.conductor.AuditLog != nil {
-			p.conductor.AuditLog.RecordNodeDecommission(nodeID, "not_auto_scalable", decisionBy, map[string]interface{}{
-				"auto_scalable": autoScalable,
-				"labels":        node.Labels,
-			}, "rejected", err)
+	// CRITICAL: Check recovery grace period (prevents premature decommission after restart)
+	// Nodes restored from state file get a grace period to allow container sync
+	if node.Metrics.RecoveredAt != nil && node.Metrics.RecoveryGracePeriod > 0 {
+		timeSinceRecovery := time.Since(*node.Metrics.RecoveredAt)
+		if timeSinceRecovery < node.Metrics.RecoveryGracePeriod {
+			remaining := node.Metrics.RecoveryGracePeriod - timeSinceRecovery
+			err := fmt.Errorf("node in recovery grace period (%s remaining)", remaining.Round(time.Minute))
+			logger.Warn("Decommission rejected - node in recovery grace period", map[string]interface{}{
+				"node_id":              nodeID,
+				"recovered_at":         node.Metrics.RecoveredAt,
+				"time_since_recovery":  timeSinceRecovery.Round(time.Minute),
+				"grace_period":         node.Metrics.RecoveryGracePeriod,
+				"remaining":            remaining.Round(time.Minute),
+			})
+			if p.conductor != nil && p.conductor.AuditLog != nil {
+				p.conductor.AuditLog.RecordNodeDecommission(nodeID, "recovery_grace_period", decisionBy, map[string]interface{}{
+					"recovered_at":        node.Metrics.RecoveredAt,
+					"time_since_recovery": timeSinceRecovery,
+					"remaining":           remaining,
+				}, "rejected", err)
+			}
+			return err
 		}
-		return err
 	}
 
 	// CRITICAL: Safety check using new lifecycle system

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -324,12 +325,24 @@ func main() {
 	cond.SyncQueuedServers(serverRepo, false) // Don't trigger scaling yet
 	logger.Info("Queue sync completed", nil)
 
-	// CRITICAL: Restore worker nodes from Hetzner Cloud (prevents node loss after restarts)
-	// Only syncs Hetzner Cloud worker nodes (cpx/cax), not dedicated servers
+	// CRITICAL: Restore worker nodes from persisted state file FIRST
+	// This prevents data loss by restoring nodes that existed before restart
+	// These nodes get a recovery grace period to prevent immediate scale-down
 	if cond.CloudProvider != nil {
-		logger.Info("Restoring worker nodes from Hetzner Cloud...", nil)
+		nodeStateFile := filepath.Join(cfg.DataDir, "node_state.json")
+		logger.Info("Restoring nodes from persisted state...", map[string]interface{}{
+			"state_file": nodeStateFile,
+		})
+		if err := cond.RestoreNodesFromState(nodeStateFile); err != nil {
+			logger.Error("Failed to restore nodes from state", err, nil)
+			// Continue anyway - will fall back to Hetzner sync
+		}
+
+		// CRITICAL: Sync with Hetzner Cloud API to discover any new nodes
+		// This is secondary to state file restoration
+		logger.Info("Syncing with Hetzner Cloud API...", nil)
 		cond.SyncExistingWorkerNodes(false) // Don't trigger scaling yet
-		logger.Info("Worker node restoration completed", nil)
+		logger.Info("Worker node sync completed", nil)
 
 		// CRITICAL: Sync running containers from remote worker nodes
 		// This must happen immediately after node restoration to prevent capacity errors
@@ -506,8 +519,23 @@ func main() {
 		<-sigChan
 
 		logger.Info("Shutting down gracefully...", nil)
+
+		// CRITICAL: Save node state before shutdown to prevent data loss on restart
+		if cond != nil && cond.CloudProvider != nil {
+			nodeStateFile := filepath.Join(cfg.DataDir, "node_state.json")
+			logger.Info("Saving node state before shutdown...", map[string]interface{}{
+				"state_file": nodeStateFile,
+			})
+			if err := cond.SaveNodeState(nodeStateFile); err != nil {
+				logger.Error("Failed to save node state", err, nil)
+			} else {
+				logger.Info("Node state saved successfully", nil)
+			}
+		}
+
 		// Leave servers running - they will be managed by auto-shutdown
 		// This allows maintenance without disrupting active servers
+		logger.Info("Shutdown complete", nil)
 		os.Exit(0)
 	}()
 
