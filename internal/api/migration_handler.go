@@ -361,8 +361,8 @@ func (h *MigrationHandler) CreateManualMigration(c *gin.Context) {
 	// CRITICAL: Validate target node is not a system node
 	// System nodes (proxy-node, local-node) cannot host Minecraft containers
 	if h.conductor != nil && h.conductor.NodeRegistry != nil {
-		targetNode, err := h.conductor.NodeRegistry.GetNode(req.ToNodeID)
-		if err != nil || targetNode == nil {
+		targetNode, exists := h.conductor.NodeRegistry.GetNode(req.ToNodeID)
+		if !exists || targetNode == nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "Target node not found",
 			})
