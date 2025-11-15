@@ -32,7 +32,13 @@
       "Bash(curl:*)",
       "Bash(cat:*)",
       "Bash(mvn clean package:*)",
-      "Bash(./deploy.sh:*)"
+      "Bash(./deploy.sh:*)",
+      "Bash(go get:*)",
+      "Bash(git pull:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(for:*)",
+      "Bash(do echo \"=== Check $i ===\")",
+      "Bash(done)"
     ],
     "deny": [],
     "ask": []

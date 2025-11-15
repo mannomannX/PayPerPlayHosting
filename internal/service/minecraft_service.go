@@ -136,6 +136,10 @@ type ConductorInterface interface {
 	// GetNode retrieves node information by nodeID (needed for proportional RAM calculations)
 	// Returns (*conductor.Node, bool) where bool indicates if node exists
 	GetNode(nodeID string) (interface{}, bool)
+
+	// IsSystemNode checks if a node is a system node (cannot host Minecraft containers)
+	// Returns (isSystemNode bool, error)
+	IsSystemNode(nodeID string) (bool, error)
 }
 
 func NewMinecraftService(

@@ -210,14 +210,14 @@ func (s *MigrationService) executeMigration(migration *models.Migration) {
 	// Pre-Migration Backup: OPTIONAL for worker-to-worker migrations
 	// For worker-to-worker: we'll use direct rsync instead of backup+restore
 	// For system-to-worker: backup is needed since local access is available
-	fromNode, err := s.conductor.NodeRegistry.GetNode(migration.FromNodeID)
-	if err != nil || fromNode == nil {
+	fromNodeIsSystem, err := s.conductor.IsSystemNode(migration.FromNodeID)
+	if err != nil {
 		s.failMigration(migration, fmt.Sprintf("Source node not found: %s", migration.FromNodeID))
 		return
 	}
 
 	// Skip backup for worker-to-worker migrations (use direct rsync instead)
-	isWorkerToWorker := !fromNode.IsSystemNode
+	isWorkerToWorker := !fromNodeIsSystem
 
 	if !isWorkerToWorker {
 		// Only create backup if migrating FROM system node (where we have local access)
@@ -692,6 +692,8 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 			server.Port,
 			server.Port,
 			"running",
+			server.MinecraftVersion,  // Add version for dashboard display
+			string(server.ServerType), // Add type for dashboard display
 		)
 	}
 

@@ -1194,6 +1194,16 @@ func (c *Conductor) GetRemoteNode(nodeID string) (*docker.RemoteNode, error) {
 	return remoteNode, nil
 }
 
+// IsSystemNode checks if a node is a system node (cannot host Minecraft containers)
+// Returns (isSystemNode bool, error) - error if node not found
+func (c *Conductor) IsSystemNode(nodeID string) (bool, error) {
+	node, exists := c.NodeRegistry.GetNode(nodeID)
+	if !exists {
+		return false, fmt.Errorf("node %s not found in registry", nodeID)
+	}
+	return node.IsSystemNode, nil
+}
+
 // GetRemoteDockerClient returns the RemoteDockerClient for remote node operations
 func (c *Conductor) GetRemoteDockerClient() *docker.RemoteDockerClient {
 	return c.RemoteClient
