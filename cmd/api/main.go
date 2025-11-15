@@ -522,7 +522,7 @@ func main() {
 
 		// CRITICAL: Save node state before shutdown to prevent data loss on restart
 		if cond != nil && cond.CloudProvider != nil {
-			nodeStateFile := filepath.Join(cfg.DataDir, "node_state.json")
+			nodeStateFile := filepath.Join("./data", "node_state.json")
 			logger.Info("Saving node state before shutdown...", map[string]interface{}{
 				"state_file": nodeStateFile,
 			})
