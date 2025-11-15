@@ -1540,8 +1540,9 @@ func (c *Conductor) SyncExistingWorkerNodes(triggerScaling bool) {
 			SSHUser:          "root",
 			CreatedAt:        time.Now(), // We don't have the original creation time
 			Labels: map[string]string{
-				"type":       "cloud",
-				"managed_by": "payperplay",
+				"type":          "cloud",
+				"managed_by":    "payperplay",
+				"auto_scalable": "false", // Pre-existing nodes should NOT be auto-scaled down
 			},
 			HourlyCostEUR:     server.HourlyCostEUR,
 			CloudProviderID:   server.ID,

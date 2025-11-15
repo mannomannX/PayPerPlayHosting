@@ -76,9 +76,10 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		SSHUser:          "root",
 		CreatedAt:        time.Now(),
 		Labels: map[string]string{
-			"type":        "cloud",
-			"managed_by":  "payperplay",
-			"status":      "provisioning", // Special label to indicate provisioning in progress
+			"type":          "cloud",
+			"managed_by":    "payperplay",
+			"status":        "provisioning", // Special label to indicate provisioning in progress
+			"auto_scalable": "true",         // Auto-provisioned nodes can be scaled down
 		},
 		HourlyCostEUR: 0,
 	}
@@ -119,9 +120,10 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		Location:  "nbg1",  // Nuremberg, Germany (default)
 		CloudInit: cloudInit,
 		Labels: map[string]string{
-			"managed_by": "payperplay",
-			"type":       "cloud", // vs "dedicated"
-			"created_at": fmt.Sprintf("%d", time.Now().Unix()), // Unix timestamp - Hetzner-compliant
+			"managed_by":    "payperplay",
+			"type":          "cloud", // vs "dedicated"
+			"created_at":    fmt.Sprintf("%d", time.Now().Unix()), // Unix timestamp - Hetzner-compliant
+			"auto_scalable": "true",  // Auto-provisioned nodes can be scaled down
 		},
 		SSHKeys: []string{p.sshKeyName},
 	}
@@ -205,8 +207,9 @@ func (p *VMProvisioner) ProvisionNode(serverType string) (*Node, error) {
 		SSHUser:          "root",
 		CreatedAt:        now,
 		Labels: map[string]string{
-			"type":       "cloud",
-			"managed_by": "payperplay",
+			"type":          "cloud",
+			"managed_by":    "payperplay",
+			"auto_scalable": "true", // Auto-provisioned nodes can be scaled down
 		},
 		HourlyCostEUR: server.HourlyCostEUR,
 	}
@@ -296,6 +299,25 @@ func (p *VMProvisioner) DecommissionNode(nodeID string, decisionBy string) error
 		err := fmt.Errorf("cannot decommission dedicated node: %s", nodeID)
 		if p.conductor != nil && p.conductor.AuditLog != nil {
 			p.conductor.AuditLog.RecordNodeDecommission(nodeID, "not_cloud_node", decisionBy, map[string]interface{}{"type": node.Type}, "rejected", err)
+		}
+		return err
+	}
+
+	// CRITICAL: Only decommission auto-scalable nodes (never pre-existing/manual nodes)
+	// Pre-existing nodes (recovered from Hetzner on startup) have auto_scalable="false"
+	// Auto-provisioned nodes (created by scaling engine) have auto_scalable="true"
+	if autoScalable, exists := node.Labels["auto_scalable"]; !exists || autoScalable != "true" {
+		err := fmt.Errorf("cannot decommission non-auto-scalable node: %s (auto_scalable=%s)", nodeID, autoScalable)
+		logger.Warn("Decommission rejected - node is not auto-scalable", map[string]interface{}{
+			"node_id":       nodeID,
+			"auto_scalable": autoScalable,
+			"reason":        "Pre-existing or manual nodes should not be auto-scaled",
+		})
+		if p.conductor != nil && p.conductor.AuditLog != nil {
+			p.conductor.AuditLog.RecordNodeDecommission(nodeID, "not_auto_scalable", decisionBy, map[string]interface{}{
+				"auto_scalable": autoScalable,
+				"labels":        node.Labels,
+			}, "rejected", err)
 		}
 		return err
 	}
