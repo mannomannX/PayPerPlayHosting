@@ -44,7 +44,6 @@ func (c *Conductor) SaveContainerState(filePath string) error {
 			RAMMb:         container.RAMMb,
 			Port:          container.DockerPort,
 			MinecraftPort: container.MinecraftPort,
-			JoinAddress:   container.JoinAddress,
 			CreatedAt:     time.Now(), // Use current time as fallback
 		}
 		containers = append(containers, state)
