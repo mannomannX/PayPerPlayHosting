@@ -329,7 +329,7 @@ func main() {
 	// This prevents data loss by restoring nodes that existed before restart
 	// These nodes get a recovery grace period to prevent immediate scale-down
 	if cond.CloudProvider != nil {
-		nodeStateFile := filepath.Join(cfg.DataDir, "node_state.json")
+		nodeStateFile := filepath.Join("./data", "node_state.json")
 		logger.Info("Restoring nodes from persisted state...", map[string]interface{}{
 			"state_file": nodeStateFile,
 		})
