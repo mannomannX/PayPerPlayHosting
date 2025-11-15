@@ -154,6 +154,17 @@ func main() {
 	defer lifecycleService.Stop()
 	logger.Info("Lifecycle service started", nil)
 
+	// Initialize Archive Service for Phase 3 (Sleeping > 48h → Archived)
+	// NOTE: Conductor is not available yet, will be set later via SetConductor()
+	archiveService := service.NewArchiveService(serverRepo, nil)
+	logger.Info("Archive service initialized", nil)
+
+	// Initialize Archive Worker for automatic archiving (sleeping > 48h servers)
+	archiveWorker := service.NewArchiveWorker(serverRepo, archiveService)
+	archiveWorker.Start()
+	defer archiveWorker.Stop()
+	logger.Info("Archive worker started (scans every 1h, archives servers sleeping > 48h)", nil)
+
 	// Initialize Billing Service for cost analytics
 	billingService := service.NewBillingService(db, serverRepo)
 	billingService.Start() // Subscribe to Event-Bus for automatic billing tracking
@@ -269,6 +280,10 @@ func main() {
 	// Link Conductor to MinecraftService for capacity management
 	mcService.SetConductor(cond)
 	logger.Info("Conductor linked to MinecraftService for resource guard", nil)
+
+	// Link Archive Service to MinecraftService for auto-unarchive on start
+	mcService.SetArchiveService(archiveService)
+	logger.Info("Archive service linked to MinecraftService for auto-unarchive", nil)
 
 	// Link MinecraftService to Conductor as ServerStarter for queue processing
 	cond.SetServerStarter(mcService)

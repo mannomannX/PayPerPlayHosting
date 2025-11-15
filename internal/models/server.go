@@ -109,6 +109,7 @@ type MinecraftServer struct {
 	LifecyclePhase  LifecyclePhase `gorm:"default:active"`      // Current lifecycle phase for billing
 	ArchivedAt      *time.Time                                  // When server was archived
 	ArchiveLocation string         `gorm:"size:512;default:''"` // Path to archive file (Storage Box)
+	ArchiveSize     int64          `gorm:"default:0"`           // Size of archive in bytes
 
 	// Pay-Per-Use Settings
 	IdleTimeoutSeconds   int  `gorm:"default:300"`  // Seconds of inactivity before auto-shutdown (default: 5 minutes)

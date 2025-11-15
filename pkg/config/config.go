@@ -109,6 +109,14 @@ type Config struct {
 	AllowConsolidationLarge  bool // false - Large (16GB): no consolidation
 	AllowConsolidationXLarge bool // false - XLarge (32GB): no consolidation
 	AllowConsolidationCustom bool // false - Custom: no consolidation (inefficient)
+
+	// Phase 3: Archive Storage (Hetzner Storage Box)
+	StorageBoxEnabled  bool   // Enable Hetzner Storage Box for archiving (Phase 3b)
+	StorageBoxHost     string // Storage Box hostname (e.g., u123456.your-storagebox.de)
+	StorageBoxPort     int    // SFTP port (default: 23)
+	StorageBoxUser     string // Storage Box username (e.g., u123456)
+	StorageBoxPassword string // Storage Box password
+	StorageBoxPath     string // Base path for archives (e.g., /minecraft-archives)
 }
 
 var AppConfig *Config
@@ -202,6 +210,14 @@ func Load() *Config {
 		AllowConsolidationLarge:  getEnvBool("ALLOW_CONSOLIDATION_LARGE", false),  // 16GB: no consolidation
 		AllowConsolidationXLarge: getEnvBool("ALLOW_CONSOLIDATION_XLARGE", false), // 32GB: no consolidation
 		AllowConsolidationCustom: getEnvBool("ALLOW_CONSOLIDATION_CUSTOM", false), // Custom: no consolidation
+
+		// Phase 3: Archive Storage (Hetzner Storage Box)
+		StorageBoxEnabled:  getEnvBool("STORAGE_BOX_ENABLED", false),
+		StorageBoxHost:     getEnv("STORAGE_BOX_HOST", ""),
+		StorageBoxPort:     getEnvInt("STORAGE_BOX_PORT", 23), // Hetzner Storage Box default SFTP port
+		StorageBoxUser:     getEnv("STORAGE_BOX_USER", ""),
+		StorageBoxPassword: getEnv("STORAGE_BOX_PASSWORD", ""),
+		StorageBoxPath:     getEnv("STORAGE_BOX_PATH", "/minecraft-archives"),
 	}
 
 	AppConfig = config
