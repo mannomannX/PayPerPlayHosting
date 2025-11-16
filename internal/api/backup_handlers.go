@@ -153,7 +153,9 @@ func (h *BackupHandler) RestoreBackup(c *gin.Context) {
 		return
 	}
 
-	if err := h.backupService.RestoreBackup(req.BackupID, serverID); err != nil {
+	// Restore backup without quota enforcement (server-level restore)
+	// If user quota tracking is needed, use RestoreUserBackup endpoint instead
+	if err := h.backupService.RestoreBackup(req.BackupID, serverID, nil); err != nil {
 		logger.Error("BACKUP-API: Failed to restore backup", err, map[string]interface{}{
 			"server_id": serverID,
 			"backup_id": req.BackupID,
