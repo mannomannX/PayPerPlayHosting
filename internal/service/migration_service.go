@@ -771,15 +771,14 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 
-	// 2. Rsync from source to target via SSH
+	// 2. Rsync from source to target - run FROM conductor, not from source node
+	// This avoids needing SSH keys on the source worker node
 	// Using rsync with compression and archive mode
-	// Format: rsync -avz -e ssh source_user@source_ip:/path/ target_user@target_ip:/path/
 	// Note: StrictHostKeyChecking disabled for automated migrations between trusted infrastructure
 	rsyncCmd := fmt.Sprintf(
-		"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'rsync -avz --delete -e \"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" %s root@%s:%s/'",
-		sshIdentity, // Identity file for outer SSH
-		sourceIP,    // Connect to source node
-		sshIdentity, // Identity file for inner SSH (rsync)
+		"rsync -avz --delete -e \"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" root@%s:%s root@%s:%s/",
+		sshIdentity, // Identity file for SSH connections
+		sourceIP,    // Source node IP
 		sourceDir,   // Source directory (with trailing slash to copy contents)
 		targetIP,    // Target node IP
 		targetDir,   // Target directory
