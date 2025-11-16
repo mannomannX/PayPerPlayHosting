@@ -762,8 +762,11 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 		"target_path": targetDir,
 	})
 
+	// SSH identity file (keys are copied to /app/.ssh by entrypoint.sh)
+	sshIdentity := "/app/.ssh/id_rsa"
+
 	// 1. Create target directory on destination node
-	mkdirCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'mkdir -p %s'", targetIP, targetDir)
+	mkdirCmd := fmt.Sprintf("ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'mkdir -p %s'", sshIdentity, targetIP, targetDir)
 	if err := s.executeCommand(mkdirCmd); err != nil {
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
@@ -773,11 +776,13 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 	// Format: rsync -avz -e ssh source_user@source_ip:/path/ target_user@target_ip:/path/
 	// Note: StrictHostKeyChecking disabled for automated migrations between trusted infrastructure
 	rsyncCmd := fmt.Sprintf(
-		"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'rsync -avz --delete -e \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" %s root@%s:%s/'",
-		sourceIP,   // Connect to source node
-		sourceDir,  // Source directory (with trailing slash to copy contents)
-		targetIP,   // Target node IP
-		targetDir,  // Target directory
+		"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'rsync -avz --delete -e \"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" %s root@%s:%s/'",
+		sshIdentity, // Identity file for outer SSH
+		sourceIP,    // Connect to source node
+		sshIdentity, // Identity file for inner SSH (rsync)
+		sourceDir,   // Source directory (with trailing slash to copy contents)
+		targetIP,    // Target node IP
+		targetDir,   // Target directory
 	)
 
 	logger.Info("MIGRATION: Executing rsync command", map[string]interface{}{
