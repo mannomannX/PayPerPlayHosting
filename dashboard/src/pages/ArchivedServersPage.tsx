@@ -10,6 +10,9 @@ interface ArchivedServer {
   RAMMb: number;
   Status: string;
   LastStoppedAt: string;
+  ArchivedAt: string;
+  ArchiveLocation: string;
+  ArchiveSize: number; // Size in bytes
 }
 
 export const ArchivedServersPage = () => {
@@ -28,7 +31,9 @@ export const ArchivedServersPage = () => {
 
       if (response.ok) {
         const data = await response.json();
-        setServers(data.servers || []);
+        // Filter out corrupted archives (0 bytes)
+        const validServers = (data.servers || []).filter((s: ArchivedServer) => s.ArchiveSize > 0);
+        setServers(validServers);
       } else {
         console.error('Failed to fetch archived servers:', response.status, response.statusText);
       }
@@ -75,6 +80,35 @@ export const ArchivedServersPage = () => {
     if (diffDays < 7) return `${diffDays} days ago`;
     if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
     return `${Math.floor(diffDays / 30)} months ago`;
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (!bytes || bytes === 0) return 'N/A';
+    const mb = bytes / 1024 / 1024;
+    if (mb < 1024) return `${mb.toFixed(1)} MB`;
+    return `${(mb / 1024).toFixed(2)} GB`;
+  };
+
+  const getStorageType = (location: string): string => {
+    if (!location) return 'Unknown';
+    if (location.includes('minecraft-archives/')) return 'Hetzner Storage Box (SFTP)';
+    if (location.includes('.archives/')) return 'Local Fallback';
+    return 'Unknown';
+  };
+
+  const getCompressionInfo = (archiveSize: number, ramMb: number): { ratio: string; savings: string } => {
+    if (!archiveSize || !ramMb) return { ratio: 'N/A', savings: 'N/A' };
+
+    // Estimate original size as roughly RAM size (world data typically ~70-80% of RAM usage)
+    const estimatedOriginalMB = ramMb * 0.75;
+    const archiveMB = archiveSize / 1024 / 1024;
+    const compressionRatio = estimatedOriginalMB / archiveMB;
+    const savingsPercent = ((estimatedOriginalMB - archiveMB) / estimatedOriginalMB) * 100;
+
+    return {
+      ratio: `${compressionRatio.toFixed(1)}:1`,
+      savings: `${savingsPercent.toFixed(0)}%`,
+    };
   };
 
   if (loading) {
@@ -155,6 +189,36 @@ export const ArchivedServersPage = () => {
               </div>
               <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>
                 {servers.length}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                Total Size
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#3b82f6' }}>
+                {formatFileSize(servers.reduce((sum, s) => sum + (s.ArchiveSize || 0), 0))}
+              </div>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginTop: '2px' }}>
+                tar.gz compressed
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginBottom: '4px' }}>
+                Avg Compression
+              </div>
+              <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#10b981' }}>
+                {(() => {
+                  if (servers.length === 0) return 'N/A';
+                  const avgRatio = servers
+                    .filter(s => s.ArchiveSize && s.RAMMb)
+                    .map(s => {
+                      const estimatedOriginalMB = s.RAMMb * 0.75;
+                      const archiveMB = s.ArchiveSize / 1024 / 1024;
+                      return estimatedOriginalMB / archiveMB;
+                    })
+                    .reduce((sum, ratio, _, arr) => sum + ratio / arr.length, 0);
+                  return `${avgRatio.toFixed(1)}:1`;
+                })()}
               </div>
             </div>
             <div>
@@ -251,6 +315,36 @@ export const ArchivedServersPage = () => {
                     color: 'rgba(255,255,255,0.6)',
                     textTransform: 'uppercase',
                   }}>
+                    Archive Size
+                  </th>
+                  <th style={{
+                    textAlign: 'left',
+                    padding: '16px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: 'rgba(255,255,255,0.6)',
+                    textTransform: 'uppercase',
+                  }}>
+                    Compression
+                  </th>
+                  <th style={{
+                    textAlign: 'left',
+                    padding: '16px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: 'rgba(255,255,255,0.6)',
+                    textTransform: 'uppercase',
+                  }}>
+                    Storage
+                  </th>
+                  <th style={{
+                    textAlign: 'left',
+                    padding: '16px',
+                    fontSize: '12px',
+                    fontWeight: '600',
+                    color: 'rgba(255,255,255,0.6)',
+                    textTransform: 'uppercase',
+                  }}>
                     Archived
                   </th>
                   <th style={{
@@ -320,6 +414,51 @@ export const ArchivedServersPage = () => {
                     <td style={{ padding: '16px' }}>
                       <div style={{ fontSize: '14px', color: 'white' }}>
                         {server.RAMMb} MB
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      <div style={{ fontSize: '14px', color: 'white', fontWeight: '600' }}>
+                        {formatFileSize(server.ArchiveSize)}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                        tar.gz compressed
+                      </div>
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      {(() => {
+                        const compression = getCompressionInfo(server.ArchiveSize, server.RAMMb);
+                        return (
+                          <>
+                            <div style={{ fontSize: '14px', color: '#10b981', fontWeight: '600' }}>
+                              {compression.ratio}
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                              {compression.savings} saved
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      <div style={{
+                        display: 'inline-block',
+                        fontSize: '11px',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        background: getStorageType(server.ArchiveLocation).includes('Hetzner')
+                          ? 'rgba(59, 130, 246, 0.2)'
+                          : 'rgba(168, 85, 247, 0.2)',
+                        border: getStorageType(server.ArchiveLocation).includes('Hetzner')
+                          ? '1px solid #3b82f6'
+                          : '1px solid #a855f7',
+                        color: getStorageType(server.ArchiveLocation).includes('Hetzner')
+                          ? '#60a5fa'
+                          : '#c084fc',
+                      }}>
+                        {getStorageType(server.ArchiveLocation).includes('Hetzner') ? '☁️ Remote' : '💾 Local'}
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginTop: '4px' }}>
+                        {getStorageType(server.ArchiveLocation)}
                       </div>
                     </td>
                     <td style={{ padding: '16px' }}>

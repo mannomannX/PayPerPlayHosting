@@ -88,6 +88,18 @@ func (s *ArchiveService) ArchiveServer(serverID string) error {
 		return fmt.Errorf("failed to compress server data: %w", err)
 	}
 
+	// Validate archive is not empty (minimum 1KB)
+	if archiveSize < 1024 {
+		s.updateServerStatus(serverID, models.StatusError)
+		// Clean up empty archive file
+		os.Remove(archivePath)
+		logger.Error("ARCHIVE: Server data is empty or too small to archive", nil, map[string]interface{}{
+			"server_id":    serverID,
+			"archive_size": archiveSize,
+		})
+		return fmt.Errorf("server data is empty or corrupted (size: %d bytes)", archiveSize)
+	}
+
 	logger.Info("ARCHIVE: Server data compressed", map[string]interface{}{
 		"server_id":    serverID,
 		"archive_path": archivePath,
