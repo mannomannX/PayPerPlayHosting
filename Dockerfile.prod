@@ -31,7 +31,9 @@ RUN apk add --no-cache \
     wget \
     curl \
     tzdata \
-    su-exec
+    su-exec \
+    openssh-client \
+    rsync
 
 # Create app user
 RUN addgroup -g 1000 appuser && \
