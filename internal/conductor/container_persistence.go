@@ -191,26 +191,10 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 
 		// Use reflection to call FindByID on serverRepo (interface{})
 		serverRepoVal := reflect.ValueOf(serverRepo)
-
-		// Debug: log type information
-		logger.Info("CONTAINER-PERSIST: Reflection debug", map[string]interface{}{
-			"server_repo_type": serverRepoVal.Type().String(),
-			"server_repo_kind": serverRepoVal.Kind().String(),
-			"num_methods":      serverRepoVal.NumMethod(),
-		})
-
 		findByIDMethod := serverRepoVal.MethodByName("FindByID")
 
 		if !findByIDMethod.IsValid() {
-			// List all available methods for debugging
-			methodNames := []string{}
-			for i := 0; i < serverRepoVal.NumMethod(); i++ {
-				methodNames = append(methodNames, serverRepoVal.Type().Method(i).Name)
-			}
-
-			logger.Warn("CONTAINER-PERSIST: ServerRepo doesn't have FindByID method, restoring without DB check", map[string]interface{}{
-				"available_methods": methodNames,
-			})
+			logger.Warn("CONTAINER-PERSIST: ServerRepo doesn't have FindByID method, restoring without DB check", nil)
 			// Fallback: register container as-is
 			c.ContainerRegistry.RegisterContainer(&ContainerInfo{
 				ServerID:         container.ServerID,
