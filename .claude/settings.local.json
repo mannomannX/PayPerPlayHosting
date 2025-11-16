@@ -38,7 +38,8 @@
       "Bash(go mod tidy:*)",
       "Bash(for:*)",
       "Bash(do echo \"=== Check $i ===\")",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(/tmp/status.json)"
     ],
     "deny": [],
     "ask": []
