@@ -10,6 +10,8 @@ interface ContainerDetailsModalProps {
     status: string;
     port: number;
     join_address: string;
+    minecraft_version?: string;
+    server_type?: string;
   } | null;
   nodeId: string;
   nodeIp: string;
@@ -199,6 +201,41 @@ export const ContainerDetailsModal = ({
                     </button>
                   </div>
                 </div>
+
+                {/* Minecraft Version */}
+                {container.minecraft_version && (
+                  <div
+                    style={{
+                      background: 'rgba(255,255,255,0.05)',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    <div style={{ fontSize: '12px', opacity: 0.6, marginBottom: '4px' }}>Minecraft Version</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                        {container.minecraft_version}
+                      </div>
+                      {container.server_type && (
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            background: 'rgba(16, 185, 129, 0.2)',
+                            border: '1px solid #10b981',
+                            color: '#10b981',
+                            fontWeight: 'bold',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          {container.server_type}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Port */}
                 <div

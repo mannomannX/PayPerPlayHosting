@@ -9,6 +9,8 @@ interface Container {
   status: string;
   port: number;
   join_address: string;
+  minecraft_version?: string;
+  server_type?: string;
 }
 
 interface GridNodeProps {

@@ -14,14 +14,16 @@ import (
 // NOTE: Timing information (LastStartedAt, LastStoppedAt) is stored in the database (minecraft_servers table)
 // This struct only tracks WHICH containers exist on WHICH nodes for state recovery
 type PersistedContainerState struct {
-	ServerID      string `json:"server_id"`
-	ServerName    string `json:"server_name"`
-	ContainerID   string `json:"container_id"`
-	NodeID        string `json:"node_id"`
-	Status        string `json:"status"` // running, stopped, sleeping
-	RAMMb         int    `json:"ram_mb"`
-	Port          int    `json:"port"`
-	MinecraftPort int    `json:"minecraft_port"`
+	ServerID         string `json:"server_id"`
+	ServerName       string `json:"server_name"`
+	ContainerID      string `json:"container_id"`
+	NodeID           string `json:"node_id"`
+	Status           string `json:"status"` // running, stopped, sleeping
+	RAMMb            int    `json:"ram_mb"`
+	Port             int    `json:"port"`
+	MinecraftPort    int    `json:"minecraft_port"`
+	MinecraftVersion string `json:"minecraft_version"`
+	ServerType       string `json:"server_type"`
 }
 
 // SaveContainerState persists all container states to JSON file
@@ -33,14 +35,16 @@ func (c *Conductor) SaveContainerState(filePath string) error {
 	c.ContainerRegistry.mu.RLock()
 	for _, container := range c.ContainerRegistry.containers {
 		state := PersistedContainerState{
-			ServerID:      container.ServerID,
-			ServerName:    container.ServerName,
-			ContainerID:   container.ContainerID,
-			NodeID:        container.NodeID,
-			Status:        container.Status,
-			RAMMb:         container.RAMMb,
-			Port:          container.DockerPort,
-			MinecraftPort: container.MinecraftPort,
+			ServerID:         container.ServerID,
+			ServerName:       container.ServerName,
+			ContainerID:      container.ContainerID,
+			NodeID:           container.NodeID,
+			Status:           container.Status,
+			RAMMb:            container.RAMMb,
+			Port:             container.DockerPort,
+			MinecraftPort:    container.MinecraftPort,
+			MinecraftVersion: container.MinecraftVersion,
+			ServerType:       container.ServerType,
 		}
 		containers = append(containers, state)
 	}
@@ -187,15 +191,17 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 		// Register container in registry (regardless of actual Docker state)
 		// The health checker will verify if it actually exists
 		c.ContainerRegistry.RegisterContainer(&ContainerInfo{
-			ServerID:      container.ServerID,
-			ServerName:    container.ServerName,
-			ContainerID:   container.ContainerID,
-			NodeID:        container.NodeID,
-			RAMMb:         container.RAMMb,
-			DockerPort:    container.Port,
-			MinecraftPort: container.MinecraftPort,
-			Status:        container.Status,
-			LastSeenAt:    time.Now(),
+			ServerID:         container.ServerID,
+			ServerName:       container.ServerName,
+			ContainerID:      container.ContainerID,
+			NodeID:           container.NodeID,
+			RAMMb:            container.RAMMb,
+			DockerPort:       container.Port,
+			MinecraftPort:    container.MinecraftPort,
+			MinecraftVersion: container.MinecraftVersion,
+			ServerType:       container.ServerType,
+			Status:           container.Status,
+			LastSeenAt:       time.Now(),
 		})
 
 		logger.Info("CONTAINER-PERSIST: Container restored from state", map[string]interface{}{
