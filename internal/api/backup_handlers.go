@@ -11,14 +11,23 @@ import (
 )
 
 type BackupHandler struct {
-	backupService *service.BackupService
-	backupRepo    *repository.BackupRepository
+	backupService      *service.BackupService
+	backupRepo         *repository.BackupRepository
+	backupQuotaService *service.BackupQuotaService
+	serverRepo         *repository.ServerRepository
 }
 
-func NewBackupHandler(backupService *service.BackupService, backupRepo *repository.BackupRepository) *BackupHandler {
+func NewBackupHandler(
+	backupService *service.BackupService,
+	backupRepo *repository.BackupRepository,
+	backupQuotaService *service.BackupQuotaService,
+	serverRepo *repository.ServerRepository,
+) *BackupHandler {
 	return &BackupHandler{
-		backupService: backupService,
-		backupRepo:    backupRepo,
+		backupService:      backupService,
+		backupRepo:         backupRepo,
+		backupQuotaService: backupQuotaService,
+		serverRepo:         serverRepo,
 	}
 }
 
@@ -239,5 +248,112 @@ func (h *BackupHandler) GetServerBackupStats(c *gin.Context) {
 		"backup_count":  count,
 		"total_size_mb": totalSize / 1024 / 1024,
 		"total_size_gb": float64(totalSize) / 1024 / 1024 / 1024,
+	})
+}
+
+// ========================================
+// User Backup Management Endpoints
+// ========================================
+
+// GetUserBackups handles GET /api/users/:id/backups
+// Returns all backups for a specific user
+func (h *BackupHandler) GetUserBackups(c *gin.Context) {
+	userID := c.Param("id")
+
+	backups, err := h.backupRepo.FindByUserID(userID)
+	if err != nil {
+		logger.Error("Failed to fetch user backups", err, map[string]interface{}{
+			"user_id": userID,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch backups"})
+		return
+	}
+
+	// Enrich with server names
+	type BackupResponse struct {
+		models.Backup
+		ServerName string `json:"server_name"`
+	}
+
+	var response []BackupResponse
+	for _, backup := range backups {
+		server, err := h.serverRepo.FindByID(backup.ServerID)
+		serverName := "Unknown"
+		if err == nil && server != nil {
+			serverName = server.Name
+		}
+
+		response = append(response, BackupResponse{
+			Backup:     backup,
+			ServerName: serverName,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"backups": response,
+		"count":   len(response),
+	})
+}
+
+// GetUserBackupQuota handles GET /api/users/:id/backups/quota
+// Returns quota information for a user
+func (h *BackupHandler) GetUserBackupQuota(c *gin.Context) {
+	userID := c.Param("id")
+
+	quotaInfo, err := h.backupQuotaService.GetUserQuotaInfo(userID)
+	if err != nil {
+		logger.Error("Failed to fetch user quota info", err, map[string]interface{}{
+			"user_id": userID,
+		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch quota information"})
+		return
+	}
+
+	c.JSON(http.StatusOK, quotaInfo)
+}
+
+// RestoreUserBackup handles POST /api/users/:user_id/backups/:backup_id/restore
+// Restores a backup for a user with quota enforcement
+func (h *BackupHandler) RestoreUserBackup(c *gin.Context) {
+	userID := c.Param("user_id")
+	backupID := c.Param("backup_id")
+
+	// Validate backup belongs to user
+	backup, err := h.backupRepo.FindByID(backupID)
+	if err != nil {
+		logger.Error("Failed to find backup", err, map[string]interface{}{
+			"backup_id": backupID,
+		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Backup not found"})
+		return
+	}
+
+	if backup.UserID == nil || *backup.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied"})
+		return
+	}
+
+	// Restore backup (quota check happens inside)
+	if err := h.backupService.RestoreBackup(backupID, backup.ServerID, &userID); err != nil {
+		logger.Error("Failed to restore backup", err, map[string]interface{}{
+			"backup_id": backupID,
+			"user_id":   userID,
+		})
+
+		// Check if error is quota-related
+		if err.Error() == "restore quota exceeded" ||
+		   (len(err.Error()) > 20 && err.Error()[:20] == "restore quota exceeded") {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Backup restored successfully",
+		"backup_id": backupID,
+		"server_id": backup.ServerID,
 	})
 }

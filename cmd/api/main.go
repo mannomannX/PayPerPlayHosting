@@ -108,6 +108,7 @@ func main() {
 	pluginRepo := repository.NewPluginRepository(db)
 	migrationRepo := repository.NewMigrationRepository(db)
 	backupRepo := repository.NewBackupRepository(db)
+	backupRestoreTrackingRepo := repository.NewBackupRestoreTrackingRepository(db)
 
 	// Initialize Email Service (using mock sender for now)
 	// 🚧 TODO: Replace MockEmailSender with ResendEmailSender when ready for production
@@ -139,9 +140,13 @@ func main() {
 	// Link auth service to middleware
 	middleware.SetAuthService(authService)
 
-	// Initialize Backup Service with SFTP integration
-	backupService := service.NewBackupService(backupRepo, serverRepo, cfg)
-	logger.Info("Backup service initialized with SFTP support", map[string]interface{}{
+	// Initialize Backup Quota Service for user quota management
+	backupQuotaService := service.NewBackupQuotaService(backupRepo, backupRestoreTrackingRepo, userRepo)
+	logger.Info("Backup quota service initialized", nil)
+
+	// Initialize Backup Service with SFTP integration and quota enforcement
+	backupService := service.NewBackupService(backupRepo, serverRepo, cfg, backupQuotaService)
+	logger.Info("Backup service initialized with SFTP support and quota enforcement", map[string]interface{}{
 		"storage_box_enabled": cfg.StorageBoxEnabled,
 	})
 
@@ -472,7 +477,7 @@ func main() {
 	oauthHandler := api.NewOAuthHandler(oauthService)
 	handler := api.NewHandler(mcService)
 	monitoringHandler := api.NewMonitoringHandler(monitoringService)
-	backupHandler := api.NewBackupHandler(backupService, backupRepo)
+	backupHandler := api.NewBackupHandler(backupService, backupRepo, backupQuotaService, serverRepo)
 	pluginHandler := api.NewPluginHandler(pluginService)
 	velocityHandler := api.NewVelocityHandler(velocityService, mcService)
 	wsHandler := api.NewWebSocketHandler(wsHub)

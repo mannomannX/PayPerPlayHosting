@@ -321,6 +321,14 @@ func SetupRouter(
 			billing.GET("/costs", billingHandler.GetOwnerCosts)
 		}
 
+		// User Backup Management (with quota enforcement)
+		users := api.Group("/users")
+		{
+			users.GET("/:id/backups", backupHandler.GetUserBackups)                         // List user's backups
+			users.GET("/:id/backups/quota", backupHandler.GetUserBackupQuota)               // Get quota info
+			users.POST("/:user_id/backups/:backup_id/restore", backupHandler.RestoreUserBackup) // Restore backup with quota check
+		}
+
 		// Plugin Marketplace (browsing and discovery)
 		marketplace := api.Group("/marketplace")
 		{

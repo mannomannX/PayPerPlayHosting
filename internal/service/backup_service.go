@@ -20,10 +20,11 @@ import (
 
 // BackupService handles server backups with SFTP integration
 type BackupService struct {
-	backupRepo  *repository.BackupRepository
-	serverRepo  *repository.ServerRepository
-	sftpClient  *storage.SFTPClient
-	storagePath string
+	backupRepo   *repository.BackupRepository
+	serverRepo   *repository.ServerRepository
+	sftpClient   *storage.SFTPClient
+	storagePath  string
+	quotaService *BackupQuotaService
 }
 
 // NewBackupService creates a new backup service
@@ -31,11 +32,13 @@ func NewBackupService(
 	backupRepo *repository.BackupRepository,
 	serverRepo *repository.ServerRepository,
 	cfg *config.Config,
+	quotaService *BackupQuotaService,
 ) *BackupService {
 	service := &BackupService{
-		backupRepo:  backupRepo,
-		serverRepo:  serverRepo,
-		storagePath: filepath.Join(cfg.ServersBasePath, ".backups"),
+		backupRepo:   backupRepo,
+		serverRepo:   serverRepo,
+		storagePath:  filepath.Join(cfg.ServersBasePath, ".backups"),
+		quotaService: quotaService,
 	}
 
 	// Initialize SFTP client if enabled
@@ -77,6 +80,17 @@ func (s *BackupService) CreateBackup(
 	server, err := s.serverRepo.FindByID(serverID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find server: %w", err)
+	}
+
+	// Check quota limits for manual backups
+	if userID != nil && backupType == models.BackupTypeManual && s.quotaService != nil {
+		canCreate, reason, err := s.quotaService.CanCreateBackup(*userID, backupType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check backup quota: %w", err)
+		}
+		if !canCreate {
+			return nil, fmt.Errorf("backup quota exceeded: %s", reason)
+		}
 	}
 
 	// Set default retention based on type
@@ -377,7 +391,8 @@ func (s *BackupService) uploadBackup(localPath, backupID string) (string, error)
 }
 
 // RestoreBackup restores a backup to a server directory
-func (s *BackupService) RestoreBackup(backupID string, targetServerID string) error {
+// userID is optional - if provided, quota limits will be checked and restore will be tracked
+func (s *BackupService) RestoreBackup(backupID string, targetServerID string, userID *string) error {
 	// Find backup record
 	backup, err := s.backupRepo.FindByID(backupID)
 	if err != nil {
@@ -388,10 +403,22 @@ func (s *BackupService) RestoreBackup(backupID string, targetServerID string) er
 		return fmt.Errorf("backup is not in completed state: %s", backup.Status)
 	}
 
+	// Check restore quota if userID provided
+	if userID != nil && s.quotaService != nil {
+		canRestore, reason, err := s.quotaService.CanRestoreBackup(*userID)
+		if err != nil {
+			return fmt.Errorf("failed to check restore quota: %w", err)
+		}
+		if !canRestore {
+			return fmt.Errorf("restore quota exceeded: %s", reason)
+		}
+	}
+
 	logger.Info("BACKUP-SERVICE: Starting backup restore", map[string]interface{}{
 		"backup_id":        backupID,
 		"target_server_id": targetServerID,
 		"storage_path":     backup.StoragePath,
+		"user_id":          userID,
 	})
 
 	// Determine if backup is on Storage Box or local
@@ -414,6 +441,36 @@ func (s *BackupService) RestoreBackup(backupID string, targetServerID string) er
 	targetPath := filepath.Join(s.storagePath, "..", targetServerID)
 	if err := s.extractBackup(localPath, targetPath); err != nil {
 		return fmt.Errorf("failed to extract backup: %w", err)
+	}
+
+	// Track restore operation for quota management
+	if userID != nil && s.quotaService != nil {
+		// Get server name for tracking
+		server, err := s.serverRepo.FindByID(targetServerID)
+		serverName := "Unknown"
+		if err == nil && server != nil {
+			serverName = server.Name
+		}
+
+		if err := s.quotaService.TrackRestore(*userID, backupID, targetServerID, serverName, backup.Type); err != nil {
+			logger.Warn("BACKUP-SERVICE: Failed to track restore operation", map[string]interface{}{
+				"backup_id": backupID,
+				"user_id":   *userID,
+				"error":     err.Error(),
+			})
+			// Don't fail the restore if tracking fails
+		}
+	}
+
+	// Update backup metadata
+	now := time.Now()
+	backup.RestoredAt = &now
+	backup.RestoredCount++
+	if err := s.backupRepo.Update(backup); err != nil {
+		logger.Warn("BACKUP-SERVICE: Failed to update backup metadata", map[string]interface{}{
+			"backup_id": backupID,
+			"error":     err.Error(),
+		})
 	}
 
 	logger.Info("BACKUP-SERVICE: Backup restored successfully", map[string]interface{}{
