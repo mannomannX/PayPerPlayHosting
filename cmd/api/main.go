@@ -552,8 +552,11 @@ func main() {
 	migrationService.SetDashboardWebSocket(dashboardWs)
 	logger.Info("Migration service linked to Dashboard WebSocket", nil)
 
+	// Container sync handler for metadata synchronization
+	containerSyncHandler := api.NewContainerSyncHandler(cond, serverRepo)
+
 	// Setup router
-	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, costOptHandler, migrationHandler, dashboardWs, cfg)
+	router := api.SetupRouter(authHandler, oauthHandler, handler, monitoringHandler, backupHandler, pluginHandler, velocityHandler, wsHandler, fileManagerHandler, consoleHandler, configHandler, fileHandler, motdHandler, metricsHandler, playerHandler, worldHandler, templateHandler, webhookHandler, backupScheduleHandler, prometheusHandler, conductorHandler, billingHandler, bulkHandler, marketplaceHandler, scalingHandler, costOptHandler, migrationHandler, dashboardWs, containerSyncHandler, cfg)
 
 	// Graceful shutdown
 	go func() {

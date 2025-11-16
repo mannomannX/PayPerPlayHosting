@@ -36,6 +36,7 @@ func SetupRouter(
 	costOptHandler *CostOptimizationHandler,
 	migrationHandler *MigrationHandler,
 	dashboardWsHandler *DashboardWebSocket,
+	containerSyncHandler *ContainerSyncHandler,
 	cfg *config.Config,
 ) *gin.Engine {
 	// Set Gin mode
@@ -87,6 +88,7 @@ func SetupRouter(
 		conductor.GET("/containers", conductorHandler.GetContainers)
 		conductor.GET("/debug-logs", conductorHandler.GetDebugLogs)
 		conductor.DELETE("/debug-logs", conductorHandler.ClearDebugLogs)
+		conductor.POST("/sync-container-metadata", containerSyncHandler.SyncContainerMetadata)
 	}
 
 	// Admin Migration API endpoints (no auth required for dashboard testing)
