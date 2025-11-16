@@ -797,9 +797,9 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 	return nil
 }
 
-// executeCommand executes a shell command via bash
+// executeCommand executes a shell command via sh (Alpine-compatible)
 func (s *MigrationService) executeCommand(command string) error {
-	cmd := exec.Command("bash", "-c", command)
+	cmd := exec.Command("sh", "-c", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("command failed: %w, output: %s", err, string(output))
