@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
 interface ArchivedServer {
-  id: string;
-  name: string;
-  minecraft_version: string;
-  server_type: string;
-  ram_mb: number;
-  status: string;
-  last_stopped_at: string;
+  ID: string;
+  Name: string;
+  MinecraftVersion: string;
+  ServerType: string;
+  RAMMb: number;
+  Status: string;
+  LastStoppedAt: string;
 }
 
 export const ArchivedServersPage = () => {
@@ -254,7 +254,7 @@ export const ArchivedServersPage = () => {
               <tbody>
                 {servers.map((server, index) => (
                   <motion.tr
-                    key={server.id}
+                    key={server.ID}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: 0.3 + index * 0.05 }}
@@ -270,14 +270,14 @@ export const ArchivedServersPage = () => {
                         color: 'white',
                         marginBottom: '4px',
                       }}>
-                        {server.name}
+                        {server.Name}
                       </div>
                       <div style={{
                         fontSize: '12px',
                         color: 'rgba(255,255,255,0.4)',
                         fontFamily: 'monospace',
                       }}>
-                        {server.id}
+                        {server.ID}
                       </div>
                     </td>
                     <td style={{ padding: '16px' }}>
@@ -286,9 +286,9 @@ export const ArchivedServersPage = () => {
                         color: 'white',
                         marginBottom: '4px',
                       }}>
-                        {server.minecraft_version || 'N/A'}
+                        {server.MinecraftVersion || 'N/A'}
                       </div>
-                      {server.server_type && (
+                      {server.ServerType && (
                         <div style={{
                           display: 'inline-block',
                           fontSize: '11px',
@@ -299,40 +299,40 @@ export const ArchivedServersPage = () => {
                           color: '#10b981',
                           textTransform: 'uppercase',
                         }}>
-                          {server.server_type}
+                          {server.ServerType}
                         </div>
                       )}
                     </td>
                     <td style={{ padding: '16px' }}>
                       <div style={{ fontSize: '14px', color: 'white' }}>
-                        {server.ram_mb} MB
+                        {server.RAMMb} MB
                       </div>
                     </td>
                     <td style={{ padding: '16px' }}>
                       <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
-                        {formatDate(server.last_stopped_at)}
+                        {formatDate(server.LastStoppedAt)}
                       </div>
                     </td>
                     <td style={{ padding: '16px', textAlign: 'right' }}>
                       <button
-                        onClick={() => handleUnarchive(server.id)}
-                        disabled={unarchiving === server.id}
+                        onClick={() => handleUnarchive(server.ID)}
+                        disabled={unarchiving === server.ID}
                         style={{
-                          background: unarchiving === server.id
+                          background: unarchiving === server.ID
                             ? 'rgba(107, 114, 128, 0.2)'
                             : 'rgba(59, 130, 246, 0.2)',
-                          border: `1px solid ${unarchiving === server.id ? '#6b7280' : '#3b82f6'}`,
+                          border: `1px solid ${unarchiving === server.ID ? '#6b7280' : '#3b82f6'}`,
                           borderRadius: '8px',
                           padding: '8px 16px',
-                          color: unarchiving === server.id ? '#9ca3af' : '#3b82f6',
-                          cursor: unarchiving === server.id ? 'not-allowed' : 'pointer',
+                          color: unarchiving === server.ID ? '#9ca3af' : '#3b82f6',
+                          cursor: unarchiving === server.ID ? 'not-allowed' : 'pointer',
                           fontSize: '13px',
                           fontWeight: '600',
                           transition: 'all 0.2s',
-                          opacity: unarchiving === server.id ? 0.6 : 1,
+                          opacity: unarchiving === server.ID ? 0.6 : 1,
                         }}
                       >
-                        {unarchiving === server.id ? '🔄 Unarchiving...' : '▶️ Unarchive & Start'}
+                        {unarchiving === server.ID ? '🔄 Unarchiving...' : '▶️ Unarchive & Start'}
                       </button>
                     </td>
                   </motion.tr>
