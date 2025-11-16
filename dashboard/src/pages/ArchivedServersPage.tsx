@@ -23,15 +23,14 @@ export const ArchivedServersPage = () => {
 
   const fetchArchivedServers = async () => {
     try {
-      const response = await fetch('http://91.98.202.235:8000/api/servers/archived', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      // Use admin endpoint (no auth required, like other dashboard endpoints)
+      const response = await fetch('/admin/servers/archived');
 
       if (response.ok) {
         const data = await response.json();
         setServers(data.servers || []);
+      } else {
+        console.error('Failed to fetch archived servers:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Failed to fetch archived servers:', error);
@@ -44,20 +43,20 @@ export const ArchivedServersPage = () => {
     setUnarchiving(serverId);
 
     try {
-      const response = await fetch(`http://91.98.202.235:8000/api/servers/${serverId}/start`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-      });
+      // TODO: This needs auth - for now, show error message
+      alert('Unarchive functionality requires authentication. Please use the API directly for now.');
+      setUnarchiving(null);
 
-      if (response.ok) {
-        // Refresh list after unarchive
-        setTimeout(() => {
-          fetchArchivedServers();
-          setUnarchiving(null);
-        }, 2000);
-      }
+      // const response = await fetch(`/api/servers/${serverId}/start`, {
+      //   method: 'POST',
+      // });
+      //
+      // if (response.ok) {
+      //   setTimeout(() => {
+      //     fetchArchivedServers();
+      //     setUnarchiving(null);
+      //   }, 2000);
+      // }
     } catch (error) {
       console.error('Failed to unarchive server:', error);
       setUnarchiving(null);
@@ -117,17 +116,19 @@ export const ArchivedServersPage = () => {
           alignItems: 'center',
         }}
       >
-        <div>
-          <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
-            📦 Archived Servers
-          </h1>
-          <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '12px' }}>
-            FREE storage • ~30s restore time
-          </p>
-        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <div>
+            <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
+              📦 Archived Servers
+            </h1>
+            <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '12px' }}>
+              FREE storage • ~30s restore time
+            </p>
+          </div>
 
-        {/* Page Navigation */}
-        <PageNavigation />
+          {/* Page Navigation */}
+          <PageNavigation />
+        </div>
       </motion.div>
 
       {/* Content */}

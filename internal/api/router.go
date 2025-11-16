@@ -104,6 +104,12 @@ func SetupRouter(
 		adminMigrations.DELETE("/:id", migrationHandler.DeleteMigration)
 	}
 
+	// Admin Server API endpoints (no auth required for dashboard)
+	adminServers := router.Group("/admin/servers")
+	{
+		adminServers.GET("/archived", handler.ListArchivedServers) // List archived servers for dashboard
+	}
+
 	// WebSocket endpoint (no auth required for MVP)
 	router.GET("/ws", wsHandler.HandleWebSocket)
 	router.GET("/api/ws/stats", wsHandler.GetStats)
@@ -162,7 +168,6 @@ func SetupRouter(
 		{
 			servers.POST("", handler.CreateServer)
 			servers.GET("", handler.ListServers)
-			servers.GET("/archived", handler.ListArchivedServers) // List archived servers
 			servers.GET("/:id", handler.GetServer)
 			servers.GET("/:id/connection", handler.GetServerConnectionInfo) // Connection info (IP + Port)
 			servers.POST("/:id/start", handler.StartServer)

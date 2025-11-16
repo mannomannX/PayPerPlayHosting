@@ -100,17 +100,19 @@ export const Dashboard = () => {
           alignItems: 'center',
         }}
       >
-        <div>
-          <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
-            PayPerPlay Dashboard
-          </h1>
-          <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '12px' }}>
-            3-Tier Architecture Fleet Monitoring
-          </p>
-        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <div>
+            <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
+              PayPerPlay Dashboard
+            </h1>
+            <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '12px' }}>
+              3-Tier Architecture Fleet Monitoring
+            </p>
+          </div>
 
-        {/* Page Navigation */}
-        <PageNavigation />
+          {/* Page Navigation */}
+          <PageNavigation />
+        </div>
 
         {/* Connection Status & Migration Dropdown */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
