@@ -427,12 +427,23 @@ func (s *MigrationService) phasePreparing(migration *models.Migration) error {
 
 	// Create container on target node with proper naming
 	containerName := fmt.Sprintf("mc-%s", server.ID) // Use standard naming
+
+	// CRITICAL: Remove any existing container with this name on target node
+	// This can happen if a previous migration attempt failed
+	ctx := context.Background()
+	logger.Info("MIGRATION: Cleaning up any existing container on target node", map[string]interface{}{
+		"container_name": containerName,
+		"target_node":    targetNode.IPAddress,
+	})
+
+	// Try to remove old container (ignore errors if it doesn't exist)
+	s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, targetNode, containerName, true)
+
 	imageName := docker.GetDockerImageName(string(server.ServerType))
 	env := docker.BuildContainerEnv(server)
 	portBindings := docker.BuildPortBindings(server.Port)
 	binds := docker.BuildVolumeBinds(server.ID, "/minecraft/servers")
 
-	ctx := context.Background()
 	newContainerID, err := s.conductor.GetRemoteDockerClient().StartContainer(
 		ctx,
 		targetNode,
