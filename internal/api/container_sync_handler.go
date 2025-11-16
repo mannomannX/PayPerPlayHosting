@@ -43,7 +43,7 @@ func (h *ContainerSyncHandler) SyncContainerMetadata(c *gin.Context) {
 
 		// Update container metadata
 		container.MinecraftVersion = server.MinecraftVersion
-		container.ServerType = server.ServerType
+		container.ServerType = string(server.ServerType)
 
 		logger.Info("SYNC: Updated container metadata", map[string]interface{}{
 			"server_id":         container.ServerID,
