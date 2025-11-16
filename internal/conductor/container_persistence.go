@@ -254,9 +254,18 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 
 		dbStatus := statusField.String()
 
-		// ONLY restore containers that are actually running/starting in DB
-		if dbStatus != "running" && dbStatus != "starting" && dbStatus != "provisioning" {
-			logger.Info("CONTAINER-PERSIST: Skipping container with non-running DB status", map[string]interface{}{
+		// ONLY restore containers that are in active phases (running, starting, provisioning, sleeping, stopped)
+		// Skip archived/failed/crashed containers (they shouldn't be in container registry)
+		validStatuses := map[string]bool{
+			"running":       true,
+			"starting":      true,
+			"provisioning":  true,
+			"sleeping":      true, // Sleeping containers should be visible in dashboard!
+			"stopped":       true,
+		}
+
+		if !validStatuses[dbStatus] {
+			logger.Info("CONTAINER-PERSIST: Skipping container with invalid DB status", map[string]interface{}{
 				"server_id":   container.ServerID,
 				"server_name": container.ServerName,
 				"db_status":   dbStatus,
