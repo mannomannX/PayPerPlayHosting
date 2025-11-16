@@ -771,27 +771,57 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
 
-	// 2. Rsync from source to target - run FROM conductor, not from source node
-	// This avoids needing SSH keys on the source worker node
-	// Using rsync with compression and archive mode
-	// Note: StrictHostKeyChecking disabled for automated migrations between trusted infrastructure
-	rsyncCmd := fmt.Sprintf(
-		"rsync -avz --delete -e \"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" root@%s:%s root@%s:%s/",
-		sshIdentity, // Identity file for SSH connections
+	// 2. Rsync in two steps (rsync can't have both source and dest as remote)
+	// Step 2a: Pull from source to conductor temp directory
+	// Step 2b: Push from conductor temp to target
+	tempDir := fmt.Sprintf("/tmp/migration-%s", serverID)
+
+	logger.Info("MIGRATION: Step 2a - Pulling data from source to conductor", map[string]interface{}{
+		"source_ip": sourceIP,
+		"temp_dir":  tempDir,
+	})
+
+	// Create temp directory
+	mkdirTempCmd := fmt.Sprintf("mkdir -p %s", tempDir)
+	if err := s.executeCommand(mkdirTempCmd); err != nil {
+		return fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	// Pull from source to temp
+	rsyncPullCmd := fmt.Sprintf(
+		"rsync -avz --delete -e \"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" root@%s:%s %s/",
+		sshIdentity, // Identity file
 		sourceIP,    // Source node IP
-		sourceDir,   // Source directory (with trailing slash to copy contents)
+		sourceDir,   // Source directory
+		tempDir,     // Local temp directory
+	)
+
+	if err := s.executeCommand(rsyncPullCmd); err != nil {
+		s.executeCommand(fmt.Sprintf("rm -rf %s", tempDir)) // Cleanup on error
+		return fmt.Errorf("rsync pull failed: %w", err)
+	}
+
+	logger.Info("MIGRATION: Step 2b - Pushing data from conductor to target", map[string]interface{}{
+		"target_ip": targetIP,
+		"temp_dir":  tempDir,
+	})
+
+	// Push from temp to target
+	rsyncPushCmd := fmt.Sprintf(
+		"rsync -avz --delete -e \"ssh -i %s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" %s/ root@%s:%s/",
+		sshIdentity, // Identity file
+		tempDir,     // Local temp directory
 		targetIP,    // Target node IP
 		targetDir,   // Target directory
 	)
 
-	logger.Info("MIGRATION: Executing rsync command", map[string]interface{}{
-		"server_id": serverID,
-		"command":   rsyncCmd,
-	})
-
-	if err := s.executeCommand(rsyncCmd); err != nil {
-		return fmt.Errorf("rsync failed: %w", err)
+	if err := s.executeCommand(rsyncPushCmd); err != nil {
+		s.executeCommand(fmt.Sprintf("rm -rf %s", tempDir)) // Cleanup on error
+		return fmt.Errorf("rsync push failed: %w", err)
 	}
+
+	// Cleanup temp directory
+	s.executeCommand(fmt.Sprintf("rm -rf %s", tempDir))
 
 	logger.Info("MIGRATION: Rsync completed successfully", map[string]interface{}{
 		"source_ip": sourceIP,
