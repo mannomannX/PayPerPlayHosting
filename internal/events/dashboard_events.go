@@ -99,19 +99,21 @@ func PublishDashboardNodeRemoved(nodeID string, reason string) {
 }
 
 // PublishContainerCreated publishes a container creation event
-func PublishContainerCreated(serverID, serverName, nodeID string, ramMb, port int, status, joinAddress string) {
+func PublishContainerCreated(serverID, serverName, nodeID string, ramMb, port int, status, joinAddress, minecraftVersion, serverType string) {
 	if DashboardEventPublisher == nil {
 		return
 	}
 
 	data := map[string]interface{}{
-		"server_id":    serverID,
-		"server_name":  serverName,
-		"node_id":      nodeID,
-		"ram_mb":       ramMb,
-		"status":       status,
-		"port":         port,
-		"join_address": joinAddress,
+		"server_id":         serverID,
+		"server_name":       serverName,
+		"node_id":           nodeID,
+		"ram_mb":            ramMb,
+		"status":            status,
+		"port":              port,
+		"join_address":      joinAddress,
+		"minecraft_version": minecraftVersion,
+		"server_type":       serverType,
 	}
 
 	DashboardEventPublisher.PublishEvent("container.created", data)
@@ -123,19 +125,21 @@ func PublishContainerCreated(serverID, serverName, nodeID string, ramMb, port in
 }
 
 // PublishContainerStatusChanged publishes a container status change event
-func PublishContainerStatusChanged(serverID, serverName, nodeID, status string, port int, joinAddress string) {
+func PublishContainerStatusChanged(serverID, serverName, nodeID, status, minecraftVersion, serverType string, port int, joinAddress string) {
 	if DashboardEventPublisher == nil {
 		return
 	}
 
 	data := map[string]interface{}{
-		"server_id":    serverID,
-		"server_name":  serverName,
-		"node_id":      nodeID,
-		"status":       status,
-		"port":         port,
-		"join_address": joinAddress,
-		"timestamp":    time.Now(),
+		"server_id":         serverID,
+		"server_name":       serverName,
+		"node_id":           nodeID,
+		"status":            status,
+		"port":              port,
+		"join_address":      joinAddress,
+		"minecraft_version": minecraftVersion,
+		"server_type":       serverType,
+		"timestamp":         time.Now(),
 	}
 
 	DashboardEventPublisher.PublishEvent("container.status_changed", data)

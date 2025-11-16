@@ -86,6 +86,8 @@ func (r *ContainerRegistry) RegisterContainer(info *ContainerInfo) {
 			info.ServerName,
 			info.NodeID,
 			info.Status,
+			info.MinecraftVersion,
+			info.ServerType,
 			info.MinecraftPort,
 			joinAddress,
 		)

@@ -1234,7 +1234,7 @@ func (c *Conductor) RegisterContainer(serverID, serverName, containerID, nodeID 
 	}
 
 	// Publish container created event to dashboard
-	events.PublishContainerCreated(serverID, serverName, nodeID, ramMB, minecraftPort, status, joinAddress)
+	events.PublishContainerCreated(serverID, serverName, nodeID, ramMB, minecraftPort, status, joinAddress, minecraftVersion, serverType)
 
 	logger.Info("Container registered in registry", map[string]interface{}{
 		"server_id":      serverID,
