@@ -303,6 +303,14 @@ func (ws *DashboardWebSocket) sendInitialState(client *websocket.Conn) {
 					"server_type":       container.ServerType,
 				},
 			}
+
+			// DEBUG: Log what we're sending
+			logger.Debug("WebSocket: Sending container in initial state", map[string]interface{}{
+				"server_id":         container.ServerID,
+				"minecraft_version": container.MinecraftVersion,
+				"server_type":       container.ServerType,
+			})
+
 			ws.sendToClient(client, event)
 		}
 	}
