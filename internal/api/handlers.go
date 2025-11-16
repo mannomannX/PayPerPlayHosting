@@ -222,6 +222,26 @@ func (h *Handler) CleanOrphanedServers(c *gin.Context) {
 	})
 }
 
+// ListArchivedServers handles GET /api/servers/archived
+func (h *Handler) ListArchivedServers(c *gin.Context) {
+	// Get owner ID from auth context (optional - admin can see all)
+	ownerID := ""
+	if userID, exists := c.Get("user_id"); exists {
+		ownerID = userID.(string)
+	}
+
+	servers, err := h.mcService.ListArchivedServers(ownerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch archived servers"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"servers": servers,
+		"count":   len(servers),
+	})
+}
+
 // HealthCheck handles GET /health
 func (h *Handler) HealthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{

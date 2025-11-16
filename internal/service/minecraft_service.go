@@ -1368,6 +1368,11 @@ func (s *MinecraftService) ListAllServers() ([]models.MinecraftServer, error) {
 	return s.repo.FindAll()
 }
 
+// ListArchivedServers lists archived servers (optionally filtered by owner)
+func (s *MinecraftService) ListArchivedServers(ownerID string) ([]models.MinecraftServer, error) {
+	return s.repo.FindArchivedServers(ownerID)
+}
+
 // CleanOrphanedServers removes servers with missing or stopped containers (admin function)
 func (s *MinecraftService) CleanOrphanedServers() (int, error) {
 	servers, err := s.repo.FindAll()

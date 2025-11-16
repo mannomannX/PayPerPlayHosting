@@ -164,9 +164,19 @@ func main() {
 
 	// Initialize Archive Worker for automatic archiving (sleeping > 48h servers)
 	archiveWorker := service.NewArchiveWorker(serverRepo, archiveService)
+
+	// Configure archive settings from environment
+	archiveWorker.SetArchiveAfter(time.Duration(cfg.ArchiveAfterHours) * time.Hour)
+	if scanInterval, err := time.ParseDuration(cfg.ArchiveScanInterval); err == nil {
+		archiveWorker.SetScanInterval(scanInterval)
+	}
+
 	archiveWorker.Start()
 	defer archiveWorker.Stop()
-	logger.Info("Archive worker started (scans every 1h, archives servers sleeping > 48h)", nil)
+	logger.Info("Archive worker started", map[string]interface{}{
+		"archive_after": fmt.Sprintf("%dh", cfg.ArchiveAfterHours),
+		"scan_interval": cfg.ArchiveScanInterval,
+	})
 
 	// Initialize Backup Retention Worker for automatic cleanup of expired backups
 	backupRetentionWorker := service.NewBackupRetentionWorker(backupService)

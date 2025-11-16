@@ -39,7 +39,8 @@
       "Bash(for:*)",
       "Bash(do echo \"=== Check $i ===\")",
       "Bash(done)",
-      "Bash(/tmp/status.json)"
+      "Bash(/tmp/status.json)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

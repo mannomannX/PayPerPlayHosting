@@ -117,6 +117,10 @@ type Config struct {
 	StorageBoxUser     string // Storage Box username (e.g., u123456)
 	StorageBoxPassword string // Storage Box password
 	StorageBoxPath     string // Base path for archives (e.g., /minecraft-archives)
+
+	// Lifecycle Configuration
+	ArchiveAfterHours   int    // How long servers stay sleeping before archiving (hours, default: 48)
+	ArchiveScanInterval string // Archive worker scan interval (default: "1h")
 }
 
 var AppConfig *Config
@@ -218,6 +222,10 @@ func Load() *Config {
 		StorageBoxUser:     getEnv("STORAGE_BOX_USER", ""),
 		StorageBoxPassword: getEnv("STORAGE_BOX_PASSWORD", ""),
 		StorageBoxPath:     getEnv("STORAGE_BOX_PATH", "/minecraft-archives"),
+
+		// Lifecycle Configuration
+		ArchiveAfterHours:   getEnvInt("ARCHIVE_AFTER_HOURS", 48),      // Default: 48 hours
+		ArchiveScanInterval: getEnv("ARCHIVE_SCAN_INTERVAL", "1h"),     // Default: 1 hour
 	}
 
 	AppConfig = config

@@ -46,6 +46,19 @@ func (r *ServerRepository) FindByStatus(status string) ([]models.MinecraftServer
 	return servers, err
 }
 
+func (r *ServerRepository) FindArchivedServers(ownerID string) ([]models.MinecraftServer, error) {
+	var servers []models.MinecraftServer
+	query := r.db.Where("status = ?", models.StatusArchived)
+
+	// If ownerID is provided, filter by owner
+	if ownerID != "" {
+		query = query.Where("owner_id = ?", ownerID)
+	}
+
+	err := query.Order("last_stopped_at DESC").Find(&servers).Error
+	return servers, err
+}
+
 func (r *ServerRepository) FindByPort(port int) (*models.MinecraftServer, error) {
 	var server models.MinecraftServer
 	// Use Unscoped() to check for soft-deleted servers blocking ports

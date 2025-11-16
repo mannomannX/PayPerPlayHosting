@@ -162,6 +162,7 @@ func SetupRouter(
 		{
 			servers.POST("", handler.CreateServer)
 			servers.GET("", handler.ListServers)
+			servers.GET("/archived", handler.ListArchivedServers) // List archived servers
 			servers.GET("/:id", handler.GetServer)
 			servers.GET("/:id/connection", handler.GetServerConnectionInfo) // Connection info (IP + Port)
 			servers.POST("/:id/start", handler.StartServer)
