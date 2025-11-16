@@ -40,7 +40,8 @@
       "Bash(do echo \"=== Check $i ===\")",
       "Bash(done)",
       "Bash(/tmp/status.json)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []
