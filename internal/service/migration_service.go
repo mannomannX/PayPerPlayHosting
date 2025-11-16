@@ -763,7 +763,7 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 	})
 
 	// 1. Create target directory on destination node
-	mkdirCmd := fmt.Sprintf("ssh root@%s 'mkdir -p %s'", targetIP, targetDir)
+	mkdirCmd := fmt.Sprintf("ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'mkdir -p %s'", targetIP, targetDir)
 	if err := s.executeCommand(mkdirCmd); err != nil {
 		return fmt.Errorf("failed to create target directory: %w", err)
 	}
@@ -771,8 +771,9 @@ func (s *MigrationService) syncWorldDataBetweenNodes(sourceIP, targetIP, serverI
 	// 2. Rsync from source to target via SSH
 	// Using rsync with compression and archive mode
 	// Format: rsync -avz -e ssh source_user@source_ip:/path/ target_user@target_ip:/path/
+	// Note: StrictHostKeyChecking disabled for automated migrations between trusted infrastructure
 	rsyncCmd := fmt.Sprintf(
-		"ssh root@%s 'rsync -avz --delete %s root@%s:%s/'",
+		"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@%s 'rsync -avz --delete -e \"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\" %s root@%s:%s/'",
 		sourceIP,   // Connect to source node
 		sourceDir,  // Source directory (with trailing slash to copy contents)
 		targetIP,   // Target node IP
