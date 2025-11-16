@@ -38,6 +38,8 @@ interface ContainerInfo {
   status: string;
   port: number;
   join_address: string;
+  minecraft_version?: string;
+  server_type?: string;
 }
 
 interface MigrationOperation {
@@ -246,6 +248,8 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
                     status: event.status,
                     port: event.port,
                     join_address: event.join_address,
+                    minecraft_version: (event as any).minecraft_version,
+                    server_type: (event as any).server_type,
                   },
                 ],
               },
@@ -280,6 +284,8 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
                   status: event.status,
                   port: event.port,
                   join_address: event.join_address,
+                  minecraft_version: (event as any).minecraft_version || c.minecraft_version,
+                  server_type: (event as any).server_type || c.server_type,
                 }
               : c
           ),
