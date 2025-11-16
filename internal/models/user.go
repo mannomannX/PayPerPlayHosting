@@ -39,6 +39,12 @@ type User struct {
 	LockedUntil         *time.Time `json:"-"`
 	LastPasswordChange  *time.Time `json:"-"`
 
+	// Backup Plan & Limits
+	BackupPlan         string `gorm:"size:20;default:'basic'" json:"backup_plan"` // basic, premium, enterprise
+	MaxBackupsPerDay   int    `gorm:"default:3" json:"max_backups_per_day"`       // Max manual backups/day
+	MaxRestoresPerMonth int   `gorm:"default:5" json:"max_restores_per_month"`   // Max restores/month (0 = unlimited)
+	MaxBackupStorageGB int    `gorm:"default:10" json:"max_backup_storage_gb"`   // Max backup storage quota in GB (0 = unlimited)
+
 	// Relationships - Temporarily commented out for testing
 	// Servers        []MinecraftServer `gorm:"foreignKey:OwnerID" json:"servers,omitempty"`
 	// TrustedDevices []TrustedDevice   `gorm:"foreignKey:UserID" json:"-"`

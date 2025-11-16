@@ -79,6 +79,15 @@ func (r *BackupRepository) Delete(id string) error {
 	return r.db.Delete(&models.Backup{}, "id = ?", id).Error
 }
 
+// FindByUserID finds all backups for a user
+func (r *BackupRepository) FindByUserID(userID string) ([]models.Backup, error) {
+	var backups []models.Backup
+	err := r.db.Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&backups).Error
+	return backups, err
+}
+
 // CountByServerID counts backups for a server
 func (r *BackupRepository) CountByServerID(serverID string) (int64, error) {
 	var count int64

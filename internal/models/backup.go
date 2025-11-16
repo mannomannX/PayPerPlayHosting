@@ -63,10 +63,10 @@ type Backup struct {
 	ErrorMessage string `gorm:"size:1024"`
 
 	// Audit Trail
-	UserID        *string    `gorm:"size:36"` // User who triggered backup (nil for automated)
-	CompletedAt   *time.Time                  // When backup was completed
-	RestoredAt    *time.Time                  // When backup was last restored
-	RestoredCount int        `gorm:"default:0"` // How many times backup was restored
+	UserID        *string    `gorm:"size:36;index"` // User who triggered backup (nil for automated)
+	CompletedAt   *time.Time                        // When backup was completed
+	RestoredAt    *time.Time                        // When backup was last restored
+	RestoredCount int        `gorm:"default:0"`     // How many times backup was restored
 }
 
 // TableName specifies the table name
