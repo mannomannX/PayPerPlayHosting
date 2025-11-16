@@ -32,7 +32,7 @@ func (h *ContainerSyncHandler) SyncContainerMetadata(c *gin.Context) {
 
 	for _, container := range containers {
 		// Fetch server from database
-		server, err := h.serverRepo.GetByID(container.ServerID)
+		server, err := h.serverRepo.FindByID(container.ServerID)
 		if err != nil {
 			logger.Warn("SYNC: Failed to fetch server from DB", map[string]interface{}{
 				"server_id": container.ServerID,
@@ -56,9 +56,7 @@ func (h *ContainerSyncHandler) SyncContainerMetadata(c *gin.Context) {
 
 	// Save updated state to file
 	if err := h.conductor.SaveContainerState("/app/data/container_state.json"); err != nil {
-		logger.Error("SYNC: Failed to save container state", map[string]interface{}{
-			"error": err.Error(),
-		})
+		logger.Error("SYNC: Failed to save container state", err, map[string]interface{}{})
 	}
 
 	c.JSON(http.StatusOK, gin.H{
