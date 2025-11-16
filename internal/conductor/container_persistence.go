@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"time"
 
 	"github.com/payperplay/hosting/pkg/logger"
@@ -181,15 +182,101 @@ func (c *Conductor) RestoreContainersFromState(filePath string, serverRepo inter
 
 // syncContainersOnNode verifies and restores containers on a specific node
 func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []PersistedContainerState, serverRepo interface{}) (int, int) {
-	// For local node, we can check directly
-	// For remote nodes, we need SSH access
-
 	synced := 0
-	lost := 0
+	skipped := 0
+
+	// Type assert serverRepo to access FindByID
+	type serverFinder interface {
+		FindByID(id string) (interface{}, error)
+	}
+
+	finder, ok := serverRepo.(serverFinder)
+	if !ok {
+		logger.Warn("CONTAINER-PERSIST: ServerRepo doesn't support FindByID, restoring without DB check", nil)
+		// Fallback to old behavior if repo doesn't support FindByID
+		for _, container := range expectedContainers {
+			c.ContainerRegistry.RegisterContainer(&ContainerInfo{
+				ServerID:         container.ServerID,
+				ServerName:       container.ServerName,
+				ContainerID:      container.ContainerID,
+				NodeID:           container.NodeID,
+				RAMMb:            container.RAMMb,
+				DockerPort:       container.Port,
+				MinecraftPort:    container.MinecraftPort,
+				MinecraftVersion: container.MinecraftVersion,
+				ServerType:       container.ServerType,
+				Status:           container.Status,
+				LastSeenAt:       time.Now(),
+			})
+			synced++
+		}
+		return synced, 0
+	}
 
 	for _, container := range expectedContainers {
-		// Register container in registry (regardless of actual Docker state)
-		// The health checker will verify if it actually exists
+		// CRITICAL: Check database status before restoring
+		// Persistenz-file might be outdated (e.g. "running" but DB says "sleeping")
+		result, err := finder.FindByID(container.ServerID)
+		if err != nil {
+			logger.Warn("CONTAINER-PERSIST: Server not found in DB, skipping", map[string]interface{}{
+				"server_id": container.ServerID,
+				"error":     err.Error(),
+			})
+			skipped++
+			continue
+		}
+
+		// Extract status from database server object using reflection
+		type serverWithStatus interface {
+			GetStatus() string
+		}
+
+		server, ok := result.(serverWithStatus)
+		if !ok {
+			// Fallback: try to access Status field via reflection
+			serverVal := reflect.ValueOf(result)
+			if serverVal.Kind() == reflect.Ptr {
+				serverVal = serverVal.Elem()
+			}
+			statusField := serverVal.FieldByName("Status")
+			if statusField.IsValid() && statusField.Kind() == reflect.String {
+				dbStatus := statusField.String()
+
+				// ONLY restore containers that are actually running/starting in DB
+				if dbStatus != "running" && dbStatus != "starting" && dbStatus != "provisioning" {
+					logger.Info("CONTAINER-PERSIST: Skipping container with non-running DB status", map[string]interface{}{
+						"server_id":   container.ServerID,
+						"server_name": container.ServerName,
+						"db_status":   dbStatus,
+						"file_status": container.Status,
+					})
+					skipped++
+					continue
+				}
+
+				// Use DB status instead of file status
+				container.Status = dbStatus
+			}
+		} else {
+			dbStatus := server.GetStatus()
+
+			// ONLY restore containers that are actually running/starting in DB
+			if dbStatus != "running" && dbStatus != "starting" && dbStatus != "provisioning" {
+				logger.Info("CONTAINER-PERSIST: Skipping container with non-running DB status", map[string]interface{}{
+					"server_id":   container.ServerID,
+					"server_name": container.ServerName,
+					"db_status":   dbStatus,
+					"file_status": container.Status,
+				})
+				skipped++
+				continue
+			}
+
+			// Use DB status instead of file status
+			container.Status = dbStatus
+		}
+
+		// Register container with ACTUAL status from database
 		c.ContainerRegistry.RegisterContainer(&ContainerInfo{
 			ServerID:         container.ServerID,
 			ServerName:       container.ServerName,
@@ -200,21 +287,27 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 			MinecraftPort:    container.MinecraftPort,
 			MinecraftVersion: container.MinecraftVersion,
 			ServerType:       container.ServerType,
-			Status:           container.Status,
+			Status:           container.Status, // NOW using DB status!
 			LastSeenAt:       time.Now(),
 		})
 
-		logger.Info("CONTAINER-PERSIST: Container restored from state", map[string]interface{}{
+		logger.Info("CONTAINER-PERSIST: Container restored from state with DB status", map[string]interface{}{
 			"server_id":   container.ServerID,
 			"server_name": container.ServerName,
 			"node_id":     container.NodeID,
-			"status":      container.Status,
+			"db_status":   container.Status,
 		})
 
 		synced++
 	}
 
-	return synced, lost
+	logger.Info("CONTAINER-PERSIST: Sync summary", map[string]interface{}{
+		"node_id":  node.ID,
+		"synced":   synced,
+		"skipped":  skipped,
+	})
+
+	return synced, skipped
 }
 
 // markServersAsLost marks servers in database as lost due to node failure
