@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { PageNavigation } from '../components/navigation/PageNavigation';
 
 interface ArchivedServer {
   ID: string;
@@ -96,30 +97,42 @@ export const ArchivedServersPage = () => {
     <div style={{
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      padding: '40px 20px',
     }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          style={{ marginBottom: '32px' }}
-        >
-          <h1 style={{
-            fontSize: '36px',
-            fontWeight: 'bold',
-            color: 'white',
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px',
-          }}>
+      {/* Header with Navigation */}
+      <motion.div
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: '1px solid #334155',
+          padding: '16px 30px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <div>
+          <h1 style={{ color: 'white', margin: 0, fontSize: '24px', fontWeight: 'bold' }}>
             📦 Archived Servers
           </h1>
-          <p style={{ fontSize: '16px', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
-            Servers archived for cost savings (FREE storage). Unarchive to restore in ~30 seconds.
+          <p style={{ color: '#94a3b8', margin: '4px 0 0 0', fontSize: '12px' }}>
+            FREE storage • ~30s restore time
           </p>
-        </motion.div>
+        </div>
+
+        {/* Page Navigation */}
+        <PageNavigation />
+      </motion.div>
+
+      {/* Content */}
+      <div style={{ paddingTop: '100px', padding: '100px 20px 40px 20px' }}>
+        <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
 
         {/* Stats Card */}
         <motion.div
@@ -341,6 +354,7 @@ export const ArchivedServersPage = () => {
             </table>
           </motion.div>
         )}
+        </div>
       </div>
     </div>
   );

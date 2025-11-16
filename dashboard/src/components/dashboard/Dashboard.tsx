@@ -7,6 +7,7 @@ import { GridNode } from '../nodes/GridNode';
 import { ManhattanArrow } from '../arrows/ManhattanArrow';
 import { DebugConsole } from './DebugConsole';
 import { MigrationDropdown } from './MigrationDropdown';
+import { PageNavigation } from '../navigation/PageNavigation';
 
 // WebSocket URL - uses nginx proxy (no port needed, nginx forwards /api/ to backend)
 const WS_URL = `ws://${window.location.hostname}/api/admin/dashboard/stream`;
@@ -107,6 +108,9 @@ export const Dashboard = () => {
             3-Tier Architecture Fleet Monitoring
           </p>
         </div>
+
+        {/* Page Navigation */}
+        <PageNavigation />
 
         {/* Connection Status & Migration Dropdown */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
