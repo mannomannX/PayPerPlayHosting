@@ -224,6 +224,11 @@ func (s *MinecraftService) CreateServer(
 		MaxPlayers:           20,
 	}
 
+	// FIX CONFIG-2: Validate configuration values before creating server
+	if err := server.ValidateConfig(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	// Try to create server record
 	err = s.repo.Create(server)
 	if err != nil {

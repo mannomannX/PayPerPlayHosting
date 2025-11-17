@@ -172,6 +172,7 @@ func (h *BackupHandler) RestoreBackup(c *gin.Context) {
 }
 
 // DeleteBackup handles DELETE /api/backups/:id
+// FIX BACKUP-2: Add authorization check to prevent users from deleting other users' backups
 func (h *BackupHandler) DeleteBackup(c *gin.Context) {
 	backupID := c.Param("id")
 
@@ -180,6 +181,22 @@ func (h *BackupHandler) DeleteBackup(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "backup not found"})
 		return
+	}
+
+	// FIX BACKUP-2: Authorization - verify user owns the server that this backup belongs to
+	userID, exists := c.Get("user_id")
+	if exists {
+		server, err := h.serverRepo.FindByID(backup.ServerID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "backup not found"})
+			return
+		}
+		// Only allow the server owner (or admin) to delete backups
+		isAdmin, _ := c.Get("is_admin")
+		if server.OwnerID != userID.(string) && !isAdmin.(bool) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "you don't have permission to delete this backup"})
+			return
+		}
 	}
 
 	if err := h.backupService.DeleteBackup(backupID); err != nil {

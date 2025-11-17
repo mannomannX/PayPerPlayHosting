@@ -318,6 +318,10 @@ func main() {
 	cond.SetServerStarter(mcService)
 	logger.Info("MinecraftService linked to Conductor as ServerStarter for queue processing", nil)
 
+	// FIX BILLING-2: Link MinecraftService to HealthChecker for auto-stop on crash
+	cond.HealthChecker.SetMinecraftService(mcService)
+	logger.Info("MinecraftService linked to HealthChecker for crash auto-recovery", nil)
+
 	// Link ServerRepo to Conductor for ghost container cleanup
 	cond.SetServerRepo(serverRepo)
 	logger.Info("ServerRepo linked to Conductor for ghost container cleanup (1-minute intervals)", nil)

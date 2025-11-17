@@ -22,6 +22,17 @@ type HealthChecker struct {
 	debugLogBuffer    *DebugLogBuffer
 	interval          time.Duration
 	stopChan          chan struct{}
+
+	// FIX BILLING-2: Track failed Minecraft health checks for auto-recovery
+	crashCounters     map[string]int  // serverID -> consecutive failed checks
+	crashTimestamps   map[string]time.Time // serverID -> first failure time
+	minecraftService  MinecraftServiceInterface // For stopping crashed servers
+}
+
+// MinecraftServiceInterface defines methods needed from MinecraftService
+// Used to avoid circular dependency
+type MinecraftServiceInterface interface {
+	StopServer(serverID string, reason string) error
 }
 
 // NewHealthChecker creates a new health checker
@@ -33,7 +44,15 @@ func NewHealthChecker(nodeRegistry *NodeRegistry, containerRegistry *ContainerRe
 		debugLogBuffer:    debugLogBuffer,
 		interval:          interval,
 		stopChan:          make(chan struct{}),
+		crashCounters:     make(map[string]int),
+		crashTimestamps:   make(map[string]time.Time),
 	}
+}
+
+// SetMinecraftService sets the Minecraft service for auto-recovery
+// Called after initialization to avoid circular dependency
+func (h *HealthChecker) SetMinecraftService(service MinecraftServiceInterface) {
+	h.minecraftService = service
 }
 
 // Start begins the health check loop
@@ -406,6 +425,7 @@ func (h *HealthChecker) getRemoteContainerIDs(ctx context.Context, node *Node) (
 
 // checkMinecraftHealth checks if Minecraft is responding on port 25565 for all running containers
 // FIX #7: Detects when Minecraft crashes internally but the container keeps running
+// FIX BILLING-2: Auto-stop servers that are crashed for >5 minutes
 func (h *HealthChecker) checkMinecraftHealth() {
 	if h.containerRegistry == nil {
 		return
@@ -444,24 +464,84 @@ func (h *HealthChecker) checkMinecraftHealth() {
 
 		if err != nil {
 			// Port not responding - Minecraft might be crashed
-			logger.Warn("MC-HEALTH: Minecraft not responding on port", map[string]interface{}{
-				"server_id":      container.ServerID,
-				"server_name":    container.ServerName,
-				"node_id":        container.NodeID,
-				"minecraft_port": container.MinecraftPort,
-				"address":        address,
-				"error":          err.Error(),
-			})
-
-			// TODO: Consider auto-recovery (restart container or mark server as unhealthy)
-			// For now, we just log the warning so admins can investigate
+			// FIX BILLING-2: Track consecutive failures and auto-stop if crashed
+			h.handleMinecraftCrash(container, address, err)
 		} else {
 			// Successfully connected - Minecraft is responding
 			conn.Close()
+
+			// Reset crash counter if server recovered
+			if h.crashCounters[container.ServerID] > 0 {
+				logger.Info("MC-HEALTH: Server recovered", map[string]interface{}{
+					"server_id":           container.ServerID,
+					"server_name":         container.ServerName,
+					"previous_failures":   h.crashCounters[container.ServerID],
+				})
+				delete(h.crashCounters, container.ServerID)
+				delete(h.crashTimestamps, container.ServerID)
+			}
+
 			logger.Debug("MC-HEALTH: Minecraft port responding", map[string]interface{}{
 				"server_id":      container.ServerID,
 				"minecraft_port": container.MinecraftPort,
 			})
 		}
+	}
+}
+
+// handleMinecraftCrash handles a detected Minecraft crash
+// FIX BILLING-2: Auto-stop crashed servers after 5 minutes of consecutive failures
+func (h *HealthChecker) handleMinecraftCrash(container *ContainerInfo, address string, connErr error) {
+	serverID := container.ServerID
+
+	// Increment crash counter
+	h.crashCounters[serverID]++
+
+	// Track first failure timestamp
+	if h.crashCounters[serverID] == 1 {
+		h.crashTimestamps[serverID] = time.Now()
+	}
+
+	crashDuration := time.Since(h.crashTimestamps[serverID])
+	failureCount := h.crashCounters[serverID]
+
+	logger.Warn("MC-HEALTH: Minecraft not responding on port", map[string]interface{}{
+		"server_id":      serverID,
+		"server_name":    container.ServerName,
+		"node_id":        container.NodeID,
+		"minecraft_port": container.MinecraftPort,
+		"address":        address,
+		"error":          connErr.Error(),
+		"failure_count":  failureCount,
+		"crash_duration": crashDuration.String(),
+	})
+
+	// FIX BILLING-2: Auto-stop server if crashed for >5 minutes (5 consecutive failed checks at 60s intervals)
+	// This prevents billing users for non-functional servers
+	if failureCount >= 5 && h.minecraftService != nil {
+		logger.Error("MC-HEALTH: Server crashed for >5 minutes - auto-stopping", fmt.Errorf("minecraft unresponsive"), map[string]interface{}{
+			"server_id":      serverID,
+			"server_name":    container.ServerName,
+			"failure_count":  failureCount,
+			"crash_duration": crashDuration.String(),
+		})
+
+		// Stop the server (this will also stop billing)
+		go func() {
+			if err := h.minecraftService.StopServer(serverID, "crashed"); err != nil {
+				logger.Error("MC-HEALTH: Failed to auto-stop crashed server", err, map[string]interface{}{
+					"server_id": serverID,
+				})
+			} else {
+				logger.Info("MC-HEALTH: Crashed server stopped successfully", map[string]interface{}{
+					"server_id":      serverID,
+					"crash_duration": crashDuration.String(),
+				})
+
+				// Clear counters after successful stop
+				delete(h.crashCounters, serverID)
+				delete(h.crashTimestamps, serverID)
+			}
+		}()
 	}
 }

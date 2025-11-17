@@ -44,6 +44,15 @@ func (h *Handler) CreateServer(c *gin.Context) {
 		return
 	}
 
+	// FIX SERVER-3: Validate Minecraft version format (X.Y or X.Y.Z)
+	versionRegex := regexp.MustCompile(`^1\.\d{1,2}(\.\d{1,2})?$`)
+	if !versionRegex.MatchString(req.MinecraftVersion) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid Minecraft version format. Expected format: 1.20 or 1.20.4",
+		})
+		return
+	}
+
 	// Validate server type
 	serverType := models.ServerType(req.ServerType)
 	validTypes := []models.ServerType{

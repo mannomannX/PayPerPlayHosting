@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"gorm.io/gorm"
@@ -208,6 +209,87 @@ func (s *MinecraftServer) AllowsConsolidation() bool {
 	}
 
 	return true
+}
+
+// ValidateConfig validates server configuration values
+// FIX CONFIG-2: Prevent invalid config values that could crash the server
+func (s *MinecraftServer) ValidateConfig() error {
+	// Validate MaxPlayers (1-1000)
+	if s.MaxPlayers < 1 || s.MaxPlayers > 1000 {
+		return fmt.Errorf("max_players must be between 1 and 1000, got %d", s.MaxPlayers)
+	}
+
+	// Validate ViewDistance (2-32 chunks)
+	if s.ViewDistance < 2 || s.ViewDistance > 32 {
+		return fmt.Errorf("view_distance must be between 2 and 32, got %d", s.ViewDistance)
+	}
+
+	// Validate SimulationDistance (3-32 chunks, Minecraft 1.18+)
+	if s.SimulationDistance < 3 || s.SimulationDistance > 32 {
+		return fmt.Errorf("simulation_distance must be between 3 and 32, got %d", s.SimulationDistance)
+	}
+
+	// Validate SpawnProtection (0-999)
+	if s.SpawnProtection < 0 || s.SpawnProtection > 999 {
+		return fmt.Errorf("spawn_protection must be between 0 and 999, got %d", s.SpawnProtection)
+	}
+
+	// Validate MaxTickTime (minimum 100ms, max 10 minutes)
+	if s.MaxTickTime < 100 || s.MaxTickTime > 600000 {
+		return fmt.Errorf("max_tick_time must be between 100 and 600000 ms, got %d", s.MaxTickTime)
+	}
+
+	// Validate NetworkCompressionThreshold (-1 to disable, or 0-65536)
+	if s.NetworkCompressionThreshold < -1 || s.NetworkCompressionThreshold > 65536 {
+		return fmt.Errorf("network_compression_threshold must be between -1 and 65536, got %d", s.NetworkCompressionThreshold)
+	}
+
+	// Validate Gamemode
+	validGamemodes := map[string]bool{
+		"survival":  true,
+		"creative":  true,
+		"adventure": true,
+		"spectator": true,
+	}
+	if !validGamemodes[s.Gamemode] {
+		return fmt.Errorf("gamemode must be one of: survival, creative, adventure, spectator, got %s", s.Gamemode)
+	}
+
+	// Validate Difficulty
+	validDifficulties := map[string]bool{
+		"peaceful": true,
+		"easy":     true,
+		"normal":   true,
+		"hard":     true,
+	}
+	if !validDifficulties[s.Difficulty] {
+		return fmt.Errorf("difficulty must be one of: peaceful, easy, normal, hard, got %s", s.Difficulty)
+	}
+
+	// Validate WorldType
+	validWorldTypes := map[string]bool{
+		"default":              true,
+		"flat":                 true,
+		"largeBiomes":          true,
+		"amplified":            true,
+		"buffet":               true,
+		"single_biome_surface": true,
+	}
+	if !validWorldTypes[s.WorldType] {
+		return fmt.Errorf("world_type must be one of: default, flat, largeBiomes, amplified, buffet, single_biome_surface, got %s", s.WorldType)
+	}
+
+	// Validate MaxWorldSize (1-29999984, default is 29999984)
+	if s.MaxWorldSize < 1 || s.MaxWorldSize > 29999984 {
+		return fmt.Errorf("max_world_size must be between 1 and 29999984, got %d", s.MaxWorldSize)
+	}
+
+	// Validate IdleTimeoutSeconds (minimum 60s = 1 minute, max 24h)
+	if s.IdleTimeoutSeconds < 60 || s.IdleTimeoutSeconds > 86400 {
+		return fmt.Errorf("idle_timeout_seconds must be between 60 and 86400, got %d", s.IdleTimeoutSeconds)
+	}
+
+	return nil
 }
 
 // GetTierDisplayName returns the human-readable tier name
