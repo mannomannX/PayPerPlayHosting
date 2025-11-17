@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/payperplay/hosting/internal/models"
@@ -200,6 +202,25 @@ func (s *ArchiveService) UnarchiveServer(serverID string) error {
 		"archive_size": server.ArchiveSize,
 	})
 
+	// GAP-7: Validate archive integrity BEFORE extraction
+	logger.Info("GAP-7: Validating archive integrity", map[string]interface{}{
+		"server_id": serverID,
+		"archive":   localArchivePath,
+	})
+
+	if err := s.validateArchiveIntegrity(localArchivePath); err != nil {
+		logger.Error("GAP-7: Archive validation failed - archive is corrupted", err, map[string]interface{}{
+			"server_id": serverID,
+			"archive":   localArchivePath,
+		})
+		// TODO: Fallback to backup if available
+		return fmt.Errorf("archive validation failed: %w", err)
+	}
+
+	logger.Info("GAP-7: Archive integrity validated successfully", map[string]interface{}{
+		"server_id": serverID,
+	})
+
 	// Step 2: Extract archive (FIX #3: Atomic restore)
 	// Extract to temp directory first to prevent data loss on failure
 	tempDataPath := filepath.Join(config.AppConfig.ServersBasePath, fmt.Sprintf(".%s.tmp", serverID))
@@ -227,6 +248,26 @@ func (s *ArchiveService) UnarchiveServer(serverID string) error {
 		os.RemoveAll(tempDataPath)
 		return fmt.Errorf("extraction validation failed: directory empty or unreadable")
 	}
+
+	// GAP-7: Validate critical Minecraft files exist after extraction
+	logger.Info("GAP-7: Validating extracted Minecraft world data", map[string]interface{}{
+		"server_id": serverID,
+		"temp_path": tempDataPath,
+	})
+
+	if err := s.validateMinecraftWorld(tempDataPath); err != nil {
+		logger.Error("GAP-7: Extracted world validation failed - critical files missing", err, map[string]interface{}{
+			"server_id": serverID,
+			"temp_path": tempDataPath,
+		})
+		os.RemoveAll(tempDataPath)
+		// TODO: Fallback to backup if available
+		return fmt.Errorf("world validation failed: %w", err)
+	}
+
+	logger.Info("GAP-7: Extracted world validated successfully", map[string]interface{}{
+		"server_id": serverID,
+	})
 
 	logger.Info("ARCHIVE: Archive extracted to temp directory, performing atomic swap", map[string]interface{}{
 		"server_id":  serverID,
@@ -581,4 +622,61 @@ func (s *ArchiveService) clearArchiveMetadata(serverID string) error {
 	})
 
 	return s.serverRepo.Update(server)
+}
+
+// GAP-7: validateArchiveIntegrity checks if archive is valid before extraction
+// Uses tar -tzf to list contents without extracting (integrity check)
+func (s *ArchiveService) validateArchiveIntegrity(archivePath string) error {
+	cmd := exec.Command("tar", "-tzf", archivePath)
+
+	// Run command and check if it succeeds
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("archive integrity check failed: %w (output: %s)", err, string(output))
+	}
+
+	// Check if archive contains any files
+	if len(output) == 0 {
+		return fmt.Errorf("archive is empty")
+	}
+
+	logger.Debug("GAP-7: Archive integrity validated", map[string]interface{}{
+		"archive": archivePath,
+		"files":   strings.Count(string(output), "\n"),
+	})
+
+	return nil
+}
+
+// GAP-7: validateMinecraftWorld checks if extracted world has critical files
+// Validates that the world is usable and not corrupted
+func (s *ArchiveService) validateMinecraftWorld(worldPath string) error {
+	// Check for level.dat (critical file containing world metadata)
+	levelDatPath := filepath.Join(worldPath, "level.dat")
+	if _, err := os.Stat(levelDatPath); os.IsNotExist(err) {
+		return fmt.Errorf("critical file missing: level.dat")
+	}
+
+	// Check for world data directory (region/ or other dimensions)
+	// Minecraft worlds should have at least ONE of: region/, DIM-1/, DIM1/
+	hasDimension := false
+	checkDirs := []string{"region", "DIM-1", "DIM1"}
+
+	for _, dir := range checkDirs {
+		dimPath := filepath.Join(worldPath, dir)
+		if stat, err := os.Stat(dimPath); err == nil && stat.IsDir() {
+			hasDimension = true
+			break
+		}
+	}
+
+	if !hasDimension {
+		return fmt.Errorf("no world dimension data found (missing region/, DIM-1/, DIM1/)")
+	}
+
+	logger.Debug("GAP-7: Minecraft world validated", map[string]interface{}{
+		"world_path": worldPath,
+	})
+
+	return nil
 }

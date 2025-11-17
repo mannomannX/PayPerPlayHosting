@@ -15,6 +15,11 @@ type QueuedServer struct {
 	RequiredRAMMB int
 	QueuedAt      time.Time
 	UserID        string
+	// GAP-5: Retry tracking for queue poisoning prevention
+	RetryCount    int       // Number of retry attempts (0 = first attempt)
+	FirstQueuedAt time.Time // Original queue time (never changes)
+	LastRetryAt   time.Time // Last time we attempted to start
+	NextRetryAt   time.Time // When we can retry next (exponential backoff)
 }
 
 // StartQueue manages servers waiting for available capacity
@@ -35,16 +40,50 @@ func (q *StartQueue) Enqueue(server *QueuedServer) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	// Check if server is already queued (prevent duplicates)
-	for _, s := range q.queue {
+	// GAP-5: Check if server is already queued (retry case)
+	for i, s := range q.queue {
 		if s.ServerID == server.ServerID {
-			logger.Warn("Server already in queue, skipping", map[string]interface{}{
-				"server_id":   server.ServerID,
-				"server_name": server.ServerName,
+			// This is a retry - update retry tracking
+			s.RetryCount++
+			s.LastRetryAt = time.Now()
+
+			// Calculate exponential backoff: 1min, 2min, 4min
+			backoffDurations := []time.Duration{
+				1 * time.Minute,  // First retry after 1min
+				2 * time.Minute,  // Second retry after 2min
+				4 * time.Minute,  // Third retry after 4min
+			}
+
+			backoffIndex := s.RetryCount - 1
+			if backoffIndex >= len(backoffDurations) {
+				backoffIndex = len(backoffDurations) - 1
+			}
+			s.NextRetryAt = time.Now().Add(backoffDurations[backoffIndex])
+
+			// Update the queue entry in place
+			q.queue[i] = s
+
+			logger.Info("GAP-5: Server retry queued with exponential backoff", map[string]interface{}{
+				"server_id":     server.ServerID,
+				"server_name":   server.ServerName,
+				"retry_count":   s.RetryCount,
+				"next_retry_at": s.NextRetryAt,
+				"backoff":       backoffDurations[backoffIndex].String(),
 			})
+
+			// Publish queue update events
+			events.PublishQueueUpdated(len(q.queue), q.queue)
 			return
 		}
 	}
+
+	// First time queuing - initialize tracking fields
+	now := time.Now()
+	server.FirstQueuedAt = now
+	server.QueuedAt = now
+	server.LastRetryAt = now
+	server.RetryCount = 0
+	server.NextRetryAt = now // Can process immediately
 
 	q.queue = append(q.queue, server)
 

@@ -875,19 +875,58 @@ func (c *Conductor) ProcessStartQueue() {
 			break // Queue empty
 		}
 
+		// GAP-5: Check retry limit FIRST before timeout check
+		// Max 3 retries (retry_count = 0, 1, 2, 3 → fail at 4)
+		const maxRetries = 3
+		if queuedServer.RetryCount > maxRetries {
+			// Dequeue and mark as failed - exceeded retry limit
+			server := c.StartQueue.Dequeue()
+			totalWaitTime := time.Since(server.FirstQueuedAt)
+			logger.Error("GAP-5: Server removed from queue after exceeding retry limit", fmt.Errorf("max retries exceeded"), map[string]interface{}{
+				"server_id":       server.ServerID,
+				"server_name":     server.ServerName,
+				"retry_count":     server.RetryCount,
+				"max_retries":     maxRetries,
+				"first_queued_at": server.FirstQueuedAt,
+				"total_wait_time": totalWaitTime.String(),
+			})
+
+			// Publish failure event to notify user
+			events.PublishServerStartFailed(server.ServerID, server.ServerName,
+				fmt.Sprintf("Server failed to start after %d retry attempts (total wait: %v) - no capacity available", server.RetryCount, totalWaitTime))
+
+			// Continue to next item in queue
+			continue
+		}
+
+		// GAP-5: Check if server is ready to retry (exponential backoff)
+		if time.Now().Before(queuedServer.NextRetryAt) {
+			waitRemaining := time.Until(queuedServer.NextRetryAt)
+			logger.Debug("GAP-5: Server not ready for retry yet (backoff)", map[string]interface{}{
+				"server_id":       queuedServer.ServerID,
+				"retry_count":     queuedServer.RetryCount,
+				"next_retry_at":   queuedServer.NextRetryAt,
+				"wait_remaining":  waitRemaining.String(),
+			})
+			// Skip this server for now - it's still in backoff period
+			// Don't break - check if there are other servers ready in the queue
+			break // Actually, break for now since we process FIFO
+		}
+
 		// FIX #10: Queue Timeout - Remove servers that have been queued too long
-		// Timeout after 10 minutes to prevent indefinite waiting
+		// Timeout after 10 minutes total (from FirstQueuedAt)
 		queueTimeout := 10 * time.Minute
-		queueAge := time.Since(queuedServer.QueuedAt)
+		queueAge := time.Since(queuedServer.FirstQueuedAt)
 		if queueAge > queueTimeout {
 			// Dequeue and mark as failed
 			server := c.StartQueue.Dequeue()
 			logger.Error("QUEUE-TIMEOUT: Server removed from queue after timeout", fmt.Errorf("queue timeout"), map[string]interface{}{
-				"server_id":     server.ServerID,
-				"server_name":   server.ServerName,
-				"queued_at":     server.QueuedAt,
-				"queue_age":     queueAge.String(),
-				"timeout":       queueTimeout.String(),
+				"server_id":       server.ServerID,
+				"server_name":     server.ServerName,
+				"first_queued_at": server.FirstQueuedAt,
+				"queue_age":       queueAge.String(),
+				"timeout":         queueTimeout.String(),
+				"retry_count":     server.RetryCount,
 			})
 
 			// Publish timeout event to notify user
@@ -1308,6 +1347,38 @@ func (c *Conductor) MigrateServer(serverID, fromNodeID, toNodeID string, velocit
 	if container.NodeID != fromNodeID {
 		return fmt.Errorf("server %s is not on node %s (currently on %s)",
 			serverID, fromNodeID, container.NodeID)
+	}
+
+	// GAP-8: Recheck player count immediately before migration
+	// Prevents migrating servers where players connected after initial idle check
+	logger.Info("GAP-8: Rechecking player count before migration", map[string]interface{}{
+		"server_id":   serverID,
+		"server_name": container.ServerName,
+	})
+
+	if velocityClient != nil {
+		playerCount, err := velocityClient.GetPlayerCount(container.ServerName)
+		if err != nil {
+			logger.Warn("GAP-8: Failed to check player count via Velocity (continuing migration)", map[string]interface{}{
+				"server_name": container.ServerName,
+				"error":       err.Error(),
+			})
+		} else if playerCount > 0 {
+			// Players online - abort migration
+			logger.Warn("GAP-8: Aborting migration - players connected during consolidation check", map[string]interface{}{
+				"server_id":    serverID,
+				"server_name":  container.ServerName,
+				"player_count": playerCount,
+			})
+			events.PublishMigrationFailed(operationID, serverID, fmt.Sprintf("Migration aborted - %d players online", playerCount))
+			return fmt.Errorf("migration aborted: %d players online", playerCount)
+		}
+
+		logger.Info("GAP-8: Player check passed - no players online, proceeding with migration", map[string]interface{}{
+			"server_id": serverID,
+		})
+	} else {
+		logger.Debug("GAP-8: Velocity client not available, skipping player check", nil)
 	}
 
 	// Publish migration started event

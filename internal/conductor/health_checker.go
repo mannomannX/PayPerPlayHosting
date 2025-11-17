@@ -241,7 +241,7 @@ func (h *HealthChecker) checkRemoteNodeHealth(ctx context.Context, node *Node) N
 	}
 
 	// 2. Resource Availability Check (RAM, CPU, Disk)
-	resourcesOK, err := h.checkRemoteNodeResources(ctx, remoteNode, node)
+	diskUsage, err := h.checkRemoteNodeResources(ctx, remoteNode, node)
 	if err != nil {
 		logger.Warn("Failed to check remote node resources", map[string]interface{}{
 			"node_id": node.ID,
@@ -249,35 +249,58 @@ func (h *HealthChecker) checkRemoteNodeHealth(ctx context.Context, node *Node) N
 		})
 		// Don't mark as unhealthy if resource check fails, just log warning
 		// This prevents false-positives if the resource check command fails
-	} else if !resourcesOK {
-		logger.Warn("Remote node has low resources", map[string]interface{}{
-			"node_id": node.ID,
+	}
+
+	// GAP-6: Disk Full Monitoring - Mark node as draining if disk > 90%
+	if diskUsage > 90 {
+		if diskUsage > 95 {
+			// CRITICAL: Disk almost full
+			logger.Error("GAP-6: CRITICAL - Node disk almost full, marking as draining", fmt.Errorf("disk usage critical"), map[string]interface{}{
+				"node_id":    node.ID,
+				"hostname":   node.Hostname,
+				"disk_usage": diskUsage,
+			})
+		} else {
+			// WARNING: Disk filling up
+			logger.Warn("GAP-6: Node disk filling up, marking as draining", map[string]interface{}{
+				"node_id":    node.ID,
+				"hostname":   node.Hostname,
+				"disk_usage": diskUsage,
+			})
+		}
+
+		// Mark node as draining to prevent new containers
+		node.LifecycleState = NodeStateDraining
+
+		logger.Info("GAP-6: Node marked as draining due to high disk usage", map[string]interface{}{
+			"node_id":    node.ID,
+			"hostname":   node.Hostname,
+			"disk_usage": diskUsage,
 		})
-		// Don't mark as unhealthy, but log the warning
-		// Node selection should handle resource constraints via RAM allocation
 	}
 
 	logger.Debug("Remote node health check passed", map[string]interface{}{
 		"node_id":    node.ID,
 		"ip_address": node.IPAddress,
+		"disk_usage": diskUsage,
 	})
 	return NodeStatusHealthy
 }
 
 // checkRemoteNodeResources checks if a remote node has sufficient resources
-// Returns true if resources are OK, false if critically low
-func (h *HealthChecker) checkRemoteNodeResources(ctx context.Context, remoteNode *docker.RemoteNode, node *Node) (bool, error) {
+// Returns disk usage percentage (0-100) and error
+func (h *HealthChecker) checkRemoteNodeResources(ctx context.Context, remoteNode *docker.RemoteNode, node *Node) (int, error) {
 	// Execute 'free -m' to check available RAM
 	cmd := "free -m | awk 'NR==2{printf \"%d\", $7}'"
 	output, err := h.executeRemoteCommand(ctx, remoteNode, cmd)
 	if err != nil {
-		return false, fmt.Errorf("failed to check RAM: %w", err)
+		return 0, fmt.Errorf("failed to check RAM: %w", err)
 	}
 
 	// Parse available RAM
 	availableRAM, err := strconv.Atoi(strings.TrimSpace(output))
 	if err != nil {
-		return false, fmt.Errorf("failed to parse RAM value: %w", err)
+		return 0, fmt.Errorf("failed to parse RAM value: %w", err)
 	}
 
 	// Check if available RAM is critically low (< 500MB)
@@ -286,29 +309,19 @@ func (h *HealthChecker) checkRemoteNodeResources(ctx context.Context, remoteNode
 			"node_id":       node.ID,
 			"available_ram": availableRAM,
 		})
-		return false, nil
 	}
 
 	// Execute 'df -h /' to check disk usage
 	cmd = "df -h / | awk 'NR==2{print $5}' | sed 's/%//'"
 	output, err = h.executeRemoteCommand(ctx, remoteNode, cmd)
 	if err != nil {
-		return false, fmt.Errorf("failed to check disk usage: %w", err)
+		return 0, fmt.Errorf("failed to check disk usage: %w", err)
 	}
 
 	// Parse disk usage percentage
 	diskUsage, err := strconv.Atoi(strings.TrimSpace(output))
 	if err != nil {
-		return false, fmt.Errorf("failed to parse disk usage: %w", err)
-	}
-
-	// Check if disk usage is critically high (> 90%)
-	if diskUsage > 90 {
-		logger.Warn("Remote node has critically high disk usage", map[string]interface{}{
-			"node_id":    node.ID,
-			"disk_usage": diskUsage,
-		})
-		return false, nil
+		return 0, fmt.Errorf("failed to parse disk usage: %w", err)
 	}
 
 	logger.Debug("Remote node resource check passed", map[string]interface{}{
@@ -317,7 +330,7 @@ func (h *HealthChecker) checkRemoteNodeResources(ctx context.Context, remoteNode
 		"disk_usage":    diskUsage,
 	})
 
-	return true, nil
+	return diskUsage, nil
 }
 
 // executeRemoteCommand executes a command on a remote node via SSH
