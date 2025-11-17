@@ -231,6 +231,24 @@ func (s *MinecraftService) CreateServer(
 		IdleTimeoutSeconds:   s.cfg.DefaultIdleTimeout,
 		AutoShutdownEnabled:  true,
 		MaxPlayers:           20,
+		// Set defaults explicitly for validation (GORM defaults only apply on DB insert)
+		ViewDistance:                10,
+		SimulationDistance:          10,
+		SpawnProtection:             16,
+		MaxTickTime:                 60000,
+		NetworkCompressionThreshold: 256,
+		Gamemode:                    "survival",
+		Difficulty:                  "normal",
+		PVP:                         true,
+		AllowNether:                 true,
+		AllowEnd:                    true,
+		GenerateStructures:          true,
+		WorldType:                   "default",
+		SpawnAnimals:                true,
+		SpawnMonsters:               true,
+		SpawnNPCs:                   true,
+		MaxWorldSize:                29999984,
+		MOTD:                        "A Minecraft Server",
 	}
 
 	// FIX CONFIG-2: Validate configuration values before creating server
