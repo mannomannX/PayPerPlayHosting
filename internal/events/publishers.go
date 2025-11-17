@@ -24,6 +24,19 @@ func PublishServerStarted(serverID, userID string) {
 	})
 }
 
+// PublishServerStartFailed publishes a server start failed event
+func PublishServerStartFailed(serverID, serverName, reason string) {
+	GetEventBus().Publish(Event{
+		Type:     EventServerStartFailed,
+		Source:   "conductor",
+		ServerID: serverID,
+		Data: map[string]interface{}{
+			"server_name": serverName,
+			"reason":      reason,
+		},
+	})
+}
+
 // PublishServerStopped publishes a server stopped event
 func PublishServerStopped(serverID, reason string) {
 	GetEventBus().Publish(Event{

@@ -14,6 +14,7 @@ const (
 	// Server lifecycle events
 	EventServerCreated       EventType = "server.created"
 	EventServerStarted       EventType = "server.started"
+	EventServerStartFailed   EventType = "server.start_failed"
 	EventServerStopped       EventType = "server.stopped"
 	EventServerDeleted       EventType = "server.deleted"
 	EventServerCrashed       EventType = "server.crashed"
