@@ -41,6 +41,7 @@ func (n *RemoteNode) GetIPAddress() string {
 }
 
 // StartContainer creates and starts a Docker container on a remote node
+// LIFECYCLE AWARE: Checks if container exists (sleeping phase) and uses 'docker start' if so
 func (r *RemoteDockerClient) StartContainer(
 	ctx context.Context,
 	node *RemoteNode,
@@ -51,11 +52,53 @@ func (r *RemoteDockerClient) StartContainer(
 	binds []string,               // volume binds
 	ramMB int,
 ) (string, error) {
+	// LIFECYCLE FIX: Check if container already exists (sleeping/stopped state)
+	checkCmd := fmt.Sprintf("docker ps -a --filter name=^/%s$ --format '{{.ID}}|{{.State}}'", containerName)
+	checkOutput, checkErr := r.executeSSHCommand(ctx, node, checkCmd)
+
+	if checkErr == nil && strings.TrimSpace(checkOutput) != "" {
+		// Container exists! Parse ID and state
+		parts := strings.Split(strings.TrimSpace(checkOutput), "|")
+		if len(parts) == 2 {
+			existingContainerID := parts[0]
+			containerState := parts[1]
+
+			log.Printf("[RemoteDocker] Container %s already exists on node %s (state: %s)", containerName, node.ID, containerState)
+
+			if containerState == "exited" || containerState == "created" {
+				// Container is stopped - WARM RESTART using docker start
+				log.Printf("[RemoteDocker] WARM RESTART: Starting existing container %s on node %s", containerName, node.ID)
+
+				startCmd := fmt.Sprintf("docker start %s && docker ps --filter id=%s --format '{{.ID}}'", existingContainerID, existingContainerID)
+				startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+				defer cancel()
+
+				startOutput, startErr := r.executeSSHCommand(startCtx, node, startCmd)
+				if startErr != nil {
+					log.Printf("[RemoteDocker] ERROR: Failed to start existing container %s: %v", containerName, startErr)
+					return "", fmt.Errorf("failed to start existing container on node %s: %w", node.ID, startErr)
+				}
+
+				containerID := strings.TrimSpace(startOutput)
+				if containerID == "" {
+					return "", fmt.Errorf("docker start succeeded but container ID not returned")
+				}
+
+				log.Printf("[RemoteDocker] SUCCESS: Warm restart of container %s on node %s (ID: %s)", containerName, node.ID, containerID[:12])
+				return containerID, nil
+			} else if containerState == "running" {
+				// Container already running - just return ID
+				log.Printf("[RemoteDocker] Container %s already running on node %s", containerName, node.ID)
+				return existingContainerID, nil
+			}
+		}
+	}
+
+	// Container doesn't exist - COLD START using docker run
+	log.Printf("[RemoteDocker] COLD START: Creating new container %s on node %s", containerName, node.ID)
+
 	// Build docker run command
 	cmd := r.buildDockerRunCommand(containerName, imageName, env, portBindings, binds, ramMB)
-
-	// Log the SSH command for debugging (truncate env vars for security)
-	log.Printf("[RemoteDocker] Executing docker run on node %s for container %s", node.ID, containerName)
 
 	// Execute command via SSH with timeout context
 	// Add 120-second timeout for container creation (allows time for image pull)
