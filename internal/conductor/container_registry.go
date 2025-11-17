@@ -19,6 +19,7 @@ type ContainerInfo struct {
 	NodeID           string    `json:"node_id"`
 	RAMMb            int       `json:"ram_mb"`
 	Status           string    `json:"status"`
+	PlanType         string    `json:"plan_type"` // payperplay, balanced, reserved
 	LastSeenAt       time.Time `json:"last_seen_at"`
 	DockerPort       int       `json:"docker_port"`
 	MinecraftPort    int       `json:"minecraft_port"`
@@ -189,20 +190,37 @@ func (r *ContainerRegistry) RemoveContainersByNode(nodeID string) {
 }
 
 // GetNodeAllocation returns the total RAM allocated on a specific node
-// Only counts containers that are ACTIVELY using RAM (running, starting, provisioning)
-// Sleeping/stopped containers don't consume RAM and shouldn't block capacity
+// Plan-based RAM reservation:
+// - Active containers (running/starting/provisioning): ALWAYS count RAM
+// - Sleeping containers with reserved plan: COUNT RAM (guaranteed quick wake)
+// - Sleeping containers with payperplay plan: DON'T count RAM (free capacity)
 func (r *ContainerRegistry) GetNodeAllocation(nodeID string) (containerCount int, allocatedRAMMB int) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	for _, container := range r.containers {
 		if container.NodeID == nodeID {
-			// Only count containers that actively consume RAM
+			shouldCountRAM := false
+
+			// Active containers ALWAYS consume RAM
 			if container.Status == "running" || container.Status == "starting" || container.Status == "provisioning" {
+				shouldCountRAM = true
+			}
+
+			// Sleeping containers: plan-based decision
+			if container.Status == "sleeping" || container.Status == "stopped" {
+				// Reserved plan: keep RAM allocated for guaranteed quick wake
+				if container.PlanType == "reserved" {
+					shouldCountRAM = true
+				}
+				// PayPerPlay/Balanced: free RAM, accept best-effort wake
+				// (will archive quickly anyway - 10min window)
+			}
+
+			if shouldCountRAM {
 				containerCount++
 				allocatedRAMMB += container.RAMMb
 			}
-			// Sleeping/stopped containers remain in registry for quick wake, but don't block capacity
 		}
 	}
 	return
@@ -265,9 +283,16 @@ func (r *ContainerRegistry) GetNodeStats(nodeID string) NodeStats {
 		if container.NodeID == nodeID {
 			stats.TotalContainers++
 
-			// Only count RAM for active containers (running/starting/provisioning)
-			// Sleeping/stopped containers are tracked but don't consume RAM
+			// Plan-based RAM counting (same logic as GetNodeAllocation)
+			shouldCountRAM := false
 			if container.Status == "running" || container.Status == "starting" || container.Status == "provisioning" {
+				shouldCountRAM = true
+			}
+			if (container.Status == "sleeping" || container.Status == "stopped") && container.PlanType == "reserved" {
+				shouldCountRAM = true
+			}
+
+			if shouldCountRAM {
 				stats.TotalRAMMB += container.RAMMb
 			}
 
@@ -302,9 +327,16 @@ func (r *ContainerRegistry) GetAllNodeStats() map[string]NodeStats {
 
 		stats.TotalContainers++
 
-		// Only count RAM for active containers (running/starting/provisioning)
-		// Sleeping/stopped containers are tracked but don't consume RAM
+		// Plan-based RAM counting (same logic as GetNodeAllocation)
+		shouldCountRAM := false
 		if container.Status == "running" || container.Status == "starting" || container.Status == "provisioning" {
+			shouldCountRAM = true
+		}
+		if (container.Status == "sleeping" || container.Status == "stopped") && container.PlanType == "reserved" {
+			shouldCountRAM = true
+		}
+
+		if shouldCountRAM {
 			stats.TotalRAMMB += container.RAMMb
 		}
 

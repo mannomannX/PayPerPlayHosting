@@ -705,6 +705,7 @@ func (s *MigrationService) phaseCompleting(migration *models.Migration) error {
 			"running",
 			server.MinecraftVersion,  // Add version for dashboard display
 			string(server.ServerType), // Add type for dashboard display
+			server.Plan,              // Plan-based RAM reservation
 		)
 	}
 

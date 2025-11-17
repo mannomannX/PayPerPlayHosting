@@ -195,7 +195,7 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 
 		if !findByIDMethod.IsValid() {
 			logger.Warn("CONTAINER-PERSIST: ServerRepo doesn't have FindByID method, restoring without DB check", nil)
-			// Fallback: register container as-is
+			// Fallback: register container as-is (default to payperplay plan)
 			c.ContainerRegistry.RegisterContainer(&ContainerInfo{
 				ServerID:         container.ServerID,
 				ServerName:       container.ServerName,
@@ -207,6 +207,7 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 				MinecraftVersion: container.MinecraftVersion,
 				ServerType:       container.ServerType,
 				Status:           container.Status,
+				PlanType:         "payperplay", // Default to payperplay when DB unavailable
 				LastSeenAt:       time.Now(),
 			})
 			synced++
@@ -254,6 +255,13 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 
 		dbStatus := statusField.String()
 
+		// Extract Plan field (payperplay, balanced, reserved)
+		planField := serverVal.FieldByName("Plan")
+		dbPlan := "payperplay" // Default to payperplay
+		if planField.IsValid() && planField.Kind() == reflect.String {
+			dbPlan = planField.String()
+		}
+
 		// ONLY restore containers that are in active phases (running, starting, provisioning, sleeping, stopped)
 		// Skip archived/failed/crashed containers (they shouldn't be in container registry)
 		validStatuses := map[string]bool{
@@ -275,7 +283,7 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 			continue
 		}
 
-		// Register container with ACTUAL status from database (not from file!)
+		// Register container with ACTUAL status and plan from database (not from file!)
 		c.ContainerRegistry.RegisterContainer(&ContainerInfo{
 			ServerID:         container.ServerID,
 			ServerName:       container.ServerName,
@@ -287,6 +295,7 @@ func (c *Conductor) syncContainersOnNode(node *Node, expectedContainers []Persis
 			MinecraftVersion: container.MinecraftVersion,
 			ServerType:       container.ServerType,
 			Status:           dbStatus, // Use DB status, NOT file status!
+			PlanType:         dbPlan,   // Plan-based RAM reservation
 			LastSeenAt:       time.Now(),
 		})
 
