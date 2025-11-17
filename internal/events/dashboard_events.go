@@ -143,10 +143,10 @@ func PublishContainerStatusChanged(serverID, serverName, nodeID, status, minecra
 	}
 
 	DashboardEventPublisher.PublishEvent("container.status_changed", data)
-	logger.Debug("Dashboard event published: container.status_changed", map[string]interface{}{
-		"server_id": serverID,
-		"status":    status,
-		"port":      port,
+	logger.Info("Dashboard event published: container.status_changed", map[string]interface{}{
+		"server_id":    serverID,
+		"status":       status,
+		"join_address": joinAddress,
 	})
 }
 
