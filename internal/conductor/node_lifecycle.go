@@ -3,6 +3,8 @@ package conductor
 import (
 	"fmt"
 	"time"
+
+	"github.com/payperplay/hosting/pkg/logger"
 )
 
 // NodeLifecycleState represents the lifecycle stage of a node
@@ -75,11 +77,22 @@ func (n *Node) CanBeDecommissioned() (bool, string) {
 
 	// RULE 3: If "ready" (never used), require grace period
 	if n.LifecycleState == NodeStateReady {
-		if n.Metrics.InitializedAt == nil {
-			return false, "Node initialization timestamp missing"
+		// Use InitializedAt if available, otherwise fall back to CreatedAt
+		var initTime time.Time
+		if n.Metrics.InitializedAt != nil {
+			initTime = *n.Metrics.InitializedAt
+		} else if !n.CreatedAt.IsZero() {
+			// Fallback: Use CreatedAt for nodes loaded from DB without InitializedAt
+			initTime = n.CreatedAt
+			logger.Debug("Using CreatedAt as fallback for InitializedAt in decommission check", map[string]interface{}{
+				"node_id": n.ID,
+				"created_at": n.CreatedAt,
+			})
+		} else {
+			return false, "Node initialization timestamp missing (no InitializedAt or CreatedAt)"
 		}
 
-		age := time.Since(*n.Metrics.InitializedAt)
+		age := time.Since(initTime)
 		gracePeriod := 30 * time.Minute
 
 		if age < gracePeriod {
