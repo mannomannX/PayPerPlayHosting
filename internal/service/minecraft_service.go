@@ -1325,7 +1325,7 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		}
 	}
 
-	// Release RAM when server stops (critical for capacity management)
+	// Plan-Based Resource Management on Stop
 	// MULTI-NODE: Use the node ID stored in the database
 	if s.conductor != nil {
 		// Use nodeID from database (defaults to "local-node" for backward compatibility)
@@ -1337,9 +1337,18 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		s.conductor.ReleaseRAMOnNode(nodeID, server.RAMMb)
 		log.Printf("RESOURCE_RELEASE: Released %d MB RAM on node %s for server %s", server.RAMMb, nodeID, server.ID)
 
-		// Remove container from registry (critical for capacity tracking)
-		s.conductor.RemoveContainer(server.ID)
-		log.Printf("REGISTRY_UPDATE: Removed container from registry for server %s", server.ID)
+		// Plan-based container registry handling
+		if server.Plan == "reserved" {
+			// RESERVED PLAN: Keep container in registry with "stopped" status
+			// This reserves the RAM even when stopped for guaranteed fast wake
+			s.conductor.UpdateContainerStatus(server.ID, "stopped")
+			log.Printf("REGISTRY_UPDATE: Updated container status to stopped (reserved plan keeps RAM) for server %s", server.ID)
+		} else {
+			// PAYPERPLAY/BALANCED PLAN: Remove container from registry
+			// This frees the RAM for other servers (best-effort wake)
+			s.conductor.RemoveContainer(server.ID)
+			log.Printf("REGISTRY_UPDATE: Removed container from registry (payperplay plan frees RAM) for server %s", server.ID)
+		}
 
 		// Trigger queue processing - maybe now we have capacity for queued servers
 		go s.conductor.ProcessStartQueue()
