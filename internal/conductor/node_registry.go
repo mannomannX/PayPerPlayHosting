@@ -4,19 +4,23 @@ import (
 	"sync"
 	"time"
 
+	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/logger"
 )
 
 // NodeRegistry manages the fleet of nodes
 type NodeRegistry struct {
-	nodes map[string]*Node
-	mu    sync.RWMutex
+	nodes    map[string]*Node
+	mu       sync.RWMutex
+	nodeRepo *repository.NodeRepository
 }
 
 // NewNodeRegistry creates a new node registry
-func NewNodeRegistry() *NodeRegistry {
+func NewNodeRegistry(nodeRepo *repository.NodeRepository) *NodeRegistry {
 	return &NodeRegistry{
-		nodes: make(map[string]*Node),
+		nodes:    make(map[string]*Node),
+		nodeRepo: nodeRepo,
 	}
 }
 
@@ -33,6 +37,44 @@ func (r *NodeRegistry) RegisterNode(node *Node) {
 	}
 
 	r.nodes[node.ID] = node
+
+	// Persist to database if repository is available
+	if r.nodeRepo != nil {
+		dbNode := r.nodeToDBModel(node)
+
+		// Check if node exists in database
+		exists, err := r.nodeRepo.Exists(node.ID)
+		if err != nil {
+			logger.Warn("NODE-REGISTRY: Failed to check if node exists in database", map[string]interface{}{
+				"node_id": node.ID,
+				"error":   err.Error(),
+			})
+			return
+		}
+
+		if exists {
+			// Update existing node
+			if err := r.nodeRepo.Update(dbNode); err != nil {
+				logger.Warn("NODE-REGISTRY: Failed to update node in database", map[string]interface{}{
+					"node_id": node.ID,
+					"error":   err.Error(),
+				})
+			}
+		} else {
+			// Create new node
+			if err := r.nodeRepo.Create(dbNode); err != nil {
+				logger.Warn("NODE-REGISTRY: Failed to persist node to database", map[string]interface{}{
+					"node_id": node.ID,
+					"error":   err.Error(),
+				})
+			} else {
+				logger.Info("NODE-REGISTRY: Node persisted to database", map[string]interface{}{
+					"node_id": node.ID,
+					"type":    node.Type,
+				})
+			}
+		}
+	}
 }
 
 // isSystemNodeByID checks if a node ID represents a system node (Control Plane or Proxy)
@@ -103,6 +145,16 @@ func (r *NodeRegistry) UpdateNodeStatus(nodeID string, status NodeStatus) {
 	if node, exists := r.nodes[nodeID]; exists {
 		node.Status = status
 		node.LastHealthCheck = time.Now()
+
+		// Persist to database if repository is available
+		if r.nodeRepo != nil {
+			if err := r.nodeRepo.UpdateStatus(nodeID, string(status)); err != nil {
+				logger.Warn("NODE-REGISTRY: Failed to update node status in database", map[string]interface{}{
+					"node_id": nodeID,
+					"error":   err.Error(),
+				})
+			}
+		}
 	}
 }
 
@@ -114,6 +166,16 @@ func (r *NodeRegistry) UpdateNodeResources(nodeID string, containerCount int, al
 	if node, exists := r.nodes[nodeID]; exists {
 		node.ContainerCount = containerCount
 		node.AllocatedRAMMB = allocatedRAMMB
+
+		// Persist to database if repository is available
+		if r.nodeRepo != nil {
+			if err := r.nodeRepo.UpdateResources(nodeID, containerCount, allocatedRAMMB); err != nil {
+				logger.Warn("NODE-REGISTRY: Failed to update node resources in database", map[string]interface{}{
+					"node_id": nodeID,
+					"error":   err.Error(),
+				})
+			}
+		}
 	}
 }
 
@@ -133,6 +195,20 @@ func (r *NodeRegistry) RemoveNode(nodeID string) {
 	defer r.mu.Unlock()
 
 	delete(r.nodes, nodeID)
+
+	// Remove from database if repository is available
+	if r.nodeRepo != nil {
+		if err := r.nodeRepo.Delete(nodeID); err != nil {
+			logger.Warn("NODE-REGISTRY: Failed to delete node from database", map[string]interface{}{
+				"node_id": nodeID,
+				"error":   err.Error(),
+			})
+		} else {
+			logger.Info("NODE-REGISTRY: Node deleted from database", map[string]interface{}{
+				"node_id": nodeID,
+			})
+		}
+	}
 }
 
 // UnregisterNode is an alias for RemoveNode (used by VMProvisioner)
@@ -337,4 +413,101 @@ type FleetStats struct {
 	RAMUtilizationPercent float64 `json:"ram_utilization_percent"`  // Allocated / Usable * 100
 	TotalCPUCores         int     `json:"total_cpu_cores"`
 	TotalContainers       int     `json:"total_containers"`
+}
+
+// LoadNodesFromDB loads all nodes from the database into the in-memory registry
+// This is called on conductor startup to restore node state after a restart
+func (r *NodeRegistry) LoadNodesFromDB() error {
+	if r.nodeRepo == nil {
+		logger.Warn("NODE-REGISTRY: Cannot load nodes from database, repository not available", nil)
+		return nil
+	}
+
+	dbNodes, err := r.nodeRepo.FindAll()
+	if err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	loadedCount := 0
+	for _, dbNode := range dbNodes {
+		node := r.dbModelToNode(dbNode)
+		r.nodes[node.ID] = node
+		loadedCount++
+	}
+
+	logger.Info("NODE-REGISTRY: Nodes loaded from database", map[string]interface{}{
+		"count": loadedCount,
+	})
+
+	return nil
+}
+
+// nodeToDBModel converts a conductor.Node to a models.Node for database persistence
+func (r *NodeRegistry) nodeToDBModel(node *Node) *models.Node {
+	statusStr := string(node.Status)
+	if statusStr == "" {
+		statusStr = "unknown"
+	}
+
+	return &models.Node{
+		ID:                   node.ID,
+		Hostname:             node.Hostname,
+		IPAddress:            node.IPAddress,
+		Type:                 node.Type,
+		IsSystemNode:         node.IsSystemNode,
+		TotalRAMMB:           node.TotalRAMMB,
+		TotalCPUCores:        node.TotalCPUCores,
+		Status:               statusStr,
+		LifecycleState:       string(node.LifecycleState),
+		LastHealthCheck:      node.LastHealthCheck,
+		ContainerCount:       node.ContainerCount,
+		AllocatedRAMMB:       node.AllocatedRAMMB,
+		SystemReservedRAMMB:  node.SystemReservedRAMMB,
+		DockerSocketPath:     node.DockerSocketPath,
+		SSHUser:              node.SSHUser,
+		SSHPort:              node.SSHPort,
+		SSHKeyPath:           node.SSHKeyPath,
+		CreatedAt:            node.CreatedAt,
+		UpdatedAt:            time.Now(),
+		LastContainerAdded:   node.LastContainerAdded,
+		LastContainerRemoved: node.LastContainerRemoved,
+		HourlyCostEUR:        node.HourlyCostEUR,
+		CloudProviderID:      node.CloudProviderID,
+		CPUUsagePercent:      node.CPUUsagePercent,
+	}
+}
+
+// dbModelToNode converts a models.Node to a conductor.Node for in-memory use
+func (r *NodeRegistry) dbModelToNode(dbNode *models.Node) *Node {
+	return &Node{
+		ID:                   dbNode.ID,
+		Hostname:             dbNode.Hostname,
+		IPAddress:            dbNode.IPAddress,
+		Type:                 dbNode.Type,
+		IsSystemNode:         dbNode.IsSystemNode,
+		TotalRAMMB:           dbNode.TotalRAMMB,
+		TotalCPUCores:        dbNode.TotalCPUCores,
+		CPUUsagePercent:      dbNode.CPUUsagePercent,
+		Status:               NodeStatus(dbNode.Status),
+		LifecycleState:       NodeLifecycleState(dbNode.LifecycleState),
+		HealthStatus:         HealthStatus(dbNode.Status), // Map status to health status
+		Metrics:              NodeLifecycleMetrics{},      // Initialize empty metrics
+		LastHealthCheck:      dbNode.LastHealthCheck,
+		ContainerCount:       dbNode.ContainerCount,
+		AllocatedRAMMB:       dbNode.AllocatedRAMMB,
+		SystemReservedRAMMB:  dbNode.SystemReservedRAMMB,
+		DockerSocketPath:     dbNode.DockerSocketPath,
+		SSHUser:              dbNode.SSHUser,
+		SSHPort:              dbNode.SSHPort,
+		SSHKeyPath:           dbNode.SSHKeyPath,
+		CreatedAt:            dbNode.CreatedAt,
+		LastContainerAdded:   dbNode.LastContainerAdded,
+		LastContainerRemoved: dbNode.LastContainerRemoved,
+		Labels:               make(map[string]string),
+		HourlyCostEUR:        dbNode.HourlyCostEUR,
+		CloudProviderID:      dbNode.CloudProviderID,
+	}
 }

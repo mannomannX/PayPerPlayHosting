@@ -13,6 +13,7 @@ import (
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
 )
@@ -61,8 +62,9 @@ type ServerRepositoryInterface interface {
 
 // NewConductor creates a new conductor instance
 // sshKeyPath is optional - if empty, remote node health checks will be skipped
-func NewConductor(healthCheckInterval time.Duration, sshKeyPath string) *Conductor {
-	nodeRegistry := NewNodeRegistry()
+// nodeRepo is optional - if nil, nodes will not be persisted to database
+func NewConductor(healthCheckInterval time.Duration, sshKeyPath string, nodeRepo *repository.NodeRepository) *Conductor {
+	nodeRegistry := NewNodeRegistry(nodeRepo)
 	containerRegistry := NewContainerRegistry()
 
 	// Inject NodeRegistry into ContainerRegistry for lifecycle tracking
@@ -130,6 +132,13 @@ func (c *Conductor) InitializeScaling(cloudProvider cloud.CloudProvider, sshKeyN
 // Start starts the conductor and all its subsystems
 func (c *Conductor) Start() {
 	logger.Info("Starting Conductor Core", nil)
+
+	// Load nodes from database (restore state after restart)
+	if err := c.NodeRegistry.LoadNodesFromDB(); err != nil {
+		logger.Error("CONDUCTOR: Failed to load nodes from database", err, map[string]interface{}{
+			"error": err.Error(),
+		})
+	}
 
 	// Start health checker
 	c.HealthChecker.Start()

@@ -109,6 +109,7 @@ func main() {
 	migrationRepo := repository.NewMigrationRepository(db)
 	backupRepo := repository.NewBackupRepository(db)
 	backupRestoreTrackingRepo := repository.NewBackupRestoreTrackingRepository(db)
+	nodeRepo := repository.NewNodeRepository(db)
 
 	// Initialize Email Service (using mock sender for now)
 	// 🚧 TODO: Replace MockEmailSender with ResendEmailSender when ready for production
@@ -286,7 +287,7 @@ func main() {
 	logger.Info("Prometheus metrics exporter started", nil)
 
 	// Initialize Conductor Core for fleet orchestration
-	cond := conductor.NewConductor(10*time.Second, cfg.SSHPrivateKeyPath) // Health check every 10 seconds for real-time dashboard updates
+	cond := conductor.NewConductor(10*time.Second, cfg.SSHPrivateKeyPath, nodeRepo) // Health check every 10 seconds for real-time dashboard updates
 
 	// Initialize Scaling Engine (B5 + B8) if Hetzner Cloud token is configured
 	if cfg.HetznerCloudToken != "" {
