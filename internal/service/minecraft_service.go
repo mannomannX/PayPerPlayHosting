@@ -86,6 +86,10 @@ type ConductorInterface interface {
 	// Used to transition from "starting" to "running" after server is ready
 	UpdateContainerStatus(serverID, status string)
 
+	// RemoveContainer removes a container from the registry
+	// Used when server stops to free capacity tracking
+	RemoveContainer(serverID string)
+
 	// AtomicAllocateRAM atomically reserves RAM for a server
 	// Returns true if allocation succeeded, false if insufficient capacity
 	// THIS IS THE SAFE METHOD - prevents race conditions!
@@ -1312,6 +1316,10 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 
 		s.conductor.ReleaseRAMOnNode(nodeID, server.RAMMb)
 		log.Printf("RESOURCE_RELEASE: Released %d MB RAM on node %s for server %s", server.RAMMb, nodeID, server.ID)
+
+		// Remove container from registry (critical for capacity tracking)
+		s.conductor.RemoveContainer(server.ID)
+		log.Printf("REGISTRY_UPDATE: Removed container from registry for server %s", server.ID)
 
 		// Trigger queue processing - maybe now we have capacity for queued servers
 		go s.conductor.ProcessStartQueue()

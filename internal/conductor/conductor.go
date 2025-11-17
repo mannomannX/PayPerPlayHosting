@@ -775,6 +775,12 @@ func (c *Conductor) UpdateContainerStatus(serverID, status string) {
 	}
 }
 
+// RemoveContainer removes a container from the registry
+// Used when a server stops to free up capacity tracking
+func (c *Conductor) RemoveContainer(serverID string) {
+	c.ContainerRegistry.RemoveContainer(serverID)
+}
+
 // AtomicAllocateRAM atomically reserves RAM for a server
 // Returns true if allocation succeeded, false if insufficient capacity
 // THIS IS THE SAFE METHOD - prevents race conditions!
