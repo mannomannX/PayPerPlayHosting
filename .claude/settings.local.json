@@ -42,7 +42,8 @@
       "Bash(/tmp/status.json)",
       "Bash(git checkout:*)",
       "Bash(npm install:*)",
-      "Bash(docker compose:*)"
+      "Bash(docker compose:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

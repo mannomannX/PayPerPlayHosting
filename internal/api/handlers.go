@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -31,6 +32,15 @@ func (h *Handler) CreateServer(c *gin.Context) {
 	var req CreateServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// FIX SERVER-5: Validate server name (alphanumeric, dash, underscore only)
+	serverNameRegex := regexp.MustCompile(`^[a-zA-Z0-9_-]{3,32}$`)
+	if !serverNameRegex.MatchString(req.Name) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Server name must be 3-32 characters and contain only letters, numbers, dashes, and underscores",
+		})
 		return
 	}
 
@@ -77,7 +87,14 @@ func (h *Handler) CreateServer(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, server)
+	// FIX BILLING-5: Show cost estimate to user
+	c.JSON(http.StatusCreated, gin.H{
+		"server":                server,
+		"estimated_hourly_cost": server.GetHourlyRate(),
+		"estimated_monthly_cost": server.GetMonthlyRate(),
+		"billing_plan":          server.Plan,
+		"tier":                  server.RAMTier,
+	})
 }
 
 // ListServers handles GET /api/servers

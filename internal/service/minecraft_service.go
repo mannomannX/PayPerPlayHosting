@@ -12,6 +12,7 @@ import (
 	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/events"
 	"github.com/payperplay/hosting/internal/models"
+	"github.com/payperplay/hosting/internal/rcon"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/pkg/config"
 	"github.com/payperplay/hosting/pkg/logger"
@@ -1182,6 +1183,10 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 		return err
 	}
 
+	// FIX SERVER-8: Send graceful shutdown warning via RCON before stopping
+	// Give players time to save their progress and disconnect gracefully
+	s.sendShutdownWarning(server)
+
 	// Stop container (MULTI-NODE: Support both local and remote containers)
 	// Determine if container is on remote node or local node
 	nodeID := server.NodeID
@@ -1305,6 +1310,15 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 	if err != nil {
 		log.Printf("ERROR: server %s not found: %v", serverID, err)
 		return fmt.Errorf("server not found: %w", err)
+	}
+
+	// FIX SERVER-2: Block deletion if server is starting or queued to prevent race conditions
+	if server.Status == models.StatusStarting || server.Status == models.StatusQueued {
+		logger.Warn("DELETE: Cannot delete server in transitional state", map[string]interface{}{
+			"server_id": serverID,
+			"status":    server.Status,
+		})
+		return fmt.Errorf("cannot delete server while %s - please wait or stop the server first", server.Status)
 	}
 
 	// FIX #8: Pre-Deletion Backup Failure - Block deletion if backup fails (except quota)
@@ -1752,4 +1766,74 @@ func (s *MinecraftService) GetServerConnectionInfo(serverID string) (*ServerConn
 // Returns true if nodeID is "local-node" or empty (backward compatibility)
 func (s *MinecraftService) isLocalNode(nodeID string) bool {
 	return nodeID == "" || nodeID == "local-node"
+}
+
+// sendShutdownWarning sends a graceful shutdown warning to players via RCON
+// FIX SERVER-8: Give players time to save and disconnect before server stops
+func (s *MinecraftService) sendShutdownWarning(server *models.MinecraftServer) {
+	// Get node info to determine RCON address
+	var rconHost string
+	nodeID := server.NodeID
+	if nodeID == "" || nodeID == "local-node" {
+		rconHost = "localhost"
+	} else if s.conductor != nil {
+		remoteNode, err := s.conductor.GetRemoteNode(nodeID)
+		if err != nil {
+			logger.Warn("SHUTDOWN: Cannot send warning - failed to get node info", map[string]interface{}{
+				"server_id": server.ID,
+				"node_id":   nodeID,
+				"error":     err.Error(),
+			})
+			return
+		}
+		rconHost = remoteNode.IPAddress
+	} else {
+		return
+	}
+
+	// Connect to RCON
+	client, err := rcon.NewClient(rconHost, server.RCONPort, server.RCONPassword)
+	if err != nil {
+		logger.Warn("SHUTDOWN: Cannot send warning - RCON connection failed", map[string]interface{}{
+			"server_id": server.ID,
+			"error":     err.Error(),
+		})
+		return
+	}
+	defer client.Close()
+
+	// Send shutdown warnings
+	warnings := []struct {
+		message string
+		delay   time.Duration
+	}{
+		{"Server shutting down in 10 seconds. Please disconnect!", 0},
+		{"Server shutting down in 5 seconds!", 5 * time.Second},
+		{"Server shutting down NOW!", 9 * time.Second},
+	}
+
+	for _, warning := range warnings {
+		if warning.delay > 0 {
+			time.Sleep(warning.delay)
+		}
+
+		command := fmt.Sprintf("say %s", warning.message)
+		_, err := client.SendCommand(command)
+		if err != nil {
+			logger.Warn("SHUTDOWN: Failed to send warning via RCON", map[string]interface{}{
+				"server_id": server.ID,
+				"message":   warning.message,
+				"error":     err.Error(),
+			})
+			return
+		}
+
+		logger.Info("SHUTDOWN: Warning sent to players", map[string]interface{}{
+			"server_id": server.ID,
+			"message":   warning.message,
+		})
+	}
+
+	// Wait 1 more second for final message to be displayed
+	time.Sleep(1 * time.Second)
 }

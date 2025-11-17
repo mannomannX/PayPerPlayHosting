@@ -129,7 +129,7 @@ type MinecraftServer struct {
 	// RCON Integration for Metrics
 	RCONEnabled  bool   `gorm:"default:true"`
 	RCONPort     int    `gorm:"default:25575"`
-	RCONPassword string `gorm:"size:256;default:'minecraft'"`
+	RCONPassword string `gorm:"size:256;default:'minecraft'" json:"-"` // FIX CONFIG-3: Never expose RCON password in API responses
 
 	// Relations
 	UsageLogs []UsageLog `gorm:"foreignKey:ServerID;constraint:OnDelete:CASCADE"`
