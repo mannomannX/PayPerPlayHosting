@@ -196,6 +196,10 @@ func main() {
 	defer billingService.Stop()
 	logger.Info("Billing service initialized and subscribed to Event-Bus", nil)
 
+	// GAP-3: Start zombie session cleanup worker (runs every 10min)
+	billingService.StartZombieCleanupWorker(10 * time.Minute)
+	logger.Info("Billing zombie session cleanup worker started (every 10min)", nil)
+
 	// Initialize Plugin Marketplace Services
 	pluginSyncService := service.NewPluginSyncService(pluginRepo)
 	pluginSyncService.Start() // Start background sync worker (every 6 hours)

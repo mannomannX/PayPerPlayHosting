@@ -1842,3 +1842,51 @@ func (s *MinecraftService) sendShutdownWarning(server *models.MinecraftServer) {
 	// Wait 1 more second for final message to be displayed
 	time.Sleep(1 * time.Second)
 }
+
+// ===================================
+// GAP-1: Node Failure Handling
+// ===================================
+
+// HandleNodeFailure handles a server whose node has failed
+// This is called by the Health Checker when a node becomes unhealthy
+// It closes billing sessions and updates server status to prevent incorrect billing
+func (s *MinecraftService) HandleNodeFailure(serverID string) error {
+	server, err := s.repo.FindByID(serverID)
+	if err != nil {
+		return fmt.Errorf("failed to find server: %w", err)
+	}
+
+	logger.Error("NODE-FAILURE: Handling server on failed node", fmt.Errorf("node unhealthy"), map[string]interface{}{
+		"server_id":   server.ID,
+		"server_name": server.Name,
+		"status":      server.Status,
+		"node_id":     server.NodeID,
+	})
+
+	oldNodeID := server.NodeID
+
+	// Update server status to stopped (container is gone)
+	server.Status = models.StatusStopped
+	server.NodeID = "" // Clear node assignment since node failed
+	server.ContainerID = "" // Clear container ID
+
+	if err := s.repo.Update(server); err != nil {
+		logger.Error("NODE-FAILURE: Failed to update server status", err, map[string]interface{}{
+			"server_id": serverID,
+		})
+		// Continue anyway to publish event
+	}
+
+	// Publish stopped event to close billing session
+	// The BillingService is subscribed to this event and will close the session
+	events.PublishServerStopped(server.ID, "node_failure")
+
+	logger.Info("NODE-FAILURE: Server handled successfully", map[string]interface{}{
+		"server_id":   serverID,
+		"server_name": server.Name,
+		"new_status":  server.Status,
+		"old_node_id": oldNodeID,
+	})
+
+	return nil
+}

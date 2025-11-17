@@ -33,6 +33,8 @@ type HealthChecker struct {
 // Used to avoid circular dependency
 type MinecraftServiceInterface interface {
 	StopServer(serverID string, reason string) error
+	// GAP-1: Handle containers on failed nodes
+	HandleNodeFailure(serverID string) error
 }
 
 // NewHealthChecker creates a new health checker
@@ -109,6 +111,9 @@ func (h *HealthChecker) performHealthCheck() {
 				if h.debugLogBuffer != nil {
 					h.debugLogBuffer.Add("WARN", fmt.Sprintf("Node %s became UNHEALTHY (%s)", node.Hostname, node.IPAddress), fields)
 				}
+
+				// GAP-1: Handle node failure - cleanup containers, close billing, update status
+				h.handleNodeFailure(node)
 			} else {
 				fields := map[string]interface{}{
 					"node_id":     node.ID,
@@ -544,4 +549,77 @@ func (h *HealthChecker) handleMinecraftCrash(container *ContainerInfo, address s
 			}
 		}()
 	}
+}
+
+// ===================================
+// GAP-1: Node Failure Handling
+// ===================================
+
+// handleNodeFailure handles a node that has become unhealthy
+// This fixes GAP-1 (Worker Node Total Failure) by:
+// 1. Closing billing sessions for all containers on the failed node
+// 2. Updating server status from "running" to "crashed"
+// 3. Removing containers from registry
+// 4. Logging for user notification
+func (h *HealthChecker) handleNodeFailure(node *Node) {
+	if h.containerRegistry == nil {
+		return
+	}
+
+	// Get all containers on this node
+	containers := h.containerRegistry.GetAllContainers()
+	affectedServers := []string{}
+
+	for _, container := range containers {
+		if container.NodeID == node.ID {
+			affectedServers = append(affectedServers, container.ServerID)
+		}
+	}
+
+	if len(affectedServers) == 0 {
+		logger.Info("NODE-FAILURE: No containers on failed node", map[string]interface{}{
+			"node_id":  node.ID,
+			"hostname": node.Hostname,
+		})
+		return
+	}
+
+	logger.Error("NODE-FAILURE: Node failed with running containers", fmt.Errorf("node unhealthy"), map[string]interface{}{
+		"node_id":          node.ID,
+		"hostname":         node.Hostname,
+		"affected_servers": len(affectedServers),
+	})
+
+	// Handle each affected server
+	for _, serverID := range affectedServers {
+		if h.minecraftService == nil {
+			logger.Warn("NODE-FAILURE: Cannot handle server - MinecraftService not set", map[string]interface{}{
+				"server_id": serverID,
+			})
+			continue
+		}
+
+		// Call MinecraftService to handle the failure (closes billing, updates status)
+		go func(sid string) {
+			if err := h.minecraftService.HandleNodeFailure(sid); err != nil {
+				logger.Error("NODE-FAILURE: Failed to handle server on failed node", err, map[string]interface{}{
+					"server_id": sid,
+					"node_id":   node.ID,
+				})
+			} else {
+				logger.Info("NODE-FAILURE: Server handled on failed node", map[string]interface{}{
+					"server_id": sid,
+					"node_id":   node.ID,
+				})
+			}
+		}(serverID)
+	}
+
+	// Remove all containers from registry (in-memory cleanup)
+	h.containerRegistry.RemoveContainersByNode(node.ID)
+
+	logger.Info("NODE-FAILURE: Containers removed from registry", map[string]interface{}{
+		"node_id": node.ID,
+		"count":   len(affectedServers),
+	})
 }

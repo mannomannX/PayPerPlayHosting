@@ -419,3 +419,123 @@ func (s *BillingService) getHourlyRateForServer(server *models.MinecraftServer) 
 	// Use server's tier+plan based rate
 	return server.GetHourlyRate()
 }
+
+// ===================================
+// GAP-3: Billing Zombie Session Cleanup
+// ===================================
+
+// CleanupZombieSessions finds and closes billing sessions that are still open
+// but the server is no longer running. This fixes GAP-3 (Billing Session Zombies)
+// which can occur when:
+// - Container crashes and Docker event is lost
+// - Node dies and Event Bus is unreachable
+// - Code bug or DB transaction failure during session close
+func (s *BillingService) CleanupZombieSessions() (int, error) {
+	logger.Info("BILLING-CLEANUP: Starting zombie session cleanup", nil)
+
+	// Find all open sessions where the server is not running
+	var zombieSessions []models.UsageSession
+	err := s.db.Raw(`
+		SELECT usage_sessions.*
+		FROM usage_sessions
+		LEFT JOIN minecraft_servers ON usage_sessions.server_id = minecraft_servers.id
+		WHERE usage_sessions.stopped_at IS NULL
+		  AND (minecraft_servers.status IS NULL OR minecraft_servers.status != ?)
+	`, models.StatusRunning).Scan(&zombieSessions).Error
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to find zombie sessions: %w", err)
+	}
+
+	if len(zombieSessions) == 0 {
+		logger.Debug("BILLING-CLEANUP: No zombie sessions found", nil)
+		return 0, nil
+	}
+
+	logger.Warn("BILLING-CLEANUP: Found zombie sessions", map[string]interface{}{
+		"count": len(zombieSessions),
+	})
+
+	closedCount := 0
+	now := time.Now()
+
+	for _, session := range zombieSessions {
+		// Calculate session duration and cost
+		session.StoppedAt = &now
+		durationSeconds := int(now.Sub(session.StartedAt).Seconds())
+		session.DurationSeconds = durationSeconds
+
+		// Cost = (RAM in GB) * (hours) * (hourly rate)
+		ramGB := float64(session.RAMMb) / 1024.0
+		hours := float64(durationSeconds) / 3600.0
+		session.CostEUR = ramGB * hours * session.HourlyRateEUR
+
+		// Grace period: Max 24h session duration for zombie cleanup
+		maxDuration := 24 * time.Hour
+		if time.Since(session.StartedAt) > maxDuration {
+			logger.Warn("BILLING-CLEANUP: Zombie session exceeded 24h, capping duration", map[string]interface{}{
+				"server_id":      session.ServerID,
+				"started_at":     session.StartedAt,
+				"actual_hours":   hours,
+				"capped_hours":   24.0,
+			})
+			session.DurationSeconds = int(maxDuration.Seconds())
+			session.CostEUR = ramGB * 24.0 * session.HourlyRateEUR
+		}
+
+		// Update session
+		if err := s.db.Save(&session).Error; err != nil {
+			logger.Error("BILLING-CLEANUP: Failed to close zombie session", err, map[string]interface{}{
+				"session_id": session.ID,
+				"server_id":  session.ServerID,
+			})
+			continue
+		}
+
+		closedCount++
+		logger.Info("BILLING-CLEANUP: Closed zombie session", map[string]interface{}{
+			"session_id":       session.ID,
+			"server_id":        session.ServerID,
+			"server_name":      session.ServerName,
+			"duration_seconds": session.DurationSeconds,
+			"cost_eur":         session.CostEUR,
+		})
+	}
+
+	logger.Info("BILLING-CLEANUP: Zombie session cleanup completed", map[string]interface{}{
+		"total_zombies": len(zombieSessions),
+		"closed":        closedCount,
+		"failed":        len(zombieSessions) - closedCount,
+	})
+
+	return closedCount, nil
+}
+
+// StartZombieCleanupWorker starts a background worker that periodically cleans up zombie sessions
+// Runs every 10 minutes by default
+func (s *BillingService) StartZombieCleanupWorker(interval time.Duration) {
+	if interval == 0 {
+		interval = 10 * time.Minute // Default: 10 minutes
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		logger.Info("BILLING-CLEANUP: Zombie cleanup worker started", map[string]interface{}{
+			"interval": interval.String(),
+		})
+
+		// Run immediately on startup
+		if _, err := s.CleanupZombieSessions(); err != nil {
+			logger.Error("BILLING-CLEANUP: Initial zombie cleanup failed", err, nil)
+		}
+
+		// Then run on schedule
+		for range ticker.C {
+			if _, err := s.CleanupZombieSessions(); err != nil {
+				logger.Error("BILLING-CLEANUP: Scheduled zombie cleanup failed", err, nil)
+			}
+		}
+	}()
+}

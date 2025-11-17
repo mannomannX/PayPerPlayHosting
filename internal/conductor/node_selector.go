@@ -89,11 +89,18 @@ func (ns *NodeSelector) getCandidates(requiredRAMMB int) []*Node {
 		// 2. Node must have sufficient available RAM (checked against TotalRAM for proportional overhead)
 		// 3. Node must NOT be a system node (Control Plane or Proxy)
 		//    - Minecraft servers should only run on worker nodes
+		// 4. GAP-10: Node must NOT be draining (being decommissioned)
+		//    - Prevents starting containers on nodes that are about to be deleted
 
 		// PROPORTIONAL OVERHEAD: Check against TotalRAM, not UsableRAM
 		// System overhead is now distributed proportionally across all containers
 		// Example: cpx32 (8GB) can fit 2x 4GB bookings, each gets ~3.5GB actual
 		availableRAM := node.TotalRAMMB - node.AllocatedRAMMB
+
+		// GAP-10: Skip nodes that are draining (will be decommissioned soon)
+		if node.LifecycleState == NodeStateDraining {
+			continue
+		}
 
 		if node.IsHealthy() && availableRAM >= requiredRAMMB && !node.IsSystemNode {
 			candidates = append(candidates, node)
