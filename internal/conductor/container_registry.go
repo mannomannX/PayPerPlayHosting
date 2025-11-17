@@ -189,14 +189,20 @@ func (r *ContainerRegistry) RemoveContainersByNode(nodeID string) {
 }
 
 // GetNodeAllocation returns the total RAM allocated on a specific node
+// Only counts containers that are ACTIVELY using RAM (running, starting, provisioning)
+// Sleeping/stopped containers don't consume RAM and shouldn't block capacity
 func (r *ContainerRegistry) GetNodeAllocation(nodeID string) (containerCount int, allocatedRAMMB int) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	for _, container := range r.containers {
 		if container.NodeID == nodeID {
-			containerCount++
-			allocatedRAMMB += container.RAMMb
+			// Only count containers that actively consume RAM
+			if container.Status == "running" || container.Status == "starting" || container.Status == "provisioning" {
+				containerCount++
+				allocatedRAMMB += container.RAMMb
+			}
+			// Sleeping/stopped containers remain in registry for quick wake, but don't block capacity
 		}
 	}
 	return
@@ -258,7 +264,12 @@ func (r *ContainerRegistry) GetNodeStats(nodeID string) NodeStats {
 	for _, container := range r.containers {
 		if container.NodeID == nodeID {
 			stats.TotalContainers++
-			stats.TotalRAMMB += container.RAMMb
+
+			// Only count RAM for active containers (running/starting/provisioning)
+			// Sleeping/stopped containers are tracked but don't consume RAM
+			if container.Status == "running" || container.Status == "starting" || container.Status == "provisioning" {
+				stats.TotalRAMMB += container.RAMMb
+			}
 
 			switch container.Status {
 			case "running":
@@ -290,7 +301,12 @@ func (r *ContainerRegistry) GetAllNodeStats() map[string]NodeStats {
 		}
 
 		stats.TotalContainers++
-		stats.TotalRAMMB += container.RAMMb
+
+		// Only count RAM for active containers (running/starting/provisioning)
+		// Sleeping/stopped containers are tracked but don't consume RAM
+		if container.Status == "running" || container.Status == "starting" || container.Status == "provisioning" {
+			stats.TotalRAMMB += container.RAMMb
+		}
 
 		switch container.Status {
 		case "running":
