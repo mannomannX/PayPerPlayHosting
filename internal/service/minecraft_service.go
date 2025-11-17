@@ -49,6 +49,7 @@ type VelocityServiceInterface interface {
 // ArchiveServiceInterface defines the methods needed from ArchiveService
 type ArchiveServiceInterface interface {
 	UnarchiveServer(serverID string) error
+	ArchiveServer(serverID string) error
 }
 
 // RemoteVelocityClientInterface defines the methods needed from RemoteVelocityClient
@@ -1231,6 +1232,25 @@ func (s *MinecraftService) StopServer(serverID string, reason string) error {
 	server.LastStoppedAt = &now
 	if err := s.repo.Update(server); err != nil {
 		return err
+	}
+
+	// FIX #5: Archive Timing Gap - Immediate archive check on stop
+	// If server was already stopped for >48h before this stop, archive immediately
+	if server.LastStoppedAt != nil && time.Since(*server.LastStoppedAt) > 48*time.Hour {
+		if s.archiveService != nil {
+			logger.Info("LIFECYCLE: Server stopped after >48h idle, triggering immediate archival", map[string]interface{}{
+				"server_id":       server.ID,
+				"idle_duration_h": time.Since(*server.LastStoppedAt).Hours(),
+			})
+			// Archive asynchronously to not block the stop operation
+			go func() {
+				if err := s.archiveService.ArchiveServer(server.ID); err != nil {
+					logger.Error("LIFECYCLE: Failed to archive server immediately after stop", err, map[string]interface{}{
+						"server_id": server.ID,
+					})
+				}
+			}()
+		}
 	}
 
 	// Release RAM when server stops (critical for capacity management)

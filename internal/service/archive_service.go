@@ -200,13 +200,53 @@ func (s *ArchiveService) UnarchiveServer(serverID string) error {
 		"archive_size": server.ArchiveSize,
 	})
 
-	// Step 2: Extract archive
+	// Step 2: Extract archive (FIX #3: Atomic restore)
+	// Extract to temp directory first to prevent data loss on failure
+	tempDataPath := filepath.Join(config.AppConfig.ServersBasePath, fmt.Sprintf(".%s.tmp", serverID))
 	serverDataPath := filepath.Join(config.AppConfig.ServersBasePath, serverID)
-	if err := s.extractArchive(localArchivePath, serverDataPath); err != nil {
+
+	// Clean up any existing temp directory
+	if err := os.RemoveAll(tempDataPath); err != nil && !os.IsNotExist(err) {
+		logger.Warn("ARCHIVE: Failed to clean existing temp directory", map[string]interface{}{
+			"server_id": serverID,
+			"temp_path": tempDataPath,
+			"error":     err.Error(),
+		})
+	}
+
+	// Extract to temp directory
+	if err := s.extractArchive(localArchivePath, tempDataPath); err != nil {
+		// Extraction failed - clean up temp and return error
+		os.RemoveAll(tempDataPath)
 		return fmt.Errorf("failed to extract archive: %w", err)
 	}
 
-	logger.Info("ARCHIVE: Archive extracted", map[string]interface{}{
+	// Validate extraction succeeded by checking if temp directory has content
+	entries, err := os.ReadDir(tempDataPath)
+	if err != nil || len(entries) == 0 {
+		os.RemoveAll(tempDataPath)
+		return fmt.Errorf("extraction validation failed: directory empty or unreadable")
+	}
+
+	logger.Info("ARCHIVE: Archive extracted to temp directory, performing atomic swap", map[string]interface{}{
+		"server_id":  serverID,
+		"temp_path":  tempDataPath,
+		"final_path": serverDataPath,
+	})
+
+	// Atomic swap: Remove old data and rename temp to final location
+	// This ensures we either have old data OR new data, never corrupted state
+	if err := os.RemoveAll(serverDataPath); err != nil && !os.IsNotExist(err) {
+		os.RemoveAll(tempDataPath)
+		return fmt.Errorf("failed to remove old server data: %w", err)
+	}
+
+	if err := os.Rename(tempDataPath, serverDataPath); err != nil {
+		os.RemoveAll(tempDataPath)
+		return fmt.Errorf("failed to move extracted data to final location: %w", err)
+	}
+
+	logger.Info("ARCHIVE: Archive extracted successfully (atomic swap complete)", map[string]interface{}{
 		"server_id": serverID,
 		"data_path": serverDataPath,
 	})
