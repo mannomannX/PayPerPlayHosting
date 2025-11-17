@@ -875,6 +875,29 @@ func (c *Conductor) ProcessStartQueue() {
 			break // Queue empty
 		}
 
+		// FIX #10: Queue Timeout - Remove servers that have been queued too long
+		// Timeout after 10 minutes to prevent indefinite waiting
+		queueTimeout := 10 * time.Minute
+		queueAge := time.Since(queuedServer.QueuedAt)
+		if queueAge > queueTimeout {
+			// Dequeue and mark as failed
+			server := c.StartQueue.Dequeue()
+			logger.Error("QUEUE-TIMEOUT: Server removed from queue after timeout", fmt.Errorf("queue timeout"), map[string]interface{}{
+				"server_id":     server.ServerID,
+				"server_name":   server.ServerName,
+				"queued_at":     server.QueuedAt,
+				"queue_age":     queueAge.String(),
+				"timeout":       queueTimeout.String(),
+			})
+
+			// Publish timeout event to notify user
+			events.PublishServerStartFailed(server.ServerID, server.ServerName,
+				fmt.Sprintf("Server start timed out after %v in queue - no capacity available", queueTimeout))
+
+			// Continue to next item in queue
+			continue
+		}
+
 		// CRITICAL: Check capacity ONLY on Worker Nodes (MC servers cannot run on System nodes)
 		// ONLY count HEALTHY nodes! Unhealthy nodes cannot accept containers
 		workerNodeRAM := 0

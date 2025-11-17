@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/payperplay/hosting/internal/docker"
 	"github.com/payperplay/hosting/internal/models"
 	"github.com/payperplay/hosting/internal/repository"
 	"github.com/payperplay/hosting/internal/storage"
@@ -20,25 +21,28 @@ import (
 
 // BackupService handles server backups with SFTP integration
 type BackupService struct {
-	backupRepo   *repository.BackupRepository
-	serverRepo   *repository.ServerRepository
-	sftpClient   *storage.SFTPClient
-	storagePath  string
-	quotaService *BackupQuotaService
+	backupRepo    *repository.BackupRepository
+	serverRepo    *repository.ServerRepository
+	dockerService *docker.DockerService
+	sftpClient    *storage.SFTPClient
+	storagePath   string
+	quotaService  *BackupQuotaService
 }
 
 // NewBackupService creates a new backup service
 func NewBackupService(
 	backupRepo *repository.BackupRepository,
 	serverRepo *repository.ServerRepository,
+	dockerService *docker.DockerService,
 	cfg *config.Config,
 	quotaService *BackupQuotaService,
 ) *BackupService {
 	service := &BackupService{
-		backupRepo:   backupRepo,
-		serverRepo:   serverRepo,
-		storagePath:  filepath.Join(cfg.ServersBasePath, ".backups"),
-		quotaService: quotaService,
+		backupRepo:    backupRepo,
+		serverRepo:    serverRepo,
+		dockerService: dockerService,
+		storagePath:   filepath.Join(cfg.ServersBasePath, ".backups"),
+		quotaService:  quotaService,
 	}
 
 	// Initialize SFTP client if enabled
@@ -210,6 +214,40 @@ func (s *BackupService) performBackup(backup *models.Backup, server *models.Mine
 		"server_id":   server.ID,
 		"server_name": server.Name,
 	})
+
+	// FIX #2: Pause container if server is running to prevent data corruption
+	containerPaused := false
+	if server.Status == models.StatusRunning && server.ContainerID != "" && s.dockerService != nil {
+		logger.Info("BACKUP-SERVICE: Pausing container to ensure data consistency", map[string]interface{}{
+			"backup_id":    backup.ID,
+			"container_id": server.ContainerID,
+		})
+		if err := s.dockerService.PauseContainer(server.ContainerID); err != nil {
+			logger.Warn("BACKUP-SERVICE: Failed to pause container, continuing anyway", map[string]interface{}{
+				"backup_id":    backup.ID,
+				"container_id": server.ContainerID,
+				"error":        err.Error(),
+			})
+		} else {
+			containerPaused = true
+		}
+	}
+
+	// Ensure container is unpaused at the end, even if backup fails
+	defer func() {
+		if containerPaused && s.dockerService != nil && server.ContainerID != "" {
+			logger.Info("BACKUP-SERVICE: Unpausing container after backup", map[string]interface{}{
+				"backup_id":    backup.ID,
+				"container_id": server.ContainerID,
+			})
+			if err := s.dockerService.UnpauseContainer(server.ContainerID); err != nil {
+				logger.Error("BACKUP-SERVICE: Failed to unpause container", err, map[string]interface{}{
+					"backup_id":    backup.ID,
+					"container_id": server.ContainerID,
+				})
+			}
+		}
+	}()
 
 	// 1. Get server directory path
 	serverPath := filepath.Join(s.storagePath, "..", server.ID)

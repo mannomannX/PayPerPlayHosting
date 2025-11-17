@@ -295,6 +295,30 @@ func (d *DockerService) StopContainer(containerID string, timeoutSeconds int) er
 	return nil
 }
 
+// PauseContainer pauses a running Docker container
+// FIX #2: Used to pause container before backup to prevent data corruption
+func (d *DockerService) PauseContainer(containerID string) error {
+	ctx := context.Background()
+	err := d.client.ContainerPause(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("failed to pause container: %w", err)
+	}
+	log.Printf("Paused container %s", containerID[:12])
+	return nil
+}
+
+// UnpauseContainer unpauses a paused Docker container
+// FIX #2: Used to unpause container after backup completes
+func (d *DockerService) UnpauseContainer(containerID string) error {
+	ctx := context.Background()
+	err := d.client.ContainerUnpause(ctx, containerID)
+	if err != nil {
+		return fmt.Errorf("failed to unpause container: %w", err)
+	}
+	log.Printf("Unpaused container %s", containerID[:12])
+	return nil
+}
+
 // RemoveContainer removes a Docker container
 func (d *DockerService) RemoveContainer(containerID string, force bool) error {
 	ctx := context.Background()

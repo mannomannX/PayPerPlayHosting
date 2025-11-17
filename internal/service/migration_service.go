@@ -870,8 +870,32 @@ func (s *MigrationService) failMigration(migration *models.Migration, errorMessa
 		return
 	}
 
-	// Get server name for event
+	// FIX #6: Migration Rollback - Clean up resources on failure
+	// Release allocated RAM on target node to prevent resource leak
 	server, err := s.serverRepo.FindByID(migration.ServerID)
+	if err == nil && s.conductor != nil {
+		logger.Info("MIGRATION-ROLLBACK: Releasing RAM on target node", map[string]interface{}{
+			"operation_id": migration.ID,
+			"to_node":      migration.ToNodeID,
+			"ram_mb":       server.RAMMb,
+		})
+		s.conductor.ReleaseRAMOnNode(migration.ToNodeID, server.RAMMb)
+
+		// Try to remove any containers created on target node
+		containerName := fmt.Sprintf("mc-%s-migration", migration.ServerID)
+		targetNode, nodeErr := s.conductor.GetRemoteNode(migration.ToNodeID)
+		if nodeErr == nil {
+			ctx := context.Background()
+			logger.Info("MIGRATION-ROLLBACK: Removing container from target node", map[string]interface{}{
+				"operation_id":   migration.ID,
+				"container_name": containerName,
+				"to_node":        migration.ToNodeID,
+			})
+			s.conductor.GetRemoteDockerClient().RemoveContainer(ctx, targetNode, containerName, true)
+		}
+	}
+
+	// Get server name for event
 	serverName := "Unknown"
 	if err == nil {
 		serverName = server.Name

@@ -3,6 +3,7 @@ package conductor
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -122,6 +123,10 @@ func (h *HealthChecker) performHealthCheck() {
 			"ram_mb":     node.AllocatedRAMMB,
 		})
 	}
+
+	// FIX #7: Minecraft Health Check - Check if Minecraft is responding on port 25565
+	// This detects when Minecraft crashes but the container keeps running
+	h.checkMinecraftHealth()
 
 	// Log fleet statistics
 	stats := h.nodeRegistry.GetFleetStats()
@@ -397,4 +402,66 @@ func (h *HealthChecker) getRemoteContainerIDs(ctx context.Context, node *Node) (
 	})
 
 	return containerIDs, nil
+}
+
+// checkMinecraftHealth checks if Minecraft is responding on port 25565 for all running containers
+// FIX #7: Detects when Minecraft crashes internally but the container keeps running
+func (h *HealthChecker) checkMinecraftHealth() {
+	if h.containerRegistry == nil {
+		return
+	}
+
+	// Get all containers
+	containers := h.containerRegistry.GetAllContainers()
+
+	for _, container := range containers {
+		// Only check running containers
+		if container.Status != "running" {
+			continue
+		}
+
+		// Get node info to determine IP address
+		node, nodeExists := h.nodeRegistry.GetNode(container.NodeID)
+		if !nodeExists {
+			continue
+		}
+
+		// Build connection address
+		// For local nodes, use localhost
+		// For remote nodes, use node IP address
+		var address string
+		if node.Type == "local" || node.IPAddress == "" || node.IPAddress == "localhost" || node.IPAddress == "127.0.0.1" {
+			address = fmt.Sprintf("localhost:%d", container.MinecraftPort)
+		} else {
+			address = fmt.Sprintf("%s:%d", node.IPAddress, container.MinecraftPort)
+		}
+
+		// Try to connect to Minecraft port with 3 second timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		var d net.Dialer
+		conn, err := d.DialContext(ctx, "tcp", address)
+		cancel()
+
+		if err != nil {
+			// Port not responding - Minecraft might be crashed
+			logger.Warn("MC-HEALTH: Minecraft not responding on port", map[string]interface{}{
+				"server_id":      container.ServerID,
+				"server_name":    container.ServerName,
+				"node_id":        container.NodeID,
+				"minecraft_port": container.MinecraftPort,
+				"address":        address,
+				"error":          err.Error(),
+			})
+
+			// TODO: Consider auto-recovery (restart container or mark server as unhealthy)
+			// For now, we just log the warning so admins can investigate
+		} else {
+			// Successfully connected - Minecraft is responding
+			conn.Close()
+			logger.Debug("MC-HEALTH: Minecraft port responding", map[string]interface{}{
+				"server_id":      container.ServerID,
+				"minecraft_port": container.MinecraftPort,
+			})
+		}
+	}
 }

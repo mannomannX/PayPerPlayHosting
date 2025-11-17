@@ -146,7 +146,7 @@ func main() {
 	logger.Info("Backup quota service initialized", nil)
 
 	// Initialize Backup Service with SFTP integration and quota enforcement
-	backupService := service.NewBackupService(backupRepo, serverRepo, cfg, backupQuotaService)
+	backupService := service.NewBackupService(backupRepo, serverRepo, dockerService, cfg, backupQuotaService)
 	logger.Info("Backup service initialized with SFTP support and quota enforcement", map[string]interface{}{
 		"storage_box_enabled": cfg.StorageBoxEnabled,
 	})

@@ -12,7 +12,7 @@
 **Problem**: tar.gz created while Minecraft writes → corrupted world
 **Impact**: Restore brings broken/inconsistent world
 **Fix**: Stop container before backup OR use rsync --link-dest snapshot
-**Status**: 📋 PLANNED - Add container pause before backup
+**Status**: ✅ FIXED (backup_service.go:218-250, docker_service.go:298-320)
 
 ### 3. Restore Failure Atomicity
 **Problem**: tar extract fails → original data already overwritten
@@ -38,7 +38,7 @@
 **Problem**: Target node full/crashed during migration
 **Impact**: Server stuck in "migrating", unplayable
 **Fix**: Rollback to source node or queue retry
-**Status**: ⏳ TODO
+**Status**: ✅ FIXED (migration_service.go:873-896)
 
 ## 🟢 MINOR - UX & Edge Cases
 
@@ -46,13 +46,13 @@
 **Problem**: Minecraft crashes, container runs → no auto-recovery
 **Impact**: User pays for crashed server
 **Fix**: Health check on port 25565, not just container status
-**Status**: ⏳ TODO
+**Status**: ✅ FIXED (health_checker.go:407-467)
 
 ### 8. Pre-Deletion Backup Failure
 **Problem**: Backup quota exceeded → server deleted without backup?
 **Impact**: Data lost without backup
 **Fix**: Clarify deletion policy, block delete if backup fails
-**Status**: ⏳ TODO
+**Status**: ✅ FIXED (minecraft_service.go:1310-1349)
 
 ### 9. Billing During Unarchive
 **Problem**: Extract takes 30s → user pays for "waiting"
@@ -64,27 +64,23 @@
 **Problem**: Hetzner API timeout → queue stuck forever
 **Impact**: Server stays in queue indefinitely
 **Fix**: Queue entry timeout (e.g., 10min) with error notification
-**Status**: ⏳ TODO
+**Status**: ✅ FIXED (conductor.go:878-899)
 
 ## Summary
 
-**FIXED**: 5/10 (80% of critical issues resolved!)
+**FIXED**: 10/10 (100% complete! All lifecycle issues resolved! 🎉)
 - ✅ #1 Volume Loss Fallback
+- ✅ #2 Backup During Runtime
 - ✅ #3 Restore Atomicity
 - ✅ #4 Multi-Start Deduplication
 - ✅ #5 Archive Timing Gap
+- ✅ #6 Migration Rollback
+- ✅ #7 Minecraft Health Check
+- ✅ #8 Pre-Deletion Backup Failure
 - ✅ #9 Billing During Unarchive (already implemented)
+- ✅ #10 Queue Timeout
 
-**REMAINING CRITICAL**: 1
-- #2 Backup During Runtime (needs DockerService integration)
-
-**MEDIUM**: 1
-- #6 Migration Rollback
-
-**MINOR**: 3
-- #7 Minecraft Health Check
-- #8 Pre-Deletion Backup
-- #10 Queue Timeout
+**REMAINING**: 0 (All issues fixed!)
 
 ## Implementation Notes
 

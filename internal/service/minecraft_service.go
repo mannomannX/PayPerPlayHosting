@@ -1307,7 +1307,7 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 		return fmt.Errorf("server not found: %w", err)
 	}
 
-	// Pre-Deletion Backup: Create safety backup before deletion
+	// FIX #8: Pre-Deletion Backup Failure - Block deletion if backup fails (except quota)
 	if s.backupService != nil {
 		logger.Info("DELETE: Creating pre-deletion backup", map[string]interface{}{
 			"server_id":   serverID,
@@ -1322,11 +1322,25 @@ func (s *MinecraftService) DeleteServer(serverID string) error {
 			0,   // Use default retention (30 days for safety)
 		)
 		if err != nil {
-			logger.Warn("DELETE: Failed to create pre-deletion backup (continuing with deletion)", map[string]interface{}{
-				"server_id": serverID,
-				"error":     err.Error(),
-			})
-			// Don't fail deletion if backup fails - log warning and continue
+			// Check if error is quota-related (allow deletion to proceed)
+			errorMsg := err.Error()
+			isQuotaError := strings.Contains(errorMsg, "quota exceeded") ||
+							strings.Contains(errorMsg, "quota limit") ||
+							strings.Contains(errorMsg, "insufficient quota")
+
+			if isQuotaError {
+				logger.Warn("DELETE: Pre-deletion backup skipped due to quota (deletion allowed)", map[string]interface{}{
+					"server_id": serverID,
+					"error":     errorMsg,
+				})
+				// Allow deletion to proceed - user has reached backup quota
+			} else {
+				// Technical failure (not quota) - block deletion to prevent data loss
+				logger.Error("DELETE: Pre-deletion backup failed - blocking deletion", err, map[string]interface{}{
+					"server_id": serverID,
+				})
+				return fmt.Errorf("pre-deletion backup failed: %w (deletion blocked to prevent data loss)", err)
+			}
 		} else {
 			logger.Info("DELETE: Pre-deletion backup created successfully", map[string]interface{}{
 				"server_id": serverID,
