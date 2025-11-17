@@ -772,6 +772,26 @@ func (c *Conductor) UpdateContainerStatus(serverID, status string) {
 			"old_status": oldStatus,
 			"new_status": status,
 		})
+
+		// DASHBOARD FIX: Publish status change event to dashboard
+		// This ensures dashboard gets real-time updates when servers become ready
+		joinAddress := fmt.Sprintf(":%d", container.MinecraftPort) // Default format
+		if c.NodeRegistry != nil {
+			if node, exists := c.NodeRegistry.GetNode(container.NodeID); exists {
+				joinAddress = fmt.Sprintf("%s:%d", node.IPAddress, container.MinecraftPort)
+			}
+		}
+
+		events.PublishContainerStatusChanged(
+			container.ServerID,
+			container.ServerName,
+			container.NodeID,
+			status,
+			container.MinecraftVersion,
+			container.ServerType,
+			container.MinecraftPort,
+			joinAddress,
+		)
 	}
 }
 
