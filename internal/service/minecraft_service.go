@@ -307,8 +307,13 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		return fmt.Errorf("server not found: %w", err)
 	}
 
+	// FIX #4: Multi-Start Deduplication
+	// Prevent race condition from multiple start button clicks
 	if server.Status == models.StatusRunning {
 		return fmt.Errorf("server already running")
+	}
+	if server.Status == models.StatusStarting {
+		return fmt.Errorf("server is already starting, please wait")
 	}
 
 	// PHASE 3 LIFECYCLE: Auto-unarchive if server is archived
@@ -543,18 +548,57 @@ func (s *MinecraftService) StartServer(serverID string) error {
 		}
 
 		if err != nil {
-			// ROLLBACK: Release RAM and start slot if container creation failed
-			if s.conductor != nil {
-				if ramAllocated {
-					s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
-					log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after container creation failure", server.RAMMb, selectedNodeID, server.ID)
-				}
-				if startSlotReserved {
-					s.conductor.ReleaseStartSlot(server.ID)
-					log.Printf("ROLLBACK: Released start slot for server %s after container creation failure", server.ID)
+			// FIX #1: Volume Loss Fallback
+			// If volume not found and server was stopped, try to restore from archive
+			errorMsg := err.Error()
+			if (strings.Contains(errorMsg, "volume") || strings.Contains(errorMsg, "bind source path does not exist")) &&
+			   server.Status == models.StatusStopped && s.archiveService != nil {
+				logger.Warn("VOLUME-LOSS: Volume missing for stopped server, attempting archive restore", map[string]interface{}{
+					"server_id": server.ID,
+					"error":     errorMsg,
+				})
+
+				// Try to restore from archive
+				if archiveErr := s.archiveService.UnarchiveServer(serverID); archiveErr == nil {
+					logger.Info("VOLUME-LOSS: Successfully restored from archive, retrying start", map[string]interface{}{
+						"server_id": server.ID,
+					})
+					// Retry container creation after unarchive
+					if s.isLocalNode(selectedNodeID) {
+						containerID, err = s.dockerService.CreateContainer(
+							server.ID, string(server.ServerType), server.MinecraftVersion, server.RAMMb, server.Port,
+							server.MaxPlayers, server.Gamemode, server.Difficulty, server.PVP, server.EnableCommandBlock, server.LevelSeed,
+							server.ViewDistance, server.SimulationDistance, server.AllowNether, server.AllowEnd, server.GenerateStructures,
+							server.WorldType, server.BonusChest, server.MaxWorldSize, server.SpawnProtection, server.SpawnAnimals,
+							server.SpawnMonsters, server.SpawnNPCs, server.MaxTickTime, server.NetworkCompressionThreshold, server.MOTD,
+						)
+					} else {
+						remoteNode, _ := s.conductor.GetRemoteNode(selectedNodeID)
+						containerName := fmt.Sprintf("mc-%s", server.ID)
+						imageName := docker.GetDockerImageName(string(server.ServerType))
+						env := docker.BuildContainerEnv(server)
+						portBindings := docker.BuildPortBindings(server.Port)
+						binds := docker.BuildVolumeBinds(server.ID, "/minecraft/servers")
+						ctx := context.Background()
+						containerID, err = s.conductor.GetRemoteDockerClient().StartContainer(ctx, remoteNode, containerName, imageName, env, portBindings, binds, server.RAMMb)
+					}
 				}
 			}
-			return fmt.Errorf("failed to create container: %w", err)
+
+			// If still error, rollback
+			if err != nil {
+				if s.conductor != nil {
+					if ramAllocated {
+						s.conductor.ReleaseRAMOnNode(selectedNodeID, server.RAMMb)
+						log.Printf("ROLLBACK: Released %d MB RAM on node %s for server %s after container creation failure", server.RAMMb, selectedNodeID, server.ID)
+					}
+					if startSlotReserved {
+						s.conductor.ReleaseStartSlot(server.ID)
+						log.Printf("ROLLBACK: Released start slot for server %s after container creation failure", server.ID)
+					}
+				}
+				return fmt.Errorf("failed to create container: %w", err)
+			}
 		}
 
 		server.ContainerID = containerID
